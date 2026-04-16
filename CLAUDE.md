@@ -56,8 +56,8 @@ src/unifi_mcp/
 │   ├── protect.py       # Protect models
 │   └── site_manager.py  # Site Manager models
 └── tools/               # MCP tool definitions
-    ├── network/         # 25 read + 34 write tools
-    ├── protect/         # 9 read + 4 write + 2 media tools
+    ├── network/         # 24 read + 35 write tools (59 total)
+    ├── protect/         # 11 read + 4 write tools (15 total, includes 2 media read tools)
     └── site_manager/    # 3 read-only tools
 ```
 
@@ -98,7 +98,7 @@ if config.protect_enabled:
 
 ## CI/CD
 
-- **CI**: Runs on push to main and PRs. Lint (ruff) + typecheck (mypy) + test (pytest) across Python 3.11-3.13
-- **Release**: Triggered by `v*` tags. Builds with hatch, publishes to TestPyPI then PyPI via trusted publishing
+- **CI**: Runs on push to main and PRs. Lint (ruff) + typecheck (mypy) on Python 3.13; test (pytest) across Python 3.11-3.13
+- **Release**: Triggered by `v*` tags. Builds with `uv build` (hatchling backend), publishes to TestPyPI then PyPI via trusted publishing
 - **Security**: Weekly Bandit scans + dependency review on PRs
 - **Dependabot**: Weekly updates for Python deps and GitHub Actions

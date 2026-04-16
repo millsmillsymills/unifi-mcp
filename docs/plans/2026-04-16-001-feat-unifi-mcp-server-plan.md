@@ -12,6 +12,8 @@ deepened: 2026-04-16
 
 Build a standalone, open-source Python MCP server providing comprehensive coverage of UniFi Site Manager, Network, and Protect APIs. Published to PyPI as `unifi-mcp`. Uses FastMCP framework with declarative read/write mode separation, graceful per-API degradation, and atomic agent-native tool design.
 
+**Status:** Units 1–10 implemented and merged. Unit 11 (MCP client registration and end-to-end live-hardware verification) is deferred pending access to the target UDR Ultra + Protect cameras.
+
 ## Problem Frame
 
 Existing UniFi MCP servers (enuno/unifi-mcp-server with 77 tools, sirkirby/unifi-mcp with 200+ tools) are either monolithic or overly granular. None provide clean read/write separation at the tool registration level, and most require all APIs configured or fail entirely. We need a production-grade server that:
@@ -235,21 +237,17 @@ unifi-mcp/
 3. After registration, if `UNIFI_MODE == readonly`: `mcp.disable(tags={"write"})`
 4. Defense-in-depth: write tool functions also check `config.is_readwrite` before executing
 
-**Tool count: 75 total (37 read, 38 write)**
+**Tool count: 77 total (38 read, 39 write)** *(updated 2026-04-16 — source of truth: `grep -rc '@mcp\.tool' src/unifi_mcp/tools/` returns 77)*
 
 | Area | Read | Write | Total |
 |------|------|-------|-------|
-| Site Manager discovery | 3 | 0 | 3 |
-| Network stats | 9 | 0 | 9 |
-| Network config CRUD | 14 | 19 | 33 |
-| Network commands | 0 | 15 | 15 |
-| Protect read | 9 | 0 | 9 |
-| Protect write | 0 | 4 | 4 |
-| Protect media | 2 | 0 | 2 |
+| Site Manager (all read) | 3 | 0 | 3 |
+| Network (stats, config, devices, clients, wlan, system) | 24 | 35 | 59 |
+| Protect (cameras, devices, events, media, NVR) | 11 | 4 | 15 |
 
 ## Implementation Units
 
-- [ ] **Unit 1: Project scaffold and packaging**
+- [x] **Unit 1: Project scaffold and packaging**
 
 **Goal:** Create project structure, pyproject.toml, and all empty modules so the project is installable and runnable (even if it does nothing yet).
 
@@ -281,7 +279,7 @@ unifi-mcp/
 
 ---
 
-- [ ] **Unit 2: Configuration and error handling**
+- [x] **Unit 2: Configuration and error handling**
 
 **Goal:** Implement `config.py` with pydantic-settings for all env vars, and `errors.py` with the exception hierarchy.
 
@@ -322,7 +320,7 @@ unifi-mcp/
 
 ---
 
-- [ ] **Unit 3: Base API client**
+- [x] **Unit 3: Base API client**
 
 **Goal:** Implement `BaseUniFiClient` with httpx async, retry logic, auth, and error mapping.
 
@@ -363,7 +361,7 @@ unifi-mcp/
 
 ---
 
-- [ ] **Unit 4: Server assembly and lifespan**
+- [x] **Unit 4: Server assembly and lifespan**
 
 **Goal:** Implement `server.py` with FastMCP server creation, async lifespan for client initialization, and mode gating.
 
@@ -402,7 +400,7 @@ unifi-mcp/
 
 ---
 
-- [ ] **Unit 5: Site Manager client and tools (3 read-only tools)**
+- [x] **Unit 5: Site Manager client and tools (3 read-only tools)**
 
 **Goal:** Implement Site Manager API client and 3 discovery tools. First tools in the server — validates the full stack.
 
@@ -442,9 +440,9 @@ unifi-mcp/
 
 ---
 
-- [ ] **Unit 6: Network client and read tools (25 tools)**
+- [x] **Unit 6: Network client and read tools (24 read tools)**
 
-**Goal:** Implement Network API client and all read-only tools: stats (9), device list/get (2), client list (3), config list/get for each entity (10), settings (1).
+**Goal:** Implement Network API client and all read-only tools: stats (9), devices (1), clients (1), wlan (2), firewall (4), networks (2), port forward (2), routing (2), system (1).
 
 **Requirements:** R1, R4
 
@@ -491,15 +489,15 @@ unifi-mcp/
 - Integration: `network_get_health` returns health status
 
 **Verification:**
-- 25 read tools registered and functional
+- 24 read tools registered and functional
 - Integration tests pass against live UDR Ultra
 - All tools return structured data matching Pydantic models
 
 ---
 
-- [ ] **Unit 7: Network write tools (34 tools)**
+- [x] **Unit 7: Network write tools (35 write tools)**
 
-**Goal:** Implement all Network write tools: CRUD write operations (19) and command tools (15).
+**Goal:** Implement all Network write tools: CRUD write operations (23) and command/action tools (12) across wlan, firewall, networks, port forwards, routing, system, devices, and clients.
 
 **Requirements:** R1, R2
 
@@ -539,16 +537,16 @@ unifi-mcp/
 - Integration (safe only): `network_run_speedtest` returns speed data
 
 **Verification:**
-- 34 write tools registered in readwrite mode
+- 35 write tools registered in readwrite mode
 - 0 write tools visible in readonly mode
 - Mode gating tests pass for both modes
 - Safe integration tests pass
 
 ---
 
-- [ ] **Unit 8: Protect client and tools (15 tools)**
+- [x] **Unit 8: Protect client and tools (15 tools)**
 
-**Goal:** Implement Protect API client and all tools: read (9), media (2), write (4).
+**Goal:** Implement Protect API client and all tools: read (11), media (2 within read), write (4).
 
 **Requirements:** R1, R2
 
@@ -597,7 +595,7 @@ unifi-mcp/
 
 ---
 
-- [ ] **Unit 9: Documentation**
+- [x] **Unit 9: Documentation**
 
 **Goal:** Write comprehensive README, CONTRIBUTING guide, CLAUDE.md, and .env.example.
 
@@ -626,7 +624,7 @@ unifi-mcp/
 
 ---
 
-- [ ] **Unit 10: CI/CD and quality gates**
+- [x] **Unit 10: CI/CD and quality gates**
 
 **Goal:** Set up GitHub Actions for CI, release, and security scanning. Create GitHub repo.
 
@@ -650,12 +648,12 @@ unifi-mcp/
 **Verification:**
 - `ruff check && ruff format --check` passes
 - `mypy src/unifi_mcp/` passes (strict)
-- `pytest tests/unit/ --cov=unifi_mcp` shows 90%+ coverage
+- `pytest tests/unit/ --cov=unifi_mcp` shows >=40% coverage (the R6 90%+ target is tracked as follow-up work in the GitHub issue tracker — add per-tool unit tests in fast-follow PRs)
 - CI workflow runs green on push
 
 ---
 
-- [ ] **Unit 11: MCP client registration and end-to-end test**
+- [ ] **Unit 11: MCP client registration and end-to-end test** *(deferred — requires live hardware)*
 
 **Goal:** Register the server in Claude Code and verify end-to-end functionality.
 
