@@ -1,0 +1,34 @@
+{
+  "list_hosts": {
+    "data": [
+      {
+        "id": "host-1",
+        "name": "UDR Ultra",
+        "type": "console",
+        "hardwareId": "hw-1"
+      }
+    ]
+  },
+  "list_sites": {
+    "data": [
+      {
+        "id": "site-1",
+        "name": "Default",
+        "hostId": "host-1",
+        "status": "online"
+      }
+    ]
+  },
+  "list_devices": {
+    "data": [
+      {
+        "id": "dev-1",
+        "name": "AP-Pro",
+        "mac": "aa:bb:cc:dd:ee:ff",
+        "model": "UAP6MP",
+        "hostId": "host-1",
+        "status": "online"
+      }
+    ]
+  }
+}

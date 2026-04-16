@@ -1,0 +1,98 @@
+"""Tests for server creation and mode gating."""
+
+from unifi_mcp.config import UniFiConfig, UniFiMode
+from unifi_mcp.server import create_server
+
+
+def _make_config(**overrides):
+    defaults = {
+        "_env_file": None,
+        "unifi_network_api": "test-net-key",
+        "unifi_protect_api": "test-prot-key",
+        "unifi_site_manager_api": "test-sm-key",
+    }
+    defaults.update(overrides)
+    return UniFiConfig(**defaults)
+
+
+class TestCreateServer:
+    def test_creates_server_with_all_apis(self):
+        config = _make_config()
+        server = create_server(config)
+        assert server.name == "unifi-mcp"
+
+    def test_creates_server_with_network_only(self):
+        config = _make_config(unifi_protect_api=None, unifi_site_manager_api=None)
+        server = create_server(config)
+        assert server.name == "unifi-mcp"
+
+    def test_creates_server_with_no_apis(self):
+        config = _make_config(unifi_network_api=None, unifi_protect_api=None, unifi_site_manager_api=None)
+        server = create_server(config)
+        assert server.name == "unifi-mcp"
+
+
+class TestModeGating:
+    async def test_write_tools_disabled_in_readonly_mode(self):
+        config = _make_config(unifi_mode=UniFiMode.READONLY)
+        server = create_server(config)
+        tools = await server.list_tools()
+        tool_names = {t.name for t in tools}
+        # Write tools should not be visible
+        assert "network_create_wlan" not in tool_names
+        assert "network_delete_wlan" not in tool_names
+        assert "network_restart_device" not in tool_names
+        assert "protect_update_camera" not in tool_names
+        # Read tools should be visible
+        assert "network_get_health" in tool_names
+        assert "network_list_devices" in tool_names
+        assert "protect_list_cameras" in tool_names
+        assert "site_manager_list_hosts" in tool_names
+
+    async def test_write_tools_enabled_in_readwrite_mode(self):
+        config = _make_config(unifi_mode=UniFiMode.READWRITE)
+        server = create_server(config)
+        tools = await server.list_tools()
+        tool_names = {t.name for t in tools}
+        # Write tools should be visible
+        assert "network_create_wlan" in tool_names
+        assert "network_delete_wlan" in tool_names
+        assert "network_restart_device" in tool_names
+        assert "protect_update_camera" in tool_names
+        # Read tools should still be visible
+        assert "network_get_health" in tool_names
+        assert "protect_list_cameras" in tool_names
+
+    async def test_no_protect_tools_when_not_configured(self):
+        config = _make_config(unifi_protect_api=None)
+        server = create_server(config)
+        tools = await server.list_tools()
+        tool_names = {t.name for t in tools}
+        assert "protect_list_cameras" not in tool_names
+        assert "network_get_health" in tool_names
+
+    async def test_no_site_manager_tools_when_not_configured(self):
+        config = _make_config(unifi_site_manager_api=None)
+        server = create_server(config)
+        tools = await server.list_tools()
+        tool_names = {t.name for t in tools}
+        assert "site_manager_list_hosts" not in tool_names
+        assert "network_get_health" in tool_names
+
+    async def test_tool_count_readwrite_all_apis(self):
+        config = _make_config(unifi_mode=UniFiMode.READWRITE)
+        server = create_server(config)
+        tools = await server.list_tools()
+        # Should have all tools registered
+        assert len(tools) > 50
+
+    async def test_tool_count_readonly_has_fewer_tools(self):
+        config = _make_config(unifi_mode=UniFiMode.READONLY)
+        server = create_server(config)
+        readonly_tools = await server.list_tools()
+
+        config_rw = _make_config(unifi_mode=UniFiMode.READWRITE)
+        server_rw = create_server(config_rw)
+        readwrite_tools = await server_rw.list_tools()
+
+        assert len(readonly_tools) < len(readwrite_tools)

@@ -1,0 +1,61 @@
+{
+  "health": {
+    "meta": {"rc": "ok"},
+    "data": [
+      {"subsystem": "www", "status": "ok"},
+      {"subsystem": "wlan", "status": "ok"},
+      {"subsystem": "lan", "status": "ok"},
+      {"subsystem": "wan", "status": "ok"}
+    ]
+  },
+  "devices": {
+    "meta": {"rc": "ok"},
+    "data": [
+      {
+        "_id": "dev1",
+        "mac": "aa:bb:cc:dd:ee:01",
+        "model": "UDMPRO",
+        "type": "udm",
+        "name": "UDR Ultra",
+        "ip": "192.168.1.1",
+        "state": 1,
+        "adopted": true,
+        "version": "4.0.6"
+      }
+    ]
+  },
+  "clients": {
+    "meta": {"rc": "ok"},
+    "data": [
+      {
+        "_id": "cli1",
+        "mac": "aa:bb:cc:dd:ee:02",
+        "hostname": "laptop",
+        "ip": "192.168.1.100",
+        "is_wired": false,
+        "network": "LAN"
+      }
+    ]
+  },
+  "wlans": {
+    "meta": {"rc": "ok"},
+    "data": [
+      {
+        "_id": "wlan1",
+        "name": "HomeWiFi",
+        "enabled": true,
+        "security": "wpapsk"
+      }
+    ]
+  },
+  "sysinfo": {
+    "meta": {"rc": "ok"},
+    "data": [
+      {
+        "timezone": "America/New_York",
+        "autobackup": true,
+        "version": "8.6.9"
+      }
+    ]
+  }
+}

@@ -1,10 +1,12 @@
 """Entry point for running unifi-mcp as a module."""
 
+from unifi_mcp.server import create_server
+
 
 def main() -> None:
     """Start the UniFi MCP server."""
-    # Server implementation will be added in Unit 4
-    raise SystemExit("Server not yet implemented. See docs/plans/ for roadmap.")
+    server = create_server()
+    server.run()
 
 
 if __name__ == "__main__":

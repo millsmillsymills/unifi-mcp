@@ -1,0 +1,168 @@
+"""Tests for the Protect API client."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import httpx
+import pytest
+import respx
+
+from unifi_mcp.clients.protect import ProtectClient
+
+BASE_URL = "https://10.0.0.1:443"
+API_PREFIX = f"{BASE_URL}/proxy/protect/api/"
+
+FIXTURES = json.loads(
+    (Path(__file__).resolve().parent.parent.parent / "fixtures" / "protect_responses.json").read_text()
+)
+
+
+@pytest.fixture
+def client():
+    return ProtectClient(
+        base_url=BASE_URL,
+        api_key="test-protect-key",
+        timeout=5,
+        max_retries=2,
+    )
+
+
+class TestListCameras:
+    @respx.mock
+    async def test_list_cameras_calls_correct_endpoint(self, client):
+        route = respx.get(f"{API_PREFIX}cameras").mock(return_value=httpx.Response(200, json=FIXTURES["cameras"]))
+        result = await client.list_cameras()
+        assert route.called
+        assert result == FIXTURES["cameras"]
+
+
+class TestGetCamera:
+    @respx.mock
+    async def test_get_camera_calls_correct_endpoint(self, client):
+        route = respx.get(f"{API_PREFIX}cameras/cam-1").mock(
+            return_value=httpx.Response(200, json=FIXTURES["cameras"][0])
+        )
+        result = await client.get_camera("cam-1")
+        assert route.called
+        assert result["id"] == "cam-1"
+        assert result["name"] == "Front Door"
+
+
+class TestListEvents:
+    @respx.mock
+    async def test_list_events_with_filters_builds_correct_params(self, client):
+        route = respx.get(f"{API_PREFIX}events").mock(return_value=httpx.Response(200, json=FIXTURES["events"]))
+        result = await client.list_events(
+            start="1700000000000",
+            end="1700000010000",
+            camera_ids=["cam-1", "cam-2"],
+            types=["motion", "ring"],
+            smart_detect_types=["person", "vehicle"],
+            limit=50,
+            offset=10,
+        )
+        assert route.called
+        request = route.calls[0].request
+        assert "start=1700000000000" in str(request.url)
+        assert "end=1700000010000" in str(request.url)
+        assert "cameras=cam-1%2Ccam-2" in str(request.url) or "cameras=cam-1,cam-2" in str(request.url)
+        assert "types=motion%2Cring" in str(request.url) or "types=motion,ring" in str(request.url)
+        assert "smartDetectTypes=person%2Cvehicle" in str(request.url) or "smartDetectTypes=person,vehicle" in str(
+            request.url
+        )
+        assert "limit=50" in str(request.url)
+        assert "offset=10" in str(request.url)
+        assert result == FIXTURES["events"]
+
+    @respx.mock
+    async def test_list_events_with_no_filters_uses_defaults(self, client):
+        route = respx.get(f"{API_PREFIX}events").mock(return_value=httpx.Response(200, json=FIXTURES["events"]))
+        result = await client.list_events()
+        assert route.called
+        request = route.calls[0].request
+        assert "limit=30" in str(request.url)
+        assert "offset=0" in str(request.url)
+        # No optional params should be present
+        assert "start=" not in str(request.url)
+        assert "end=" not in str(request.url)
+        assert "cameras=" not in str(request.url)
+        assert result == FIXTURES["events"]
+
+
+class TestGetSnapshot:
+    @respx.mock
+    async def test_get_snapshot_returns_bytes(self, client):
+        snapshot_data = b"\xff\xd8\xff\xe0fake-jpeg-data"
+        route = respx.get(f"{API_PREFIX}cameras/cam-1/snapshot").mock(
+            return_value=httpx.Response(200, content=snapshot_data)
+        )
+        result = await client.get_snapshot("cam-1")
+        assert route.called
+        assert result == snapshot_data
+
+    @respx.mock
+    async def test_get_snapshot_with_timestamp_passes_ts_param(self, client):
+        snapshot_data = b"\xff\xd8\xff\xe0fake-jpeg-data"
+        route = respx.get(f"{API_PREFIX}cameras/cam-1/snapshot").mock(
+            return_value=httpx.Response(200, content=snapshot_data)
+        )
+        result = await client.get_snapshot("cam-1", timestamp=1700000000000)
+        assert route.called
+        request = route.calls[0].request
+        assert "ts=1700000000000" in str(request.url)
+        assert result == snapshot_data
+
+
+class TestUpdateCamera:
+    @respx.mock
+    async def test_update_camera_sends_put(self, client):
+        payload = {"name": "Back Yard"}
+        route = respx.put(f"{API_PREFIX}cameras/cam-1").mock(
+            return_value=httpx.Response(200, json={"id": "cam-1", "name": "Back Yard"})
+        )
+        result = await client.update_camera("cam-1", payload)
+        assert route.called
+        request_body = json.loads(route.calls[0].request.content)
+        assert request_body == payload
+        assert result["name"] == "Back Yard"
+
+
+class TestSetRecordingMode:
+    @respx.mock
+    async def test_set_recording_mode_sends_correct_payload(self, client):
+        route = respx.put(f"{API_PREFIX}cameras/cam-1").mock(return_value=httpx.Response(200, json={"id": "cam-1"}))
+        await client.set_recording_mode("cam-1", "motion", pre_padding=5, post_padding=10)
+        assert route.called
+        request_body = json.loads(route.calls[0].request.content)
+        assert request_body == {
+            "recordingSettings": {
+                "mode": "motion",
+                "prePaddingSecs": 5,
+                "postPaddingSecs": 10,
+            }
+        }
+
+
+class TestGetNvr:
+    @respx.mock
+    async def test_get_nvr_calls_correct_endpoint(self, client):
+        route = respx.get(f"{API_PREFIX}nvr").mock(return_value=httpx.Response(200, json=FIXTURES["nvr"]))
+        result = await client.get_nvr()
+        assert route.called
+        assert result == FIXTURES["nvr"]
+
+
+class TestValidateConnection:
+    @respx.mock
+    async def test_validate_returns_true_on_success(self, client):
+        respx.get(f"{API_PREFIX}nvr").mock(return_value=httpx.Response(200, json=FIXTURES["nvr"]))
+        result = await client.validate_connection()
+        assert result is True
+
+    @respx.mock
+    async def test_validate_returns_false_on_failure(self, client):
+        respx.get(f"{API_PREFIX}nvr").mock(side_effect=httpx.ConnectError("Connection refused"))
+        result = await client.validate_connection()
+        assert result is False
