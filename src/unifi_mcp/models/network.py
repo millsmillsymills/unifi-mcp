@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from pydantic import ConfigDict, Field
+
 from unifi_mcp.models.common import UniFiBaseModel
 
 
 class NetworkDevice(UniFiBaseModel):
     """An adopted network device (AP, switch, gateway, etc.)."""
 
-    _id: str | None = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str | None = Field(default=None, alias="_id")
     mac: str | None = None
     model: str | None = None
     type: str | None = None
@@ -23,7 +27,9 @@ class NetworkDevice(UniFiBaseModel):
 class NetworkClient(UniFiBaseModel):
     """A network client (wired or wireless)."""
 
-    _id: str | None = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str | None = Field(default=None, alias="_id")
     mac: str | None = None
     hostname: str | None = None
     ip: str | None = None
@@ -40,7 +46,9 @@ class NetworkClient(UniFiBaseModel):
 class WlanConfig(UniFiBaseModel):
     """A WLAN (wireless network) configuration."""
 
-    _id: str | None = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str | None = Field(default=None, alias="_id")
     name: str | None = None
     enabled: bool | None = None
     security: str | None = None
@@ -51,7 +59,9 @@ class WlanConfig(UniFiBaseModel):
 class FirewallRule(UniFiBaseModel):
     """A firewall rule."""
 
-    _id: str | None = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str | None = Field(default=None, alias="_id")
     name: str | None = None
     enabled: bool | None = None
     ruleset: str | None = None
@@ -64,7 +74,9 @@ class FirewallRule(UniFiBaseModel):
 class FirewallGroup(UniFiBaseModel):
     """A firewall address or port group."""
 
-    _id: str | None = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str | None = Field(default=None, alias="_id")
     name: str | None = None
     group_type: str | None = None
     group_members: list[str] | None = None
@@ -73,7 +85,9 @@ class FirewallGroup(UniFiBaseModel):
 class NetworkConfig(UniFiBaseModel):
     """A network (VLAN/subnet) configuration."""
 
-    _id: str | None = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str | None = Field(default=None, alias="_id")
     name: str | None = None
     purpose: str | None = None
     subnet: str | None = None
@@ -85,7 +99,9 @@ class NetworkConfig(UniFiBaseModel):
 class PortForwardRule(UniFiBaseModel):
     """A port forwarding rule."""
 
-    _id: str | None = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str | None = Field(default=None, alias="_id")
     name: str | None = None
     enabled: bool | None = None
     src: str | None = None
@@ -98,7 +114,9 @@ class PortForwardRule(UniFiBaseModel):
 class StaticRoute(UniFiBaseModel):
     """A static route configuration."""
 
-    _id: str | None = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str | None = Field(default=None, alias="_id")
     name: str | None = None
     enabled: bool | None = None
     type: str | None = None

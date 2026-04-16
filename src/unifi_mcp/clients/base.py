@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import httpx
@@ -20,8 +19,6 @@ from unifi_mcp.errors import (
     UniFiNotFoundError,
     UniFiRateLimitError,
 )
-
-logger = logging.getLogger(__name__)
 
 
 class BaseUniFiClient:
@@ -90,31 +87,42 @@ class BaseUniFiClient:
         self._raise_for_status(response)
         return response
 
+    def _parse_json(self, response: httpx.Response) -> Any:
+        """Parse JSON response body, wrapping decode errors as UniFiError."""
+        try:
+            return response.json()
+        except ValueError as exc:
+            body = response.text[:200]
+            raise UniFiError(
+                f"Invalid JSON in response (HTTP {response.status_code}): {body}",
+                status_code=response.status_code,
+            ) from exc
+
     async def get(self, path: str, **kwargs: Any) -> Any:
         """HTTP GET, returns parsed JSON."""
         response = await self._request("GET", path, **kwargs)
-        return response.json()
+        return self._parse_json(response)
 
     async def post(self, path: str, **kwargs: Any) -> Any:
         """HTTP POST, returns parsed JSON."""
         response = await self._request("POST", path, **kwargs)
         if response.status_code == 204 or not response.content:
             return {}
-        return response.json()
+        return self._parse_json(response)
 
     async def put(self, path: str, **kwargs: Any) -> Any:
         """HTTP PUT, returns parsed JSON."""
         response = await self._request("PUT", path, **kwargs)
         if response.status_code == 204 or not response.content:
             return {}
-        return response.json()
+        return self._parse_json(response)
 
     async def delete(self, path: str, **kwargs: Any) -> Any:
         """HTTP DELETE, returns parsed JSON or empty dict."""
         response = await self._request("DELETE", path, **kwargs)
         if response.status_code == 204 or not response.content:
             return {}
-        return response.json()
+        return self._parse_json(response)
 
     async def get_raw(self, path: str, **kwargs: Any) -> bytes:
         """HTTP GET, returns raw bytes (for media endpoints)."""
