@@ -56,8 +56,8 @@ src/unifi_mcp/
 │   ├── protect.py       # Protect models
 │   └── site_manager.py  # Site Manager models
 └── tools/               # MCP tool definitions
-    ├── network/         # 15 read + 17 write tools (32 total)
-    ├── protect/         # 10 read + 3 write tools (13 total, includes 2 media read tools)
+    ├── network/         # 24 read + 35 write tools (59 total)
+    ├── protect/         # 11 read + 4 write tools (15 total, includes 2 media read tools)
     └── site_manager/    # 3 read-only tools
 ```
 

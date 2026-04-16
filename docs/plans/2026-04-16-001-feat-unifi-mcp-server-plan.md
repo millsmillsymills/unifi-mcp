@@ -235,17 +235,13 @@ unifi-mcp/
 3. After registration, if `UNIFI_MODE == readonly`: `mcp.disable(tags={"write"})`
 4. Defense-in-depth: write tool functions also check `config.is_readwrite` before executing
 
-**Tool count: 48 total (28 read, 20 write)** *(updated 2026-04-16 — corrected from original 75-tool estimate after implementation)*
+**Tool count: 77 total (38 read, 39 write)** *(updated 2026-04-16 — source of truth: `grep -rc '@mcp\.tool' src/unifi_mcp/tools/` returns 77)*
 
 | Area | Read | Write | Total |
 |------|------|-------|-------|
-| Site Manager discovery | 3 | 0 | 3 |
-| Network stats | 9 | 0 | 9 |
-| Network config read/write | 6 | 17 | 23 |
-| Protect cameras + NVR | 3 | 3 | 6 |
-| Protect devices (chimes, lights, sensors, viewers) | 4 | 0 | 4 |
-| Protect events | 1 | 0 | 1 |
-| Protect media (snapshot, video) | 2 | 0 | 2 |
+| Site Manager (all read) | 3 | 0 | 3 |
+| Network (stats, config, devices, clients, wlan, system) | 24 | 35 | 59 |
+| Protect (cameras, devices, events, media, NVR) | 11 | 4 | 15 |
 
 ## Implementation Units
 
@@ -442,9 +438,9 @@ unifi-mcp/
 
 ---
 
-- [x] **Unit 6: Network client and read tools (15 read tools)**
+- [x] **Unit 6: Network client and read tools (24 read tools)**
 
-**Goal:** Implement Network API client and all read-only tools: stats (9), device list/get (2), client list (3), config list/get for each entity (10), settings (1).
+**Goal:** Implement Network API client and all read-only tools: stats (9), devices (1), clients (1), wlan (2), firewall (4), networks (2), port forward (2), routing (2), system (1).
 
 **Requirements:** R1, R4
 
@@ -491,15 +487,15 @@ unifi-mcp/
 - Integration: `network_get_health` returns health status
 
 **Verification:**
-- 25 read tools registered and functional
+- 24 read tools registered and functional
 - Integration tests pass against live UDR Ultra
 - All tools return structured data matching Pydantic models
 
 ---
 
-- [x] **Unit 7: Network write tools (17 write tools)**
+- [x] **Unit 7: Network write tools (35 write tools)**
 
-**Goal:** Implement all Network write tools: CRUD write operations (19) and command tools (15).
+**Goal:** Implement all Network write tools: CRUD write operations (23) and command/action tools (12) across wlan, firewall, networks, port forwards, routing, system, devices, and clients.
 
 **Requirements:** R1, R2
 
@@ -539,16 +535,16 @@ unifi-mcp/
 - Integration (safe only): `network_run_speedtest` returns speed data
 
 **Verification:**
-- 34 write tools registered in readwrite mode
+- 35 write tools registered in readwrite mode
 - 0 write tools visible in readonly mode
 - Mode gating tests pass for both modes
 - Safe integration tests pass
 
 ---
 
-- [x] **Unit 8: Protect client and tools (13 tools)**
+- [x] **Unit 8: Protect client and tools (15 tools)**
 
-**Goal:** Implement Protect API client and all tools: read (9), media (2), write (4).
+**Goal:** Implement Protect API client and all tools: read (11), media (2 within read), write (4).
 
 **Requirements:** R1, R2
 
