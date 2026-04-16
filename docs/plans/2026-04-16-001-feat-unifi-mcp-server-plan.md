@@ -1,7 +1,7 @@
 ---
 title: "feat: Build production-grade UniFi MCP server"
 type: feat
-status: implemented
+status: active
 date: 2026-04-16
 deepened: 2026-04-16
 ---
@@ -11,6 +11,8 @@ deepened: 2026-04-16
 ## Overview
 
 Build a standalone, open-source Python MCP server providing comprehensive coverage of UniFi Site Manager, Network, and Protect APIs. Published to PyPI as `unifi-mcp`. Uses FastMCP framework with declarative read/write mode separation, graceful per-API degradation, and atomic agent-native tool design.
+
+**Status:** Units 1–10 implemented and merged. Unit 11 (MCP client registration and end-to-end live-hardware verification) is deferred pending access to the target UDR Ultra + Protect cameras.
 
 ## Problem Frame
 
@@ -646,7 +648,7 @@ unifi-mcp/
 **Verification:**
 - `ruff check && ruff format --check` passes
 - `mypy src/unifi_mcp/` passes (strict)
-- `pytest tests/unit/ --cov=unifi_mcp` shows >=40% coverage (90%+ deferred until tool test files are added — see open issues)
+- `pytest tests/unit/ --cov=unifi_mcp` shows >=40% coverage (the R6 90%+ target is tracked as follow-up work in the GitHub issue tracker — add per-tool unit tests in fast-follow PRs)
 - CI workflow runs green on push
 
 ---
