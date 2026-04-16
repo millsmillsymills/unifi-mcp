@@ -8,7 +8,7 @@ Production-grade Python MCP server for UniFi Site Manager, Network, and Protect 
 
 ## Features
 
-- **75 MCP tools** covering UniFi Network (59), Protect (15), and Site Manager (3) APIs
+- **77 MCP tools** covering UniFi Network (59), Protect (15), and Site Manager (3) APIs
 - **Read/write mode separation** — write tools invisible in readonly mode
 - **Graceful per-API degradation** — only registers tools for configured APIs
 - **Production-ready** — typed, tested, linted, published to PyPI

@@ -5,7 +5,7 @@ from __future__ import annotations
 import enum
 import logging
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
@@ -28,14 +28,14 @@ class UniFiConfig(BaseSettings):
 
     # Network API
     unifi_network_host: str = "192.168.1.1"
-    unifi_network_port: int = 443
+    unifi_network_port: int = Field(default=443, ge=1, le=65535)
     unifi_network_api: str | None = None
     unifi_network_site: str = "default"
     unifi_network_verify_ssl: bool = False
 
     # Protect API
     unifi_protect_host: str | None = None
-    unifi_protect_port: int = 443
+    unifi_protect_port: int = Field(default=443, ge=1, le=65535)
     unifi_protect_api: str | None = None
     unifi_protect_verify_ssl: bool = False
 
@@ -43,8 +43,8 @@ class UniFiConfig(BaseSettings):
     unifi_site_manager_api: str | None = None
 
     # General
-    unifi_request_timeout: int = 30
-    unifi_max_retries: int = 3
+    unifi_request_timeout: int = Field(default=30, gt=0)
+    unifi_max_retries: int = Field(default=3, ge=0)
 
     @model_validator(mode="after")
     def _default_protect_host(self) -> UniFiConfig:
