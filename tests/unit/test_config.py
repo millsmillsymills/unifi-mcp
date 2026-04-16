@@ -118,6 +118,36 @@ class TestBaseURLs:
         assert config.protect_base_url == "https://10.0.0.2:7443"
 
 
+class TestFieldConstraints:
+    def test_network_port_zero_raises_validation_error(self):
+        with pytest.raises(ValidationError, match="greater than or equal to 1"):
+            UniFiConfig(_env_file=None, unifi_network_port=0)
+
+    def test_network_port_above_max_raises_validation_error(self):
+        with pytest.raises(ValidationError, match="less than or equal to 65535"):
+            UniFiConfig(_env_file=None, unifi_network_port=65536)
+
+    def test_protect_port_zero_raises_validation_error(self):
+        with pytest.raises(ValidationError, match="greater than or equal to 1"):
+            UniFiConfig(_env_file=None, unifi_protect_port=0)
+
+    def test_request_timeout_zero_raises_validation_error(self):
+        with pytest.raises(ValidationError, match="greater than 0"):
+            UniFiConfig(_env_file=None, unifi_request_timeout=0)
+
+    def test_request_timeout_negative_raises_validation_error(self):
+        with pytest.raises(ValidationError, match="greater than 0"):
+            UniFiConfig(_env_file=None, unifi_request_timeout=-5)
+
+    def test_max_retries_negative_raises_validation_error(self):
+        with pytest.raises(ValidationError, match="greater than or equal to 0"):
+            UniFiConfig(_env_file=None, unifi_max_retries=-1)
+
+    def test_max_retries_zero_accepted(self):
+        config = UniFiConfig(_env_file=None, unifi_max_retries=0)
+        assert config.unifi_max_retries == 0
+
+
 class TestHandleClientError:
     def test_auth_error_mapping(self):
         with pytest.raises(Exception, match="Authentication failed"):

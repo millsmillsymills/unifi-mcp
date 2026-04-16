@@ -103,6 +103,26 @@ class TestErrorMapping:
             await client.get("/test")
 
 
+class TestMalformedJson:
+    @respx.mock
+    async def test_200_with_invalid_json_raises_unifi_error_with_none_status_code(self, client):
+        respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(200, content=b"not json", headers={"content-type": "application/json"})
+        )
+        with pytest.raises(UniFiError, match="Invalid JSON") as exc_info:
+            await client.get("/test")
+        assert exc_info.value.status_code is None
+
+    @respx.mock
+    async def test_200_with_empty_body_on_get_raises_unifi_error(self, client):
+        respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(200, content=b"", headers={"content-type": "application/json"})
+        )
+        with pytest.raises(UniFiError, match="Invalid JSON") as exc_info:
+            await client.get("/test")
+        assert exc_info.value.status_code is None
+
+
 class TestRetry:
     @respx.mock
     async def test_retries_on_connect_error_then_succeeds(self, client):

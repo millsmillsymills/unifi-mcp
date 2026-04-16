@@ -95,7 +95,7 @@ class BaseUniFiClient:
             body = response.text[:200]
             raise UniFiError(
                 f"Invalid JSON in response (HTTP {response.status_code}): {body}",
-                status_code=response.status_code,
+                status_code=None,
             ) from exc
 
     async def get(self, path: str, **kwargs: Any) -> Any:
