@@ -1,0 +1,69 @@
+name: Security
+
+on:
+  schedule:
+    # Weekly on Monday at 08:00 UTC
+    - cron: "0 8 * * 1"
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bandit:
+    name: Bandit Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run Bandit
+        run: uv run bandit -r src/unifi_mcp/ -c pyproject.toml -f json -o bandit-report.json || true
+
+      - name: Display results
+        if: always()
+        run: |
+          uv run bandit -r src/unifi_mcp/ -c pyproject.toml
+          echo ""
+          echo "Full JSON report saved as artifact."
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json
+          retention-days: 30
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        # Advisory: reports issues but doesn't block PRs.
+        # The dependency graph may not be populated for new repos,
+        # causing false failures. Remove continue-on-error once
+        # the graph is indexed and this check runs reliably.
+        continue-on-error: true
+        with:
+          fail-on-severity: high
+          allow-licenses: Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, ISC, PSF-2.0, Python-2.0, 0BSD, Unlicense
+          comment-summary-in-pr: on-failure
