@@ -1,0 +1,9 @@
+{
+  "cameras": [{"id": "cam-1", "name": "Front Door", "mac": "aa:bb:cc:dd:ee:10", "model": "UVC-G4-PRO", "type": "UVC G4 Pro", "state": "CONNECTED", "isConnected": true}],
+  "events": [{"id": "evt-1", "type": "motion", "start": 1700000000000, "end": 1700000010000, "camera": "cam-1", "score": 95}],
+  "nvr": {"id": "nvr-1", "name": "UDR Ultra", "mac": "aa:bb:cc:dd:ee:00", "version": "4.0.6", "uptime": 86400, "isConnected": true},
+  "chimes": [],
+  "lights": [],
+  "sensors": [],
+  "viewers": []
+}
