@@ -21,7 +21,7 @@ def client() -> NetworkClient:
 class TestReadMethods:
     @respx.mock
     async def test_list_events_applies_limit(self, client):
-        route = respx.get(f"{API_PREFIX}stat/event").mock(return_value=httpx.Response(200, json={"data": []}))
+        route = respx.get(f"{API_PREFIX}stat/alarm").mock(return_value=httpx.Response(200, json={"data": []}))
         await client.list_events(limit=50)
         assert route.calls[0].request.url.params["_limit"] == "50"
 

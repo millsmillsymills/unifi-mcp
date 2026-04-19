@@ -45,3 +45,11 @@ async def test_get_sysinfo_has_version(network_live_client):
     data = result["data"]
     assert data, "Expected at least one sysinfo entry"
     assert any("version" in entry for entry in data)
+
+
+async def test_list_events_returns_shape(network_live_client):
+    # Regression test for #86: `stat/event` was 404 on current controllers; we
+    # now hit `stat/alarm`. Assert the tool returns the standard UniFi envelope.
+    result = await network_live_client.list_events(limit=1)
+    assert "data" in result
+    assert isinstance(result["data"], list)
