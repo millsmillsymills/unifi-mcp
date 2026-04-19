@@ -6,7 +6,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
-from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
+from unifi_mcp.errors import UniFiNotFoundError, UniFiReadOnlyError, handle_client_error
 from unifi_mcp.server import ServerContext
 
 
@@ -33,7 +33,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             for client in clients:
                 if client.get("mac", "").lower() == mac.lower():
                     return client  # type: ignore[no-any-return]
-            return {"error": f"Client with MAC {mac} not found among active clients"}
+            raise UniFiNotFoundError(f"Client with MAC {mac} not found among active clients")
         except Exception as e:
             handle_client_error(e)
 
