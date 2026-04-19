@@ -1,0 +1,125 @@
+"""Tests for Network device MCP tools (1 read + 5 write)."""
+
+from __future__ import annotations
+
+import httpx
+import pytest
+import respx
+from fastmcp import FastMCP
+
+from unifi_mcp.clients.network import NetworkClient
+from unifi_mcp.config import UniFiConfig, UniFiMode
+from unifi_mcp.server import create_server
+from unifi_mcp.tools.network.devices import register_device_tools
+
+BASE_URL = "https://10.0.0.1:443"
+SITE_PREFIX = f"{BASE_URL}/proxy/network/api/s/default"
+
+WRITE_TOOL_NAMES = {
+    "network_restart_device",
+    "network_adopt_device",
+    "network_locate_device",
+    "network_unlocate_device",
+    "network_provision_device",
+}
+READ_TOOL_NAMES = {"network_get_device"}
+
+
+@pytest.fixture
+def network_client() -> NetworkClient:
+    return NetworkClient(base_url=BASE_URL, api_key="test-key", site="default", timeout=5, max_retries=1)
+
+
+@pytest.fixture
+def mcp_with_devices() -> FastMCP:
+    server = FastMCP(name="test-devices")
+    register_device_tools(server)
+    return server
+
+
+def _full_config(mode: UniFiMode) -> UniFiConfig:
+    return UniFiConfig(
+        _env_file=None,
+        unifi_mode=mode,
+        unifi_network_api="test-net",
+        unifi_protect_api=None,
+        unifi_site_manager_api=None,
+    )
+
+
+class TestDeviceToolRegistration:
+    async def test_all_device_tools_registered(self, mcp_with_devices):
+        tools = await mcp_with_devices.list_tools()
+        names = {t.name for t in tools}
+        assert names == READ_TOOL_NAMES | WRITE_TOOL_NAMES
+
+    async def test_write_tools_carry_write_tag(self, mcp_with_devices):
+        tools = await mcp_with_devices.list_tools()
+        for tool in tools:
+            if tool.name in WRITE_TOOL_NAMES:
+                assert "write" in tool.tags, f"{tool.name} missing 'write' tag"
+            else:
+                assert "write" not in tool.tags, f"{tool.name} should not carry 'write'"
+
+    @pytest.mark.parametrize(
+        ("name", "destructive"),
+        [
+            # Reboot is a service disruption (see #49).
+            ("network_restart_device", True),
+            # Adopt pushes configuration to a new device — destructive-by-intent.
+            ("network_adopt_device", True),
+            # Locate/unlocate/provision are effectively benign.
+            ("network_locate_device", False),
+            ("network_unlocate_device", False),
+            ("network_provision_device", False),
+        ],
+    )
+    async def test_destructive_hints_match_intent(self, mcp_with_devices, name, destructive):
+        tools = await mcp_with_devices.list_tools()
+        tool = next(t for t in tools if t.name == name)
+        assert tool.annotations.destructiveHint is destructive
+
+
+class TestDeviceModeGating:
+    async def test_readonly_hides_all_device_write_tools(self):
+        server = create_server(_full_config(UniFiMode.READONLY))
+        tools = await server.list_tools()
+        names = {t.name for t in tools}
+        for write_tool in WRITE_TOOL_NAMES:
+            assert write_tool not in names
+        # Read tool remains visible.
+        assert "network_get_device" in names
+
+    async def test_readwrite_exposes_all_device_write_tools(self):
+        server = create_server(_full_config(UniFiMode.READWRITE))
+        tools = await server.list_tools()
+        names = {t.name for t in tools}
+        for tool_name in WRITE_TOOL_NAMES | READ_TOOL_NAMES:
+            assert tool_name in names
+
+
+class TestDeviceClientEndpoints:
+    @respx.mock
+    async def test_restart_device_posts_cmd_devmgr(self, network_client):
+        route = respx.post(f"{SITE_PREFIX}/cmd/devmgr").mock(
+            return_value=httpx.Response(200, json={"meta": {"rc": "ok"}})
+        )
+        result = await network_client.restart_device("aa:bb:cc:dd:ee:ff")
+        assert result == {"meta": {"rc": "ok"}}
+        # Body should address the device and the restart command.
+        assert route.call_count == 1
+        sent = route.calls[0].request
+        assert b"restart" in sent.content
+        assert b"aa:bb:cc:dd:ee:ff" in sent.content
+
+    @respx.mock
+    async def test_locate_device_posts_cmd_devmgr_with_set_locate(self, network_client):
+        route = respx.post(f"{SITE_PREFIX}/cmd/devmgr").mock(return_value=httpx.Response(200, json={}))
+        await network_client.locate_device("aa:bb:cc:dd:ee:ff")
+        assert b"set-locate" in route.calls[0].request.content
+
+    @respx.mock
+    async def test_unlocate_device_posts_cmd_devmgr_with_unset_locate(self, network_client):
+        route = respx.post(f"{SITE_PREFIX}/cmd/devmgr").mock(return_value=httpx.Response(200, json={}))
+        await network_client.unlocate_device("aa:bb:cc:dd:ee:ff")
+        assert b"unset-locate" in route.calls[0].request.content
