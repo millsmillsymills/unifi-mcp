@@ -25,6 +25,22 @@ class ServerContext:
     clients: dict[str, Any] = field(default_factory=dict)
 
 
+async def _register_client(context: ServerContext, name: str, client: Any) -> None:
+    """Validate and register a client, closing it if validation fails."""
+    try:
+        valid = await client.validate_connection()
+    except Exception:
+        logger.exception("Failed to connect to %s API — skipping", name)
+        await client.close()
+        return
+    if valid:
+        context.clients[name] = client
+        logger.info("%s API client initialized", name)
+    else:
+        logger.warning("%s API validation returned False — skipping", name)
+        await client.close()
+
+
 @lifespan  # type: ignore[arg-type]
 async def server_lifespan(_server: FastMCP) -> AsyncIterator[ServerContext]:
     """Initialize clients for configured APIs, validate, and yield context."""
@@ -36,50 +52,43 @@ async def server_lifespan(_server: FastMCP) -> AsyncIterator[ServerContext]:
     from unifi_mcp.clients.protect import ProtectClient
     from unifi_mcp.clients.site_manager import SiteManagerClient
 
-    # Initialize clients for configured APIs
     if config.network_enabled:
-        try:
-            net_client = NetworkClient(
+        await _register_client(
+            context,
+            "network",
+            NetworkClient(
                 base_url=config.network_base_url,
                 api_key=config.unifi_network_api,  # type: ignore[arg-type]
                 site=config.unifi_network_site,
                 verify_ssl=config.unifi_network_verify_ssl,
                 timeout=config.unifi_request_timeout,
                 max_retries=config.unifi_max_retries,
-            )
-            await net_client.validate_connection()
-            context.clients["network"] = net_client
-            logger.info("Network API client initialized")
-        except Exception:
-            logger.exception("Failed to connect to Network API — skipping")
+            ),
+        )
 
     if config.protect_enabled:
-        try:
-            prot_client = ProtectClient(
+        await _register_client(
+            context,
+            "protect",
+            ProtectClient(
                 base_url=config.protect_base_url,
                 api_key=config.unifi_protect_api,  # type: ignore[arg-type]
                 verify_ssl=config.unifi_protect_verify_ssl,
                 timeout=config.unifi_request_timeout,
                 max_retries=config.unifi_max_retries,
-            )
-            await prot_client.validate_connection()
-            context.clients["protect"] = prot_client
-            logger.info("Protect API client initialized")
-        except Exception:
-            logger.exception("Failed to connect to Protect API — skipping")
+            ),
+        )
 
     if config.site_manager_enabled:
-        try:
-            sm_client = SiteManagerClient(
+        await _register_client(
+            context,
+            "site_manager",
+            SiteManagerClient(
                 api_key=config.unifi_site_manager_api,  # type: ignore[arg-type]
                 timeout=config.unifi_request_timeout,
                 max_retries=config.unifi_max_retries,
-            )
-            await sm_client.validate_connection()
-            context.clients["site_manager"] = sm_client
-            logger.info("Site Manager API client initialized")
-        except Exception:
-            logger.exception("Failed to connect to Site Manager API — skipping")
+            ),
+        )
 
     if not context.clients:
         logger.warning("No API clients initialized — server will have no tools")
