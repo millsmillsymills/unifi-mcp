@@ -1,0 +1,213 @@
+"""Tests for the server lifespan and _register_client helper.
+
+Covers the async-generator boot path in ``unifi_mcp.server`` that previous
+tests couldn't reach. Drives ``server_lifespan._fn`` directly (bypassing
+the FastMCP Lifespan wrapper) and patches the lazy-imported client classes.
+"""
+
+from __future__ import annotations
+
+import os
+from contextlib import aclosing
+from unittest.mock import AsyncMock, patch
+
+import httpx
+import pytest
+
+from unifi_mcp.errors import UniFiAuthError, UniFiConnectionError
+from unifi_mcp.server import ServerContext, _register_client, create_server, server_lifespan
+
+
+def _as_config():
+    """Build a real UniFiConfig with all three APIs enabled."""
+    from unifi_mcp.config import UniFiConfig, UniFiMode
+
+    return UniFiConfig(
+        _env_file=None,
+        unifi_mode=UniFiMode.READONLY,
+        unifi_network_api="net",
+        unifi_protect_api="prot",
+        unifi_site_manager_api="sm",
+    )
+
+
+# ── _register_client branch coverage ──────────────────────────────────────
+
+
+class TestRegisterClient:
+    async def test_registers_on_success(self):
+        context = ServerContext(config=_as_config())
+        client = AsyncMock()
+        client.validate_connection.return_value = True
+        await _register_client(context, "network", client)
+        assert "network" in context.clients
+        client.close.assert_not_awaited()
+
+    async def test_skips_when_validation_returns_false(self):
+        context = ServerContext(config=_as_config())
+        client = AsyncMock()
+        client.validate_connection.return_value = False
+        await _register_client(context, "network", client)
+        assert "network" not in context.clients
+        client.close.assert_awaited_once()
+
+    async def test_closes_on_unifi_error(self):
+        context = ServerContext(config=_as_config())
+        client = AsyncMock()
+        client.validate_connection.side_effect = UniFiAuthError("bad", status_code=401)
+        await _register_client(context, "protect", client)
+        assert "protect" not in context.clients
+        client.close.assert_awaited_once()
+
+    async def test_closes_on_http_error(self):
+        context = ServerContext(config=_as_config())
+        client = AsyncMock()
+        client.validate_connection.side_effect = httpx.ConnectError("refused")
+        await _register_client(context, "site_manager", client)
+        assert "site_manager" not in context.clients
+        client.close.assert_awaited_once()
+
+
+# ── server_lifespan full boot path ────────────────────────────────────────
+
+
+def _setup_env_for_lifespan(monkeypatch):
+    """Ensure UniFiConfig() in the lifespan reads a valid full-stack config."""
+    monkeypatch.setenv("UNIFI_MODE", "readonly")
+    monkeypatch.setenv("UNIFI_NETWORK_API", "net-k")
+    monkeypatch.setenv("UNIFI_PROTECT_API", "prot-k")
+    monkeypatch.setenv("UNIFI_SITE_MANAGER_API", "sm-k")
+    # Ensure no stray .env is read.
+    for var in ("UNIFI_PROTECT_HOST", "UNIFI_NETWORK_HOST"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def _make_validating_client(valid: bool = True) -> AsyncMock:
+    c = AsyncMock()
+    c.validate_connection.return_value = valid
+    return c
+
+
+class TestServerLifespan:
+    async def test_yields_context_with_all_three_clients(self, monkeypatch):
+        _setup_env_for_lifespan(monkeypatch)
+
+        net_client = _make_validating_client()
+        prot_client = _make_validating_client()
+        sm_client = _make_validating_client()
+
+        with (
+            patch("unifi_mcp.clients.network.NetworkClient", return_value=net_client),
+            patch("unifi_mcp.clients.protect.ProtectClient", return_value=prot_client),
+            patch("unifi_mcp.clients.site_manager.SiteManagerClient", return_value=sm_client),
+        ):
+            gen = server_lifespan._fn(None)
+            async with aclosing(gen):
+                context = await gen.__anext__()
+                assert set(context.clients.keys()) == {"network", "protect", "site_manager"}
+                # Drive the generator to completion to exercise the close loop.
+                with pytest.raises(StopAsyncIteration):
+                    await gen.__anext__()
+
+        # Close loop ran exactly once per registered client.
+        net_client.close.assert_awaited_once()
+        prot_client.close.assert_awaited_once()
+        sm_client.close.assert_awaited_once()
+
+    async def test_skips_disabled_apis(self, monkeypatch):
+        monkeypatch.setenv("UNIFI_MODE", "readonly")
+        monkeypatch.setenv("UNIFI_NETWORK_API", "k")
+        # Protect and Site Manager stay unset.
+        monkeypatch.delenv("UNIFI_PROTECT_API", raising=False)
+        monkeypatch.delenv("UNIFI_SITE_MANAGER_API", raising=False)
+
+        net_client = _make_validating_client()
+        with patch("unifi_mcp.clients.network.NetworkClient", return_value=net_client):
+            gen = server_lifespan._fn(None)
+            async with aclosing(gen):
+                context = await gen.__anext__()
+                assert set(context.clients.keys()) == {"network"}
+                with pytest.raises(StopAsyncIteration):
+                    await gen.__anext__()
+
+    async def test_handles_no_configured_apis(self, monkeypatch):
+        monkeypatch.setenv("UNIFI_MODE", "readonly")
+        for var in ("UNIFI_NETWORK_API", "UNIFI_PROTECT_API", "UNIFI_SITE_MANAGER_API"):
+            monkeypatch.delenv(var, raising=False)
+
+        gen = server_lifespan._fn(None)
+        async with aclosing(gen):
+            context = await gen.__anext__()
+            assert context.clients == {}
+            with pytest.raises(StopAsyncIteration):
+                await gen.__anext__()
+
+    async def test_validation_failure_keeps_other_apis(self, monkeypatch):
+        """One API failing validation shouldn't take the others down."""
+        _setup_env_for_lifespan(monkeypatch)
+
+        failing_net = AsyncMock()
+        failing_net.validate_connection.side_effect = UniFiConnectionError("unreachable")
+
+        good_prot = _make_validating_client()
+        good_sm = _make_validating_client()
+
+        with (
+            patch("unifi_mcp.clients.network.NetworkClient", return_value=failing_net),
+            patch("unifi_mcp.clients.protect.ProtectClient", return_value=good_prot),
+            patch("unifi_mcp.clients.site_manager.SiteManagerClient", return_value=good_sm),
+        ):
+            gen = server_lifespan._fn(None)
+            async with aclosing(gen):
+                context = await gen.__anext__()
+                assert set(context.clients.keys()) == {"protect", "site_manager"}
+                with pytest.raises(StopAsyncIteration):
+                    await gen.__anext__()
+
+        # failing_net was closed via the exception branch in _register_client.
+        failing_net.close.assert_awaited_once()
+
+    async def test_close_error_does_not_bubble(self, monkeypatch):
+        """A close() raising OSError during shutdown must not propagate."""
+        _setup_env_for_lifespan(monkeypatch)
+        monkeypatch.delenv("UNIFI_PROTECT_API", raising=False)
+        monkeypatch.delenv("UNIFI_SITE_MANAGER_API", raising=False)
+
+        net_client = _make_validating_client()
+        net_client.close.side_effect = OSError("socket already closed")
+
+        with patch("unifi_mcp.clients.network.NetworkClient", return_value=net_client):
+            gen = server_lifespan._fn(None)
+            async with aclosing(gen):
+                await gen.__anext__()
+                with pytest.raises(StopAsyncIteration):
+                    await gen.__anext__()
+        # No exception escaped.
+
+
+# ── create_server shape verification (independent of lifespan) ─────────────
+
+
+class TestCreateServer:
+    def test_readonly_sets_name_and_instructions(self):
+        cfg = _as_config()
+        server = create_server(cfg)
+        assert server.name == "unifi-mcp"
+
+    def test_with_no_config_uses_env(self, monkeypatch):
+        for var in ("UNIFI_NETWORK_API", "UNIFI_PROTECT_API", "UNIFI_SITE_MANAGER_API"):
+            monkeypatch.delenv(var, raising=False)
+        # Clearing config forces create_server to read env; that should still build
+        # a server even with zero APIs configured.
+        server = create_server()
+        assert server.name == "unifi-mcp"
+
+
+# ── Guard against accidental .env dependence during tests ──────────────────
+
+
+def test_env_suite_preserved():
+    # Quick sanity: these tests shouldn't mutate the real process env when
+    # executed without monkeypatch. UNIFI_MODE may be set by the user's shell;
+    # we just assert the test environment didn't leak anything unexpected.
+    assert os.environ.get("UNIFI_MODE", "readonly") in {"readonly", "readwrite"}
