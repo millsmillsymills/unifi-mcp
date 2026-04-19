@@ -184,6 +184,64 @@ class TestServerLifespan:
                     await gen.__anext__()
         # No exception escaped.
 
+    async def test_unreachable_api_disables_its_tools(self, monkeypatch):
+        """#87: when validate_connection returns False for Protect, every
+        protect_* tool must be hidden via server.disable(tags={"protect"}),
+        not left registered where they'd KeyError on client lookup.
+        """
+        _setup_env_for_lifespan(monkeypatch)
+
+        net_client = _make_validating_client()
+        failing_prot = _make_validating_client(valid=False)
+        sm_client = _make_validating_client()
+
+        server = create_server()  # registers all tools for all three APIs
+        with (
+            patch("unifi_mcp.clients.network.NetworkClient", return_value=net_client),
+            patch("unifi_mcp.clients.protect.ProtectClient", return_value=failing_prot),
+            patch("unifi_mcp.clients.site_manager.SiteManagerClient", return_value=sm_client),
+        ):
+            gen = server_lifespan._fn(server)
+            async with aclosing(gen):
+                await gen.__anext__()
+                # While yielded, protect tools should be disabled.
+                tool_names = {t.name for t in await server.list_tools()}
+                assert not any(n.startswith("protect_") for n in tool_names), (
+                    f"Expected protect_* tools disabled, still present: "
+                    f"{sorted(n for n in tool_names if n.startswith('protect_'))}"
+                )
+                # Reachable APIs' tools stay registered.
+                assert any(n.startswith("network_") for n in tool_names)
+                assert any(n.startswith("site_manager_") for n in tool_names)
+                with pytest.raises(StopAsyncIteration):
+                    await gen.__anext__()
+
+    async def test_unreachable_api_does_not_disable_others(self, monkeypatch):
+        """Disabling one API's tools must not touch other APIs' tools."""
+        _setup_env_for_lifespan(monkeypatch)
+
+        net_client = _make_validating_client(valid=False)
+        prot_client = _make_validating_client()
+        sm_client = _make_validating_client()
+
+        server = create_server()
+        with (
+            patch("unifi_mcp.clients.network.NetworkClient", return_value=net_client),
+            patch("unifi_mcp.clients.protect.ProtectClient", return_value=prot_client),
+            patch("unifi_mcp.clients.site_manager.SiteManagerClient", return_value=sm_client),
+        ):
+            gen = server_lifespan._fn(server)
+            async with aclosing(gen):
+                await gen.__anext__()
+                tool_names = {t.name for t in await server.list_tools()}
+                # Network disabled:
+                assert not any(n.startswith("network_") for n in tool_names)
+                # Protect and Site Manager still visible:
+                assert any(n.startswith("protect_") for n in tool_names)
+                assert any(n.startswith("site_manager_") for n in tool_names)
+                with pytest.raises(StopAsyncIteration):
+                    await gen.__anext__()
+
 
 # ── create_server shape verification (independent of lifespan) ─────────────
 

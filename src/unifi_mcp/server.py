@@ -57,8 +57,17 @@ async def _register_client(context: ServerContext, name: str, client: Any) -> No
 
 
 @lifespan  # type: ignore[arg-type]
-async def server_lifespan(_server: FastMCP) -> AsyncIterator[ServerContext]:
-    """Initialize clients for configured APIs, validate, and yield context."""
+async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
+    """Initialize clients for configured APIs, validate, and yield context.
+
+    Tools are registered up front in ``create_server`` based on which API keys
+    are configured. This function runs on startup and additionally **disables
+    the tag** of any API whose ``validate_connection()`` fails, so the served
+    tool list reflects what is actually reachable instead of what is merely
+    configured. Without this step, a configured-but-unreachable backend leaves
+    its tools registered and every invocation raises ``KeyError`` inside the
+    handler (see #87).
+    """
     config = UniFiConfig()
     context = ServerContext(config=config)
 
@@ -108,6 +117,23 @@ async def server_lifespan(_server: FastMCP) -> AsyncIterator[ServerContext]:
                 max_retries=config.unifi_max_retries,
             ),
         )
+
+    # For each configured-but-unreachable API, hide its tools so the agent
+    # doesn't see tools that will raise KeyError at call time. Only disable
+    # when the API was configured (had a key) — if it was never configured,
+    # no tools were ever registered.
+    for api_name, enabled in (
+        ("network", config.network_enabled),
+        ("protect", config.protect_enabled),
+        ("site_manager", config.site_manager_enabled),
+    ):
+        if enabled and api_name not in context.clients:
+            if server is not None:
+                server.disable(tags={api_name})
+            logger.warning(
+                "%s tools disabled — validate_connection failed and the backend is unreachable",
+                api_name,
+            )
 
     if not context.clients:
         logger.warning("No API clients initialized — server will have no tools")
