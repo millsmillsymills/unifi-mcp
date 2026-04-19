@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
+    from unifi_mcp.clients.base import BaseUniFiClient
+    from unifi_mcp.clients.network import NetworkClient
+    from unifi_mcp.clients.protect import ProtectClient
+    from unifi_mcp.clients.site_manager import SiteManagerClient
 
 import httpx
 from fastmcp import FastMCP
@@ -19,12 +24,20 @@ from unifi_mcp.errors import UniFiError
 logger = logging.getLogger(__name__)
 
 
+class APIClients(TypedDict, total=False):
+    """Per-API clients keyed by short name. Keys may be absent when the API is disabled or failed validation."""
+
+    network: NetworkClient
+    protect: ProtectClient
+    site_manager: SiteManagerClient
+
+
 @dataclass
 class ServerContext:
     """Lifespan context passed to all tools via ``ctx.lifespan_context``."""
 
     config: UniFiConfig
-    clients: dict[str, Any] = field(default_factory=dict)
+    clients: APIClients = field(default_factory=APIClients)
 
 
 async def _register_client(context: ServerContext, name: str, client: Any) -> None:
@@ -36,7 +49,7 @@ async def _register_client(context: ServerContext, name: str, client: Any) -> No
         await client.close()
         return
     if valid:
-        context.clients[name] = client
+        context.clients[name] = client  # type: ignore[literal-required]
         logger.info("%s API client initialized", name)
     else:
         logger.warning("%s API validation returned False — skipping", name)
@@ -98,7 +111,8 @@ async def server_lifespan(_server: FastMCP) -> AsyncIterator[ServerContext]:
     try:
         yield context
     finally:
-        for name, c in context.clients.items():
+        clients_to_close: list[tuple[str, BaseUniFiClient]] = list(context.clients.items())  # type: ignore[arg-type]
+        for name, c in clients_to_close:
             try:
                 await c.close()
                 logger.info("Closed %s client", name)

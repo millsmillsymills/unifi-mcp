@@ -22,7 +22,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
         """List all cameras managed by UniFi Protect."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["protect"].list_cameras()  # type: ignore[no-any-return]
+            return await context.clients["protect"].list_cameras()
         except Exception as e:
             handle_client_error(e)
 
@@ -35,7 +35,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
         """
         try:
             context = _get_ctx(ctx)
-            return await context.clients["protect"].get_camera(camera_id)  # type: ignore[no-any-return]
+            return await context.clients["protect"].get_camera(camera_id)
         except Exception as e:
             handle_client_error(e)
 
@@ -51,7 +51,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot update camera in read-only mode")
-            return await context.clients["protect"].update_camera(camera_id, data)  # type: ignore[no-any-return]
+            return await context.clients["protect"].update_camera(camera_id, data)
         except Exception as e:
             handle_client_error(e)
 
@@ -75,7 +75,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot set recording mode in read-only mode")
-            return await context.clients["protect"].set_recording_mode(  # type: ignore[no-any-return]
+            return await context.clients["protect"].set_recording_mode(
                 camera_id, mode, pre_padding=pre_padding, post_padding=post_padding
             )
         except Exception as e:
@@ -93,8 +93,6 @@ def register_camera_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot set smart detection in read-only mode")
-            return await context.clients["protect"].set_smart_detection(  # type: ignore[no-any-return]
-                camera_id, object_types
-            )
+            return await context.clients["protect"].set_smart_detection(camera_id, object_types)
         except Exception as e:
             handle_client_error(e)

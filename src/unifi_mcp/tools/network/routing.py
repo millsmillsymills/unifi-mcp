@@ -22,7 +22,7 @@ def register_routing_tools(mcp: FastMCP) -> None:
         """List all static routes."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].list_routes()  # type: ignore[no-any-return]
+            return await context.clients["network"].list_routes()
         except Exception as e:
             handle_client_error(e)
 
@@ -35,7 +35,7 @@ def register_routing_tools(mcp: FastMCP) -> None:
         """
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].get_route(route_id)  # type: ignore[no-any-return]
+            return await context.clients["network"].get_route(route_id)
         except Exception as e:
             handle_client_error(e)
 
@@ -73,7 +73,7 @@ def register_routing_tools(mcp: FastMCP) -> None:
                 data["gateway_ip"] = gateway_ip
             if interface is not None:
                 data["interface"] = interface
-            return await context.clients["network"].create_route(data)  # type: ignore[no-any-return]
+            return await context.clients["network"].create_route(data)
         except Exception as e:
             handle_client_error(e)
 
@@ -89,7 +89,7 @@ def register_routing_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot update route in read-only mode")
-            return await context.clients["network"].update_route(route_id, data)  # type: ignore[no-any-return]
+            return await context.clients["network"].update_route(route_id, data)
         except Exception as e:
             handle_client_error(e)
 
@@ -104,6 +104,6 @@ def register_routing_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot delete route in read-only mode")
-            return await context.clients["network"].delete_route(route_id)  # type: ignore[no-any-return]
+            return await context.clients["network"].delete_route(route_id)
         except Exception as e:
             handle_client_error(e)

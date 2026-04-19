@@ -50,7 +50,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot restart device in read-only mode")
-            return await context.clients["network"].restart_device(mac)  # type: ignore[no-any-return]
+            return await context.clients["network"].restart_device(mac)
         except Exception as e:
             handle_client_error(e)
 
@@ -65,7 +65,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot adopt device in read-only mode")
-            return await context.clients["network"].adopt_device(mac)  # type: ignore[no-any-return]
+            return await context.clients["network"].adopt_device(mac)
         except Exception as e:
             handle_client_error(e)
 
@@ -80,7 +80,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot locate device in read-only mode")
-            return await context.clients["network"].locate_device(mac)  # type: ignore[no-any-return]
+            return await context.clients["network"].locate_device(mac)
         except Exception as e:
             handle_client_error(e)
 
@@ -95,7 +95,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot unlocate device in read-only mode")
-            return await context.clients["network"].unlocate_device(mac)  # type: ignore[no-any-return]
+            return await context.clients["network"].unlocate_device(mac)
         except Exception as e:
             handle_client_error(e)
 
@@ -110,6 +110,6 @@ def register_device_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot provision device in read-only mode")
-            return await context.clients["network"].provision_device(mac)  # type: ignore[no-any-return]
+            return await context.clients["network"].provision_device(mac)
         except Exception as e:
             handle_client_error(e)

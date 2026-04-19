@@ -50,7 +50,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot block client in read-only mode")
-            return await context.clients["network"].block_client(mac)  # type: ignore[no-any-return]
+            return await context.clients["network"].block_client(mac)
         except Exception as e:
             handle_client_error(e)
 
@@ -65,7 +65,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot unblock client in read-only mode")
-            return await context.clients["network"].unblock_client(mac)  # type: ignore[no-any-return]
+            return await context.clients["network"].unblock_client(mac)
         except Exception as e:
             handle_client_error(e)
 
@@ -80,7 +80,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot kick client in read-only mode")
-            return await context.clients["network"].kick_client(mac)  # type: ignore[no-any-return]
+            return await context.clients["network"].kick_client(mac)
         except Exception as e:
             handle_client_error(e)
 
@@ -96,6 +96,6 @@ def register_client_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot authorize guest in read-only mode")
-            return await context.clients["network"].authorize_guest(mac, minutes=minutes)  # type: ignore[no-any-return]
+            return await context.clients["network"].authorize_guest(mac, minutes=minutes)
         except Exception as e:
             handle_client_error(e)

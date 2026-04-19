@@ -22,7 +22,7 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
         """List all port forwarding rules."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].list_port_forwards()  # type: ignore[no-any-return]
+            return await context.clients["network"].list_port_forwards()
         except Exception as e:
             handle_client_error(e)
 
@@ -35,7 +35,7 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
         """
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].get_port_forward(port_forward_id)  # type: ignore[no-any-return]
+            return await context.clients["network"].get_port_forward(port_forward_id)
         except Exception as e:
             handle_client_error(e)
 
@@ -71,7 +71,7 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
                 "proto": proto,
                 "enabled": enabled,
             }
-            return await context.clients["network"].create_port_forward(data)  # type: ignore[no-any-return]
+            return await context.clients["network"].create_port_forward(data)
         except Exception as e:
             handle_client_error(e)
 
@@ -87,7 +87,7 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot update port forward in read-only mode")
-            return await context.clients["network"].update_port_forward(port_forward_id, data)  # type: ignore[no-any-return]
+            return await context.clients["network"].update_port_forward(port_forward_id, data)
         except Exception as e:
             handle_client_error(e)
 
@@ -102,6 +102,6 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot delete port forward in read-only mode")
-            return await context.clients["network"].delete_port_forward(port_forward_id)  # type: ignore[no-any-return]
+            return await context.clients["network"].delete_port_forward(port_forward_id)
         except Exception as e:
             handle_client_error(e)
