@@ -68,12 +68,21 @@ class BaseUniFiClient:
         raise UniFiError(f"HTTP {status}: {body}", status_code=status)
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        """Execute an HTTP request with retry on transient errors."""
+        """Execute an HTTP request with retry on transient errors.
+
+        ConnectError is always retried (the request never reached the server).
+        TimeoutException is only retried for GET/HEAD — for POST/PUT/DELETE/PATCH
+        the server may have processed the write before the response was lost,
+        and a retry would cause double-execution.
+        """
+        retry_on: tuple[type[BaseException], ...] = (httpx.ConnectError,)
+        if method.upper() in ("GET", "HEAD"):
+            retry_on = (httpx.ConnectError, httpx.TimeoutException)
 
         @retry(
             stop=stop_after_attempt(self._max_retries),
             wait=wait_exponential(multiplier=1, min=1, max=10),
-            retry=retry_if_exception_type((httpx.ConnectError, httpx.TimeoutException)),
+            retry=retry_if_exception_type(retry_on),
             reraise=True,
         )
         async def _do() -> httpx.Response:
