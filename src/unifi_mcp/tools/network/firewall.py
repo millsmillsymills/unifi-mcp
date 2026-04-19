@@ -71,33 +71,54 @@ def register_firewall_tools(mcp: FastMCP) -> None:
         protocol: str = "all",
         src_address: str | None = None,
         dst_address: str | None = None,
+        data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create a new firewall rule.
 
+        The UniFi legacy `rest/firewallrule` endpoint requires more fields
+        than this tool's scalar argument list exposes (rule_index, logging,
+        state_new / state_established / state_invalid / state_related,
+        icmp_typename, ipsec, src_firewallgroup_ids, dst_firewallgroup_ids,
+        etc.). Passing only the scalar args above is rejected with HTTP 400
+        `api.err.FirewallRuleFieldsRequired` on current controllers (#90).
+
+        Pass a fully-formed payload via the ``data`` kwarg to reach those
+        fields — same shape as ``network_update_firewall_rule``'s data arg.
+        When ``data`` is supplied it's used as-is and the scalar args are
+        ignored.
+
         Args:
-            name: Rule name.
+            name: Rule name. Ignored if ``data`` is supplied.
             ruleset: Ruleset — "WAN_IN", "WAN_OUT", "LAN_IN", "LAN_OUT", etc.
+                Ignored if ``data`` is supplied.
             action: Action — "accept", "drop", or "reject".
-            enabled: Whether the rule is enabled.
+                Ignored if ``data`` is supplied.
+            enabled: Whether the rule is enabled. Ignored if ``data`` is supplied.
             protocol: Protocol — "all", "tcp", "udp", "tcp_udp", "icmp".
-            src_address: Source IP/CIDR (optional).
-            dst_address: Destination IP/CIDR (optional).
+                Ignored if ``data`` is supplied.
+            src_address: Source IP/CIDR (optional). Ignored if ``data`` is supplied.
+            dst_address: Destination IP/CIDR (optional). Ignored if ``data`` is supplied.
+            data: Full firewall-rule payload. When supplied, it is passed to
+                the controller verbatim and takes precedence over the scalar
+                args above. Use this to populate required fields (e.g.
+                ``rule_index``) that the scalar args don't expose.
         """
         try:
             context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot create firewall rule in read-only mode")
-            data: dict[str, Any] = {
-                "name": name,
-                "ruleset": ruleset,
-                "action": action,
-                "enabled": enabled,
-                "protocol": protocol,
-            }
-            if src_address is not None:
-                data["src_address"] = src_address
-            if dst_address is not None:
-                data["dst_address"] = dst_address
+            if data is None:
+                data = {
+                    "name": name,
+                    "ruleset": ruleset,
+                    "action": action,
+                    "enabled": enabled,
+                    "protocol": protocol,
+                }
+                if src_address is not None:
+                    data["src_address"] = src_address
+                if dst_address is not None:
+                    data["dst_address"] = dst_address
             return await context.clients["network"].create_firewall_rule(data)
         except Exception as e:
             handle_client_error(e)

@@ -106,3 +106,119 @@ class TestFirewallClientEndpoints:
         route = respx.delete(f"{SITE_PREFIX}/rest/firewallgroup/g-1").mock(return_value=httpx.Response(204))
         assert await network_client.delete_firewall_group("g-1") == {}
         assert route.call_count == 1
+
+
+class TestFirewallCreateDataEscapeHatch:
+    """#90: network_create_firewall_rule must accept a full-payload ``data``
+    kwarg for fields the scalar args don't expose.
+    """
+
+    async def test_data_kwarg_takes_precedence_over_scalars(self):
+        """When ``data`` is passed, the tool forwards it verbatim and ignores
+        the scalar args (name/ruleset/action/...).
+        """
+        from dataclasses import dataclass, field
+        from typing import Any
+        from unittest.mock import AsyncMock
+
+        from fastmcp import FastMCP
+
+        from unifi_mcp.config import UniFiConfig, UniFiMode
+        from unifi_mcp.tools.network.firewall import register_firewall_tools
+
+        @dataclass
+        class _FakeLifespan:
+            config: UniFiConfig
+            clients: dict[str, Any] = field(default_factory=dict)
+
+        server = FastMCP(name="fw-test")
+        register_firewall_tools(server)
+
+        client = AsyncMock()
+        client.create_firewall_rule.return_value = {"ok": True}
+
+        config = UniFiConfig(
+            _env_file=None,
+            unifi_mode=UniFiMode.READWRITE,
+            unifi_network_api="k",
+            unifi_protect_api=None,
+            unifi_site_manager_api=None,
+        )
+        ctx = AsyncMock()
+        ctx.lifespan_context = _FakeLifespan(config=config, clients={"network": client})
+
+        tool = await server.get_tool("network_create_firewall_rule")
+        full_payload = {
+            "name": "from-data",
+            "ruleset": "LAN_IN",
+            "rule_index": 2000,
+            "action": "accept",
+            "enabled": True,
+            "protocol": "tcp",
+            "state_new": True,
+            "state_established": False,
+            "state_invalid": False,
+            "state_related": False,
+            "logging": False,
+            "ipsec": "",
+            "src_firewallgroup_ids": [],
+            "dst_firewallgroup_ids": [],
+        }
+        result = await tool.fn(
+            ctx,
+            name="scalar-ignored",
+            ruleset="WAN_IN",
+            data=full_payload,
+        )
+        assert result == {"ok": True}
+        # The scalar "scalar-ignored" must not reach the client; data was used.
+        (forwarded,), _ = client.create_firewall_rule.call_args
+        assert forwarded == full_payload
+
+    async def test_scalar_args_still_work_when_data_is_none(self):
+        """Back-compat: the pre-#90 scalar-only signature still composes a
+        payload when ``data`` is omitted, so existing calls are unchanged.
+        """
+        from dataclasses import dataclass, field
+        from typing import Any
+        from unittest.mock import AsyncMock
+
+        from fastmcp import FastMCP
+
+        from unifi_mcp.config import UniFiConfig, UniFiMode
+        from unifi_mcp.tools.network.firewall import register_firewall_tools
+
+        @dataclass
+        class _FakeLifespan:
+            config: UniFiConfig
+            clients: dict[str, Any] = field(default_factory=dict)
+
+        server = FastMCP(name="fw-test")
+        register_firewall_tools(server)
+
+        client = AsyncMock()
+        client.create_firewall_rule.return_value = {}
+        config = UniFiConfig(
+            _env_file=None,
+            unifi_mode=UniFiMode.READWRITE,
+            unifi_network_api="k",
+            unifi_protect_api=None,
+            unifi_site_manager_api=None,
+        )
+        ctx = AsyncMock()
+        ctx.lifespan_context = _FakeLifespan(config=config, clients={"network": client})
+
+        tool = await server.get_tool("network_create_firewall_rule")
+        await tool.fn(
+            ctx,
+            name="from-scalars",
+            ruleset="WAN_IN",
+            src_address="10.0.0.0/8",
+        )
+        (forwarded,), _ = client.create_firewall_rule.call_args
+        assert forwarded["name"] == "from-scalars"
+        assert forwarded["ruleset"] == "WAN_IN"
+        assert forwarded["src_address"] == "10.0.0.0/8"
+        assert forwarded["action"] == "drop"  # default
+        assert forwarded["enabled"] is True  # default
+        assert "dst_address" not in forwarded  # unset → absent
