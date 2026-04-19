@@ -16,9 +16,16 @@ from unifi_mcp.errors import (
 BASE_URL = "https://10.0.0.1:443"
 
 
+class _ConcreteClient(BaseUniFiClient):
+    """Minimal concrete subclass so the abstract base can be instantiated in tests."""
+
+    async def validate_connection(self) -> bool:
+        return True
+
+
 @pytest.fixture
 def client():
-    return BaseUniFiClient(
+    return _ConcreteClient(
         base_url=BASE_URL,
         api_key="test-api-key",
         verify_ssl=False,
@@ -152,7 +159,7 @@ class TestRetry:
 class TestPathPrefix:
     @respx.mock
     async def test_path_prefix_applied(self):
-        client = BaseUniFiClient(
+        client = _ConcreteClient(
             base_url=BASE_URL,
             api_key="key",
         )

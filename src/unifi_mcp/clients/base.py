@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from typing import Any
 
 import httpx
@@ -21,7 +22,7 @@ from unifi_mcp.errors import (
 )
 
 
-class BaseUniFiClient:
+class BaseUniFiClient(ABC):
     """Base client for UniFi APIs with retry, auth, and error mapping.
 
     Subclasses must set ``_path_prefix`` and implement ``validate_connection()``.
@@ -132,12 +133,12 @@ class BaseUniFiClient:
 
     # ── Lifecycle ───────────────────────────────────────────────────────
 
+    @abstractmethod
     async def validate_connection(self) -> bool:
         """Validate that the API is reachable and authenticated.
 
-        Subclasses should override with a lightweight health-check request.
+        Subclasses must override with a lightweight health-check request.
         """
-        raise NotImplementedError
 
     async def close(self) -> None:
         """Close the underlying HTTP client."""
