@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import httpx
+
 from unifi_mcp.clients.base import BaseUniFiClient
+from unifi_mcp.errors import UniFiError
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +61,7 @@ class SiteManagerClient(BaseUniFiClient):
         """Validate connectivity by attempting to list hosts."""
         try:
             await self.list_hosts()
-        except Exception:
+        except (UniFiError, httpx.HTTPError):
             logger.debug("Site Manager connection validation failed", exc_info=True)
             return False
         else:
