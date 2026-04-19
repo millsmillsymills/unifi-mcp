@@ -50,11 +50,6 @@ src/unifi_mcp/
 │   ├── network.py       # Network API client
 │   ├── protect.py       # Protect API client
 │   └── site_manager.py  # Site Manager API client
-├── models/              # Pydantic response models (extra="allow")
-│   ├── common.py        # Shared types
-│   ├── network.py       # Network models
-│   ├── protect.py       # Protect models
-│   └── site_manager.py  # Site Manager models
 └── tools/               # MCP tool definitions
     ├── network/         # 24 read + 35 write tools (59 total)
     ├── protect/         # 11 read + 4 write tools (15 total, includes 2 media read tools)
@@ -68,8 +63,7 @@ src/unifi_mcp/
 - **Tool naming**: `{api}_{verb}_{entity}` (e.g., `network_list_devices`, `protect_get_snapshot`)
 - **Write tools**: Tagged with `{"write"}`, annotated with `readOnlyHint=False`. Disabled in readonly mode via `mcp.disable(tags={"write"})`
 - **Defense-in-depth**: Write tools also check `config.is_readwrite` at runtime
-- **Models**: Use `extra="allow"` to tolerate unknown fields from UniFi APIs
-- **Clients**: Use `httpx.AsyncClient` with `tenacity` retry (3 attempts, exponential backoff)
+- **Clients**: Use `httpx.AsyncClient` with `tenacity` retry (3 attempts, exponential backoff). API responses flow through as `dict[str, Any]` — there is no Pydantic validation layer between clients and tools.
 - **Error mapping**: API errors -> typed exceptions -> `ToolError` with agent-readable messages
 - **Tests**: Use `respx` for HTTP mocking, `pytest-asyncio` for async tests
 - **No print statements**: Use `logging` module (enforced by ruff T20 rule)
