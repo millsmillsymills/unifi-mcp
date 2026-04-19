@@ -260,8 +260,14 @@ class NetworkClient(BaseUniFiClient):
         return result
 
     async def create_backup(self) -> dict[str, Any]:
-        """Create a controller backup."""
-        result: dict[str, Any] = await self.post("cmd/backup", json={"cmd": "backup"})
+        """Create a controller backup.
+
+        UniFi's ``cmd/backup`` endpoint can take several minutes on controllers
+        with non-trivial configuration (see #89). Bumps the per-request timeout
+        to 5 minutes so the call doesn't surface a spurious ``UniFiTimeoutError``
+        before the backup actually completes.
+        """
+        result: dict[str, Any] = await self.post("cmd/backup", json={"cmd": "backup"}, timeout=300.0)
         return result
 
     async def restart_device(self, mac: str) -> dict[str, Any]:

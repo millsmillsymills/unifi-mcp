@@ -187,6 +187,22 @@ class TestCommandMethods:
         await getattr(client, method_name)()
         assert expected_cmd in route.calls[0].request.content
 
+    @respx.mock
+    async def test_create_backup_uses_long_timeout(self, client):
+        """Regression for #89: cmd/backup must carry a per-request timeout
+        bump so the 30s default doesn't kill long-running backups.
+        """
+        route = respx.post(f"{API_PREFIX}cmd/backup").mock(return_value=httpx.Response(200, json={}))
+        await client.create_backup()
+        request = route.calls[0].request
+        # httpx records timeouts via ext rather than public attrs, so assert on
+        # httpx's internal read timeout on the Request extensions.
+        timeout = request.extensions.get("timeout")
+        assert timeout is not None
+        # Every channel (connect/read/write/pool) should be at least 300s.
+        for key, value in timeout.items():
+            assert value is None or value >= 300.0, f"{key} timeout too short: {value}"
+
     @pytest.mark.parametrize(
         ("method_name", "endpoint", "expected_cmd"),
         [
