@@ -158,7 +158,11 @@ class BaseUniFiClient(ABC):
         # Streamed path: enforce size cap without loading the whole body at once.
         url = self._url(path)
         async with self._client.stream("GET", url, **kwargs) as response:
-            self._raise_for_status(response)
+            if not response.is_success:
+                # _raise_for_status reads response.text, which on a streaming
+                # response requires the body to be loaded first.
+                await response.aread()
+                self._raise_for_status(response)
             chunks: list[bytes] = []
             total = 0
             async for chunk in response.aiter_bytes():

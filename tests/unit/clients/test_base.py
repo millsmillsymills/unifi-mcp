@@ -7,10 +7,13 @@ import respx
 from unifi_mcp.clients.base import BaseUniFiClient
 from unifi_mcp.errors import (
     UniFiAuthError,
+    UniFiBadRequestError,
     UniFiConnectionError,
     UniFiError,
     UniFiNotFoundError,
     UniFiRateLimitError,
+    UniFiServerError,
+    UniFiTimeoutError,
 )
 
 BASE_URL = "https://10.0.0.1:443"
@@ -69,6 +72,18 @@ class TestPutRequest:
         result = await client.put("/test/123", json={"name": "updated"})
         assert result == {"data": [{"_id": "123"}]}
 
+    @respx.mock
+    async def test_put_204_returns_empty_dict(self, client):
+        respx.put(f"{BASE_URL}/test/123").mock(return_value=httpx.Response(204))
+        result = await client.put("/test/123", json={"name": "updated"})
+        assert result == {}
+
+    @respx.mock
+    async def test_put_empty_body_returns_empty_dict(self, client):
+        respx.put(f"{BASE_URL}/test/123").mock(return_value=httpx.Response(200, content=b""))
+        result = await client.put("/test/123", json={})
+        assert result == {}
+
 
 class TestDeleteRequest:
     @respx.mock
@@ -76,6 +91,12 @@ class TestDeleteRequest:
         respx.delete(f"{BASE_URL}/test/123").mock(return_value=httpx.Response(204))
         result = await client.delete("/test/123")
         assert result == {}
+
+    @respx.mock
+    async def test_delete_returns_json_body_when_present(self, client):
+        respx.delete(f"{BASE_URL}/test/123").mock(return_value=httpx.Response(200, json={"meta": {"rc": "ok"}}))
+        result = await client.delete("/test/123")
+        assert result == {"meta": {"rc": "ok"}}
 
 
 class TestErrorMapping:
@@ -104,9 +125,28 @@ class TestErrorMapping:
             await client.get("/test")
 
     @respx.mock
-    async def test_500_raises_generic_error(self, client):
+    async def test_400_raises_bad_request(self, client):
+        respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(400, text="Bad Request"))
+        with pytest.raises(UniFiBadRequestError, match="400"):
+            await client.get("/test")
+
+    @respx.mock
+    async def test_500_raises_server_error(self, client):
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(500, text="Internal Server Error"))
-        with pytest.raises(UniFiError, match="500"):
+        with pytest.raises(UniFiServerError, match="500"):
+            await client.get("/test")
+        # Still a UniFiError subclass, so existing catchers keep working.
+
+    @respx.mock
+    async def test_502_raises_server_error(self, client):
+        respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(502, text="Bad Gateway"))
+        with pytest.raises(UniFiServerError, match="502"):
+            await client.get("/test")
+
+    @respx.mock
+    async def test_418_raises_generic_unifi_error(self, client):
+        respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(418, text="I'm a teapot"))
+        with pytest.raises(UniFiError, match="418"):
             await client.get("/test")
 
 
@@ -155,6 +195,53 @@ class TestRetry:
             await client.get("/test")
         assert route.call_count == 1
 
+    @respx.mock
+    async def test_timeout_on_get_is_retried(self, client):
+        # GET is idempotent, so TimeoutException retries up to max_retries.
+        route = respx.get(f"{BASE_URL}/test")
+        route.side_effect = [
+            httpx.ReadTimeout("slow"),
+            httpx.Response(200, json={"ok": True}),
+        ]
+        result = await client.get("/test")
+        assert result == {"ok": True}
+        assert route.call_count == 2
+
+    @respx.mock
+    async def test_timeout_on_post_is_not_retried(self, client):
+        # POST is non-idempotent; a timeout must not be retried — the server
+        # may have processed the write before the response was lost.
+        route = respx.post(f"{BASE_URL}/test").mock(side_effect=httpx.ReadTimeout("slow"))
+        with pytest.raises(UniFiTimeoutError):
+            await client.post("/test", json={"x": 1})
+        assert route.call_count == 1
+
+    @respx.mock
+    async def test_timeout_on_put_is_not_retried(self, client):
+        route = respx.put(f"{BASE_URL}/test/1").mock(side_effect=httpx.ReadTimeout("slow"))
+        with pytest.raises(UniFiTimeoutError):
+            await client.put("/test/1", json={"x": 1})
+        assert route.call_count == 1
+
+    @respx.mock
+    async def test_timeout_on_delete_is_not_retried(self, client):
+        route = respx.delete(f"{BASE_URL}/test/1").mock(side_effect=httpx.ReadTimeout("slow"))
+        with pytest.raises(UniFiTimeoutError):
+            await client.delete("/test/1")
+        assert route.call_count == 1
+
+    @respx.mock
+    async def test_connect_error_on_post_is_retried(self, client):
+        # ConnectError is safe on every method — the request never reached the server.
+        route = respx.post(f"{BASE_URL}/test")
+        route.side_effect = [
+            httpx.ConnectError("refused"),
+            httpx.Response(200, json={"ok": True}),
+        ]
+        result = await client.post("/test", json={"x": 1})
+        assert result == {"ok": True}
+        assert route.call_count == 2
+
 
 class TestPathPrefix:
     @respx.mock
@@ -177,6 +264,26 @@ class TestGetRaw:
         respx.get(f"{BASE_URL}/snap").mock(return_value=httpx.Response(200, content=b"\xff\xd8\xff\xe0"))
         result = await client.get_raw("/snap")
         assert result == b"\xff\xd8\xff\xe0"
+
+    @respx.mock
+    async def test_get_raw_with_max_bytes_under_cap_returns_full_body(self, client):
+        payload = b"x" * 1024
+        respx.get(f"{BASE_URL}/clip").mock(return_value=httpx.Response(200, content=payload))
+        result = await client.get_raw("/clip", max_bytes=2048)
+        assert result == payload
+
+    @respx.mock
+    async def test_get_raw_with_max_bytes_exceeded_raises(self, client):
+        payload = b"x" * 2048
+        respx.get(f"{BASE_URL}/clip").mock(return_value=httpx.Response(200, content=payload))
+        with pytest.raises(UniFiError, match="max_bytes=1024"):
+            await client.get_raw("/clip", max_bytes=1024)
+
+    @respx.mock
+    async def test_get_raw_streamed_raises_on_http_error(self, client):
+        respx.get(f"{BASE_URL}/clip").mock(return_value=httpx.Response(404, text="Not Found"))
+        with pytest.raises(UniFiNotFoundError):
+            await client.get_raw("/clip", max_bytes=1024)
 
 
 class TestClose:
