@@ -194,8 +194,8 @@ class ProtectClient(BaseUniFiClient):
             Raw video bytes.
         """
         return await self.get_raw(
-            "video/export",
-            params={"camera": camera_id, "start": start, "end": end},
+            f"cameras/{camera_id}/video/export",
+            params={"start": start, "end": end},
         )
 
     # -- Lifecycle ----------------------------------------------------------
