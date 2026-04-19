@@ -25,10 +25,10 @@ def register_client_tools(mcp: FastMCP) -> None:
         try:
             context = get_server_context(ctx)
             result = await context.clients["network"].list_active_clients()
-            clients = result.get("data", [])
+            clients: list[dict[str, Any]] = result.get("data", [])
             for client in clients:
                 if client.get("mac", "").lower() == mac.lower():
-                    return client  # type: ignore[no-any-return]
+                    return client
             raise UniFiNotFoundError(f"Client with MAC {mac} not found among active clients")
         except Exception as e:
             handle_client_error(e)

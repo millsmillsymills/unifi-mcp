@@ -68,12 +68,14 @@ async def server_lifespan(_server: FastMCP) -> AsyncIterator[ServerContext]:
     from unifi_mcp.clients.site_manager import SiteManagerClient
 
     if config.network_enabled:
+        # network_enabled guarantees unifi_network_api is not None.
+        assert config.unifi_network_api is not None
         await _register_client(
             context,
             "network",
             NetworkClient(
                 base_url=config.network_base_url,
-                api_key=config.unifi_network_api.get_secret_value(),  # type: ignore[union-attr]
+                api_key=config.unifi_network_api.get_secret_value(),
                 site=config.unifi_network_site,
                 verify_ssl=config.unifi_network_verify_ssl,
                 timeout=config.unifi_request_timeout,
@@ -82,12 +84,13 @@ async def server_lifespan(_server: FastMCP) -> AsyncIterator[ServerContext]:
         )
 
     if config.protect_enabled:
+        assert config.unifi_protect_api is not None
         await _register_client(
             context,
             "protect",
             ProtectClient(
                 base_url=config.protect_base_url,
-                api_key=config.unifi_protect_api.get_secret_value(),  # type: ignore[union-attr]
+                api_key=config.unifi_protect_api.get_secret_value(),
                 verify_ssl=config.unifi_protect_verify_ssl,
                 timeout=config.unifi_request_timeout,
                 max_retries=config.unifi_max_retries,
@@ -95,11 +98,12 @@ async def server_lifespan(_server: FastMCP) -> AsyncIterator[ServerContext]:
         )
 
     if config.site_manager_enabled:
+        assert config.unifi_site_manager_api is not None
         await _register_client(
             context,
             "site_manager",
             SiteManagerClient(
-                api_key=config.unifi_site_manager_api.get_secret_value(),  # type: ignore[union-attr]
+                api_key=config.unifi_site_manager_api.get_secret_value(),
                 timeout=config.unifi_request_timeout,
                 max_retries=config.unifi_max_retries,
             ),
