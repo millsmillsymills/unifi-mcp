@@ -30,6 +30,8 @@ ENV/
 .coverage
 .coverage.*
 htmlcov/
+coverage.xml
+tests/integration/artifacts/
 .tox/
 .nox/
 
