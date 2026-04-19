@@ -39,7 +39,7 @@ def register_device_tools(mcp: FastMCP) -> None:
 
     # ── Write tools ─────────────────────────────────────────────────────
 
-    @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
+    @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
     async def network_restart_device(ctx: Context, mac: str) -> dict[str, Any]:
         """Restart an adopted network device.
 

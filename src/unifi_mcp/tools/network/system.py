@@ -63,7 +63,7 @@ def register_system_tools(mcp: FastMCP) -> None:
         except Exception as e:
             handle_client_error(e)
 
-    @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
+    @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
     async def network_upgrade_device(ctx: Context, mac: str) -> dict[str, Any]:
         """Upgrade a device to the latest firmware.
 
@@ -78,7 +78,7 @@ def register_system_tools(mcp: FastMCP) -> None:
         except Exception as e:
             handle_client_error(e)
 
-    @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
+    @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
     async def network_power_cycle_port(ctx: Context, mac: str, port_idx: int) -> dict[str, Any]:
         """Power cycle a PoE port on a switch.
 
