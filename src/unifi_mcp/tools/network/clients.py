@@ -7,11 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiNotFoundError, UniFiReadOnlyError, handle_client_error
-from unifi_mcp.server import ServerContext
-
-
-def _get_ctx(ctx: Context) -> ServerContext:
-    return ctx.lifespan_context  # type: ignore[return-value]
+from unifi_mcp.tools._common import get_server_context
 
 
 def register_client_tools(mcp: FastMCP) -> None:
@@ -27,7 +23,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             mac: MAC address of the client.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             result = await context.clients["network"].list_active_clients()
             clients = result.get("data", [])
             for client in clients:
@@ -47,7 +43,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             mac: MAC address of the client to block.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot block client in read-only mode")
             return await context.clients["network"].block_client(mac)
@@ -62,7 +58,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             mac: MAC address of the client to unblock.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot unblock client in read-only mode")
             return await context.clients["network"].unblock_client(mac)
@@ -77,7 +73,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             mac: MAC address of the client to disconnect.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot kick client in read-only mode")
             return await context.clients["network"].kick_client(mac)
@@ -93,7 +89,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             minutes: Duration of authorization in minutes (default: 60).
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot authorize guest in read-only mode")
             return await context.clients["network"].authorize_guest(mac, minutes=minutes)

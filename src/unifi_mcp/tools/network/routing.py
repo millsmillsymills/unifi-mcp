@@ -7,11 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.server import ServerContext
-
-
-def _get_ctx(ctx: Context) -> ServerContext:
-    return ctx.lifespan_context  # type: ignore[return-value]
+from unifi_mcp.tools._common import get_server_context
 
 
 def register_routing_tools(mcp: FastMCP) -> None:
@@ -21,7 +17,7 @@ def register_routing_tools(mcp: FastMCP) -> None:
     async def network_list_routes(ctx: Context) -> dict[str, Any]:
         """List all static routes."""
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["network"].list_routes()
         except Exception as e:
             handle_client_error(e)
@@ -34,7 +30,7 @@ def register_routing_tools(mcp: FastMCP) -> None:
             route_id: The route ID.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["network"].get_route(route_id)
         except Exception as e:
             handle_client_error(e)
@@ -60,7 +56,7 @@ def register_routing_tools(mcp: FastMCP) -> None:
             enabled: Whether the route is enabled.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot create route in read-only mode")
             data: dict[str, Any] = {
@@ -86,7 +82,7 @@ def register_routing_tools(mcp: FastMCP) -> None:
             data: Fields to update (e.g., {"enabled": false, "gateway_ip": "10.0.0.1"}).
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot update route in read-only mode")
             return await context.clients["network"].update_route(route_id, data)
@@ -101,7 +97,7 @@ def register_routing_tools(mcp: FastMCP) -> None:
             route_id: The route ID to delete.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot delete route in read-only mode")
             return await context.clients["network"].delete_route(route_id)

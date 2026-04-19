@@ -7,11 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import handle_client_error
-from unifi_mcp.server import ServerContext
-
-
-def _get_ctx(ctx: Context) -> ServerContext:
-    return ctx.lifespan_context  # type: ignore[return-value]
+from unifi_mcp.tools._common import get_server_context
 
 
 def register_event_tools(mcp: FastMCP) -> None:
@@ -40,7 +36,7 @@ def register_event_tools(mcp: FastMCP) -> None:
             offset: Offset for pagination (default: 0).
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["protect"].list_events(
                 start=start,
                 end=end,

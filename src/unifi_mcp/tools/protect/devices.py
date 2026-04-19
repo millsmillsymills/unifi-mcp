@@ -7,11 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import handle_client_error
-from unifi_mcp.server import ServerContext
-
-
-def _get_ctx(ctx: Context) -> ServerContext:
-    return ctx.lifespan_context  # type: ignore[return-value]
+from unifi_mcp.tools._common import get_server_context
 
 
 def register_protect_device_tools(mcp: FastMCP) -> None:
@@ -21,7 +17,7 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
     async def protect_list_chimes(ctx: Context) -> list[dict[str, Any]]:
         """List all Protect chime devices."""
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["protect"].list_chimes()
         except Exception as e:
             handle_client_error(e)
@@ -30,7 +26,7 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
     async def protect_list_lights(ctx: Context) -> list[dict[str, Any]]:
         """List all Protect smart light devices."""
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["protect"].list_lights()
         except Exception as e:
             handle_client_error(e)
@@ -39,7 +35,7 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
     async def protect_list_sensors(ctx: Context) -> list[dict[str, Any]]:
         """List all Protect sensor devices."""
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["protect"].list_sensors()
         except Exception as e:
             handle_client_error(e)
@@ -48,7 +44,7 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
     async def protect_list_viewers(ctx: Context) -> list[dict[str, Any]]:
         """List all Protect viewport devices."""
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["protect"].list_viewers()
         except Exception as e:
             handle_client_error(e)

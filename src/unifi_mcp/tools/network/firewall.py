@@ -7,11 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.server import ServerContext
-
-
-def _get_ctx(ctx: Context) -> ServerContext:
-    return ctx.lifespan_context  # type: ignore[return-value]
+from unifi_mcp.tools._common import get_server_context
 
 
 def register_firewall_tools(mcp: FastMCP) -> None:
@@ -23,7 +19,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
     async def network_list_firewall_rules(ctx: Context) -> dict[str, Any]:
         """List all firewall rules."""
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["network"].list_firewall_rules()
         except Exception as e:
             handle_client_error(e)
@@ -36,7 +32,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             rule_id: The firewall rule ID.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["network"].get_firewall_rule(rule_id)
         except Exception as e:
             handle_client_error(e)
@@ -45,7 +41,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
     async def network_list_firewall_groups(ctx: Context) -> dict[str, Any]:
         """List all firewall groups (address groups, port groups)."""
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["network"].list_firewall_groups()
         except Exception as e:
             handle_client_error(e)
@@ -58,7 +54,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             group_id: The firewall group ID.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["network"].get_firewall_group(group_id)
         except Exception as e:
             handle_client_error(e)
@@ -88,7 +84,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             dst_address: Destination IP/CIDR (optional).
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot create firewall rule in read-only mode")
             data: dict[str, Any] = {
@@ -115,7 +111,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             data: Fields to update (e.g., {"enabled": false, "action": "accept"}).
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot update firewall rule in read-only mode")
             return await context.clients["network"].update_firewall_rule(rule_id, data)
@@ -130,7 +126,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             rule_id: The firewall rule ID to delete.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot delete firewall rule in read-only mode")
             return await context.clients["network"].delete_firewall_rule(rule_id)
@@ -152,7 +148,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             group_members: List of members (IPs/CIDRs for address groups, ports for port groups).
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot create firewall group in read-only mode")
             data: dict[str, Any] = {
@@ -173,7 +169,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             data: Fields to update (e.g., {"group_members": ["10.0.0.0/24"]}).
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot update firewall group in read-only mode")
             return await context.clients["network"].update_firewall_group(group_id, data)
@@ -188,7 +184,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             group_id: The firewall group ID to delete.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot delete firewall group in read-only mode")
             return await context.clients["network"].delete_firewall_group(group_id)
