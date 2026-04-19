@@ -32,7 +32,7 @@ jobs:
         run: uv sync --extra dev
 
       - name: Run Bandit
-        run: uv run bandit -r src/unifi_mcp/ -c pyproject.toml -f json -o bandit-report.json || true
+        run: uv run bandit -r src/unifi_mcp/ -c pyproject.toml -f json -o bandit-report.json
 
       - name: Display results
         if: always()
