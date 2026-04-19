@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import httpx
+
 from unifi_mcp.clients.base import BaseUniFiClient
+from unifi_mcp.errors import UniFiError
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +207,7 @@ class ProtectClient(BaseUniFiClient):
         """Validate connectivity by fetching NVR info."""
         try:
             await self.get_nvr()
-        except Exception:
+        except (UniFiError, httpx.HTTPError):
             logger.debug("Protect API connection validation failed", exc_info=True)
             return False
         else:

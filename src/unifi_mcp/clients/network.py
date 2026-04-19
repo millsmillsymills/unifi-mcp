@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import httpx
+
 from unifi_mcp.clients.base import BaseUniFiClient
+from unifi_mcp.errors import UniFiError
 
 logger = logging.getLogger(__name__)
 
@@ -337,7 +340,7 @@ class NetworkClient(BaseUniFiClient):
         """Validate connectivity by fetching system info."""
         try:
             await self.get_sysinfo()
-        except Exception:
+        except (UniFiError, httpx.HTTPError):
             logger.debug("Network API connection validation failed", exc_info=True)
             return False
         else:

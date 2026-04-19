@@ -9,10 +9,12 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+import httpx
 from fastmcp import FastMCP
 from fastmcp.server.lifespan import lifespan
 
 from unifi_mcp.config import UniFiConfig
+from unifi_mcp.errors import UniFiError
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +31,7 @@ async def _register_client(context: ServerContext, name: str, client: Any) -> No
     """Validate and register a client, closing it if validation fails."""
     try:
         valid = await client.validate_connection()
-    except Exception:
+    except (UniFiError, httpx.HTTPError):
         logger.exception("Failed to connect to %s API — skipping", name)
         await client.close()
         return
@@ -100,7 +102,7 @@ async def server_lifespan(_server: FastMCP) -> AsyncIterator[ServerContext]:
             try:
                 await c.close()
                 logger.info("Closed %s client", name)
-            except Exception:
+            except (OSError, httpx.HTTPError):
                 logger.exception("Error closing %s client", name)
 
 
