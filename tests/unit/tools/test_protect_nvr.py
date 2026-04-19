@@ -1,0 +1,74 @@
+"""Tests for Protect NVR MCP tools (2 read + 1 write)."""
+
+from __future__ import annotations
+
+import httpx
+import pytest
+import respx
+from fastmcp import FastMCP
+
+from unifi_mcp.clients.protect import ProtectClient
+from unifi_mcp.config import UniFiConfig, UniFiMode
+from unifi_mcp.server import create_server
+from unifi_mcp.tools.protect.nvr import register_nvr_tools
+
+BASE_URL = "https://10.0.0.1:443"
+PROTECT_PREFIX = f"{BASE_URL}/proxy/protect/api"
+
+READ_TOOL_NAMES = {"protect_get_bootstrap", "protect_get_nvr"}
+WRITE_TOOL_NAMES = {"protect_update_nvr"}
+
+
+@pytest.fixture
+def protect_client_local() -> ProtectClient:
+    return ProtectClient(base_url=BASE_URL, api_key="test-key", timeout=5, max_retries=1)
+
+
+@pytest.fixture
+def mcp_with_nvr() -> FastMCP:
+    server = FastMCP(name="test-nvr")
+    register_nvr_tools(server)
+    return server
+
+
+def _full_config(mode: UniFiMode) -> UniFiConfig:
+    return UniFiConfig(
+        _env_file=None,
+        unifi_mode=mode,
+        unifi_network_api="test-net",
+        unifi_protect_api="test-prot",
+        unifi_site_manager_api=None,
+    )
+
+
+class TestNvrRegistration:
+    async def test_all_tools_registered(self, mcp_with_nvr):
+        tools = await mcp_with_nvr.list_tools()
+        assert {t.name for t in tools} == READ_TOOL_NAMES | WRITE_TOOL_NAMES
+
+
+class TestNvrModeGating:
+    async def test_readonly_hides_update_nvr(self):
+        server = create_server(_full_config(UniFiMode.READONLY))
+        names = {t.name for t in await server.list_tools()}
+        assert "protect_update_nvr" not in names
+        assert "protect_get_nvr" in names
+        assert "protect_get_bootstrap" in names
+
+
+class TestNvrClientEndpoints:
+    @respx.mock
+    async def test_get_bootstrap(self, protect_client_local):
+        respx.get(f"{PROTECT_PREFIX}/bootstrap").mock(return_value=httpx.Response(200, json={"nvr": {}}))
+        assert await protect_client_local.get_bootstrap() == {"nvr": {}}
+
+    @respx.mock
+    async def test_get_nvr(self, protect_client_local):
+        respx.get(f"{PROTECT_PREFIX}/nvr").mock(return_value=httpx.Response(200, json={"name": "nvr-1"}))
+        assert await protect_client_local.get_nvr() == {"name": "nvr-1"}
+
+    @respx.mock
+    async def test_update_nvr_puts_body(self, protect_client_local):
+        route = respx.put(f"{PROTECT_PREFIX}/nvr").mock(return_value=httpx.Response(200, json={}))
+        await protect_client_local.update_nvr({"name": "renamed"})
+        assert b"renamed" in route.calls[0].request.content
