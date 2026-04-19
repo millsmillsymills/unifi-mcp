@@ -22,7 +22,7 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
         """List all Protect chime devices."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["protect"].list_chimes()  # type: ignore[no-any-return]
+            return await context.clients["protect"].list_chimes()
         except Exception as e:
             handle_client_error(e)
 
@@ -31,7 +31,7 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
         """List all Protect smart light devices."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["protect"].list_lights()  # type: ignore[no-any-return]
+            return await context.clients["protect"].list_lights()
         except Exception as e:
             handle_client_error(e)
 
@@ -40,7 +40,7 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
         """List all Protect sensor devices."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["protect"].list_sensors()  # type: ignore[no-any-return]
+            return await context.clients["protect"].list_sensors()
         except Exception as e:
             handle_client_error(e)
 
@@ -49,6 +49,6 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
         """List all Protect viewport devices."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["protect"].list_viewers()  # type: ignore[no-any-return]
+            return await context.clients["protect"].list_viewers()
         except Exception as e:
             handle_client_error(e)

@@ -22,7 +22,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
         """List all network (VLAN/subnet) configurations."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].list_networks()  # type: ignore[no-any-return]
+            return await context.clients["network"].list_networks()
         except Exception as e:
             handle_client_error(e)
 
@@ -35,7 +35,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
         """
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].get_network(network_id)  # type: ignore[no-any-return]
+            return await context.clients["network"].get_network(network_id)
         except Exception as e:
             handle_client_error(e)
 
@@ -66,7 +66,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
                 data["subnet"] = subnet
             if vlan is not None:
                 data["vlan"] = vlan
-            return await context.clients["network"].create_network(data)  # type: ignore[no-any-return]
+            return await context.clients["network"].create_network(data)
         except Exception as e:
             handle_client_error(e)
 
@@ -82,7 +82,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot update network in read-only mode")
-            return await context.clients["network"].update_network(network_id, data)  # type: ignore[no-any-return]
+            return await context.clients["network"].update_network(network_id, data)
         except Exception as e:
             handle_client_error(e)
 
@@ -97,6 +97,6 @@ def register_network_config_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot delete network in read-only mode")
-            return await context.clients["network"].delete_network(network_id)  # type: ignore[no-any-return]
+            return await context.clients["network"].delete_network(network_id)
         except Exception as e:
             handle_client_error(e)

@@ -24,7 +24,7 @@ def register_wlan_tools(mcp: FastMCP) -> None:
         """List all WLAN (Wi-Fi network) configurations."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].list_wlans()  # type: ignore[no-any-return]
+            return await context.clients["network"].list_wlans()
         except Exception as e:
             handle_client_error(e)
 
@@ -37,7 +37,7 @@ def register_wlan_tools(mcp: FastMCP) -> None:
         """
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].get_wlan(wlan_id)  # type: ignore[no-any-return]
+            return await context.clients["network"].get_wlan(wlan_id)
         except Exception as e:
             handle_client_error(e)
 
@@ -72,7 +72,7 @@ def register_wlan_tools(mcp: FastMCP) -> None:
                 "x_passphrase": x_passphrase,
                 "enabled": enabled,
             }
-            return await context.clients["network"].create_wlan(data)  # type: ignore[no-any-return]
+            return await context.clients["network"].create_wlan(data)
         except Exception as e:
             handle_client_error(e)
 
@@ -88,7 +88,7 @@ def register_wlan_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot update WLAN in read-only mode")
-            return await context.clients["network"].update_wlan(wlan_id, data)  # type: ignore[no-any-return]
+            return await context.clients["network"].update_wlan(wlan_id, data)
         except Exception as e:
             handle_client_error(e)
 
@@ -103,6 +103,6 @@ def register_wlan_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot delete WLAN in read-only mode")
-            return await context.clients["network"].delete_wlan(wlan_id)  # type: ignore[no-any-return]
+            return await context.clients["network"].delete_wlan(wlan_id)
         except Exception as e:
             handle_client_error(e)

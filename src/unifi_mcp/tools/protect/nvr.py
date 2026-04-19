@@ -22,7 +22,7 @@ def register_nvr_tools(mcp: FastMCP) -> None:
         """Get the full Protect bootstrap data (NVR, cameras, users, groups)."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["protect"].get_bootstrap()  # type: ignore[no-any-return]
+            return await context.clients["protect"].get_bootstrap()
         except Exception as e:
             handle_client_error(e)
 
@@ -31,7 +31,7 @@ def register_nvr_tools(mcp: FastMCP) -> None:
         """Get NVR (Network Video Recorder) status and configuration."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["protect"].get_nvr()  # type: ignore[no-any-return]
+            return await context.clients["protect"].get_nvr()
         except Exception as e:
             handle_client_error(e)
 
@@ -46,6 +46,6 @@ def register_nvr_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot update NVR in read-only mode")
-            return await context.clients["protect"].update_nvr(data)  # type: ignore[no-any-return]
+            return await context.clients["protect"].update_nvr(data)
         except Exception as e:
             handle_client_error(e)

@@ -22,7 +22,7 @@ def register_site_manager_tools(mcp: FastMCP) -> None:
         """List all hosts (controllers) registered in UniFi Site Manager."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["site_manager"].list_hosts()  # type: ignore[no-any-return]
+            return await context.clients["site_manager"].list_hosts()
         except Exception as e:
             handle_client_error(e)
 
@@ -31,7 +31,7 @@ def register_site_manager_tools(mcp: FastMCP) -> None:
         """List all sites across all hosts in UniFi Site Manager."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["site_manager"].list_sites()  # type: ignore[no-any-return]
+            return await context.clients["site_manager"].list_sites()
         except Exception as e:
             handle_client_error(e)
 
@@ -40,6 +40,6 @@ def register_site_manager_tools(mcp: FastMCP) -> None:
         """List all devices in UniFi Site Manager, optionally filtered by host ID."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["site_manager"].list_devices(host_id=host_id)  # type: ignore[no-any-return]
+            return await context.clients["site_manager"].list_devices(host_id=host_id)
         except Exception as e:
             handle_client_error(e)

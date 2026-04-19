@@ -22,7 +22,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
         """Get health status for all network subsystems (www, wlan, lan, wan)."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].get_health()  # type: ignore[no-any-return]
+            return await context.clients["network"].get_health()
         except Exception as e:
             handle_client_error(e)
 
@@ -35,7 +35,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
         """
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].list_events(limit=limit)  # type: ignore[no-any-return]
+            return await context.clients["network"].list_events(limit=limit)
         except Exception as e:
             handle_client_error(e)
 
@@ -44,7 +44,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
         """List all adopted network devices with full details (APs, switches, gateways)."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].list_devices()  # type: ignore[no-any-return]
+            return await context.clients["network"].list_devices()
         except Exception as e:
             handle_client_error(e)
 
@@ -53,7 +53,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
         """List all adopted network devices with basic info only (faster than full list)."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].list_devices_basic()  # type: ignore[no-any-return]
+            return await context.clients["network"].list_devices_basic()
         except Exception as e:
             handle_client_error(e)
 
@@ -62,7 +62,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
         """List all currently connected network clients."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].list_active_clients()  # type: ignore[no-any-return]
+            return await context.clients["network"].list_active_clients()
         except Exception as e:
             handle_client_error(e)
 
@@ -71,7 +71,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
         """List all configured (known) clients, including those not currently connected."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].list_configured_clients()  # type: ignore[no-any-return]
+            return await context.clients["network"].list_configured_clients()
         except Exception as e:
             handle_client_error(e)
 
@@ -80,7 +80,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
         """List all clients (active and historical) across all time."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].list_all_clients()  # type: ignore[no-any-return]
+            return await context.clients["network"].list_all_clients()
         except Exception as e:
             handle_client_error(e)
 
@@ -93,7 +93,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
         """
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].get_dpi_stats(dpi_type=dpi_type)  # type: ignore[no-any-return]
+            return await context.clients["network"].get_dpi_stats(dpi_type=dpi_type)
         except Exception as e:
             handle_client_error(e)
 
@@ -102,6 +102,6 @@ def register_stats_tools(mcp: FastMCP) -> None:
         """Get controller system information (version, timezone, etc.)."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].get_sysinfo()  # type: ignore[no-any-return]
+            return await context.clients["network"].get_sysinfo()
         except Exception as e:
             handle_client_error(e)

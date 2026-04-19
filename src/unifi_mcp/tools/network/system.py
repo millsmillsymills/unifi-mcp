@@ -22,7 +22,7 @@ def register_system_tools(mcp: FastMCP) -> None:
         """Get controller settings."""
         try:
             context = _get_ctx(ctx)
-            return await context.clients["network"].get_settings()  # type: ignore[no-any-return]
+            return await context.clients["network"].get_settings()
         except Exception as e:
             handle_client_error(e)
 
@@ -37,7 +37,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot update settings in read-only mode")
-            return await context.clients["network"].update_settings(data)  # type: ignore[no-any-return]
+            return await context.clients["network"].update_settings(data)
         except Exception as e:
             handle_client_error(e)
 
@@ -48,7 +48,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot run speed test in read-only mode")
-            return await context.clients["network"].run_speedtest()  # type: ignore[no-any-return]
+            return await context.clients["network"].run_speedtest()
         except Exception as e:
             handle_client_error(e)
 
@@ -59,7 +59,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot create backup in read-only mode")
-            return await context.clients["network"].create_backup()  # type: ignore[no-any-return]
+            return await context.clients["network"].create_backup()
         except Exception as e:
             handle_client_error(e)
 
@@ -74,7 +74,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot upgrade device in read-only mode")
-            return await context.clients["network"].upgrade_device(mac)  # type: ignore[no-any-return]
+            return await context.clients["network"].upgrade_device(mac)
         except Exception as e:
             handle_client_error(e)
 
@@ -90,7 +90,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot power cycle port in read-only mode")
-            return await context.clients["network"].power_cycle_port(mac, port_idx)  # type: ignore[no-any-return]
+            return await context.clients["network"].power_cycle_port(mac, port_idx)
         except Exception as e:
             handle_client_error(e)
 
@@ -105,7 +105,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot unauthorize guest in read-only mode")
-            return await context.clients["network"].unauthorize_guest(mac)  # type: ignore[no-any-return]
+            return await context.clients["network"].unauthorize_guest(mac)
         except Exception as e:
             handle_client_error(e)
 
@@ -116,7 +116,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot archive events in read-only mode")
-            return await context.clients["network"].archive_events()  # type: ignore[no-any-return]
+            return await context.clients["network"].archive_events()
         except Exception as e:
             handle_client_error(e)
 
@@ -127,6 +127,6 @@ def register_system_tools(mcp: FastMCP) -> None:
             context = _get_ctx(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot reset DPI in read-only mode")
-            return await context.clients["network"].reset_dpi()  # type: ignore[no-any-return]
+            return await context.clients["network"].reset_dpi()
         except Exception as e:
             handle_client_error(e)

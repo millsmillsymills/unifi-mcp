@@ -41,7 +41,7 @@ def register_event_tools(mcp: FastMCP) -> None:
         """
         try:
             context = _get_ctx(ctx)
-            return await context.clients["protect"].list_events(  # type: ignore[no-any-return]
+            return await context.clients["protect"].list_events(
                 start=start,
                 end=end,
                 camera_ids=camera_ids,
