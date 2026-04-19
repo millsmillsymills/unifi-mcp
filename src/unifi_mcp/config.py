@@ -45,6 +45,9 @@ class UniFiConfig(BaseSettings):
     # General
     unifi_request_timeout: int = Field(default=30, gt=0)
     unifi_max_retries: int = Field(default=3, ge=0)
+    # Cap raw-byte responses (currently only protect_export_video) to keep a
+    # malicious or misconfigured request from OOMing the server.
+    unifi_max_export_bytes: int = Field(default=500 * 1024 * 1024, gt=0)
 
     @model_validator(mode="after")
     def _default_protect_host(self) -> UniFiConfig:
