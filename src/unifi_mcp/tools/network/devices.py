@@ -25,10 +25,10 @@ def register_device_tools(mcp: FastMCP) -> None:
         try:
             context = get_server_context(ctx)
             result = await context.clients["network"].list_devices()
-            devices = result.get("data", [])
+            devices: list[dict[str, Any]] = result.get("data", [])
             for device in devices:
                 if device.get("mac", "").lower() == mac.lower():
-                    return device  # type: ignore[no-any-return]
+                    return device
             raise UniFiNotFoundError(f"Device with MAC {mac} not found")
         except Exception as e:
             handle_client_error(e)
