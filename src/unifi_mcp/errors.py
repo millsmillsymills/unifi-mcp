@@ -22,6 +22,10 @@ class UniFiAuthError(UniFiError):
     """Authentication or authorization failure (401/403)."""
 
 
+class UniFiBadRequestError(UniFiError):
+    """Malformed or invalid request payload (400)."""
+
+
 class UniFiNotFoundError(UniFiError):
     """Resource not found (404)."""
 
@@ -30,8 +34,16 @@ class UniFiRateLimitError(UniFiError):
     """Rate limit exceeded (429)."""
 
 
+class UniFiServerError(UniFiError):
+    """Upstream server failure (5xx)."""
+
+
 class UniFiConnectionError(UniFiError):
-    """Connection failure (timeout, DNS, network)."""
+    """Connection failure (DNS, network, TCP reset)."""
+
+
+class UniFiTimeoutError(UniFiConnectionError):
+    """Request exceeded the configured timeout."""
 
 
 class UniFiReadOnlyError(UniFiError):
@@ -46,10 +58,16 @@ def handle_client_error(error: Exception) -> NoReturn:
     """
     if isinstance(error, UniFiAuthError):
         raise ToolError(f"Authentication failed: {error}. Check your API key.") from error
+    if isinstance(error, UniFiBadRequestError):
+        raise ToolError(f"Invalid request: {error}.") from error
     if isinstance(error, UniFiNotFoundError):
         raise ToolError(f"Resource not found: {error}") from error
     if isinstance(error, UniFiRateLimitError):
         raise ToolError(f"Rate limit exceeded: {error}. Try again later.") from error
+    if isinstance(error, UniFiServerError):
+        raise ToolError(f"UniFi server error: {error}. The controller may be unhealthy.") from error
+    if isinstance(error, UniFiTimeoutError):
+        raise ToolError(f"Request timed out: {error}. The controller did not respond in time.") from error
     if isinstance(error, UniFiConnectionError):
         raise ToolError(f"Connection failed: {error}. Check host and network.") from error
     if isinstance(error, UniFiReadOnlyError):
