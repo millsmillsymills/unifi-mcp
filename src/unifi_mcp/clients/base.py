@@ -15,10 +15,13 @@ from tenacity import (
 
 from unifi_mcp.errors import (
     UniFiAuthError,
+    UniFiBadRequestError,
     UniFiConnectionError,
     UniFiError,
     UniFiNotFoundError,
     UniFiRateLimitError,
+    UniFiServerError,
+    UniFiTimeoutError,
 )
 
 
@@ -60,12 +63,16 @@ class BaseUniFiClient(ABC):
             return
         status = response.status_code
         body = response.text[:200]
+        if status == 400:
+            raise UniFiBadRequestError(f"HTTP {status}: {body}", status_code=status)
         if status in (401, 403):
             raise UniFiAuthError(f"HTTP {status}: {body}", status_code=status)
         if status == 404:
             raise UniFiNotFoundError(f"HTTP {status}: {body}", status_code=status)
         if status == 429:
             raise UniFiRateLimitError(f"HTTP {status}: {body}", status_code=status)
+        if 500 <= status < 600:
+            raise UniFiServerError(f"HTTP {status}: {body}", status_code=status)
         raise UniFiError(f"HTTP {status}: {body}", status_code=status)
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
@@ -82,7 +89,9 @@ class BaseUniFiClient(ABC):
 
         try:
             response = await _do()
-        except (httpx.ConnectError, httpx.TimeoutException) as exc:
+        except httpx.TimeoutException as exc:
+            raise UniFiTimeoutError(str(exc)) from exc
+        except httpx.ConnectError as exc:
             raise UniFiConnectionError(str(exc)) from exc
 
         self._raise_for_status(response)
