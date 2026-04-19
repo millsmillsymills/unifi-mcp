@@ -2,14 +2,27 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from typing import Any
+from unittest.mock import AsyncMock
+
 import httpx
 import pytest
 import respx
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 
 from unifi_mcp.clients.protect import ProtectClient
+from unifi_mcp.config import UniFiConfig, UniFiMode
 from unifi_mcp.errors import UniFiError
 from unifi_mcp.tools.protect.media import register_media_tools
+
+
+@dataclass
+class _FakeLifespan:
+    config: UniFiConfig
+    clients: dict[str, Any] = field(default_factory=dict)
+
 
 BASE_URL = "https://10.0.0.1:443"
 PROTECT_PREFIX = f"{BASE_URL}/proxy/protect/api"
@@ -80,3 +93,43 @@ class TestMediaClientEndpoints:
         )
         with pytest.raises(UniFiError, match="max_bytes=1024"):
             await protect_client_local.export_video("cam-1", start=1, end=2, max_bytes=1024)
+
+
+class TestExportVideoToolLayerCap:
+    """End-to-end handler test for protect_export_video respecting the configured cap.
+
+    The respx test above (``test_export_video_respects_max_bytes``) hits the client
+    method directly. This one drives the actual MCP tool handler — proving that
+    the config value ``unifi_max_export_bytes`` is read from the lifespan context
+    and forwarded to ``ProtectClient.export_video`` at call time. Closes #73.
+    """
+
+    async def test_tool_aborts_when_payload_exceeds_cap(self):
+        server = FastMCP(name="media-cap-test")
+        register_media_tools(server)
+
+        # Real client so the streaming abort in BaseUniFiClient.get_raw actually runs.
+        base_url = "https://10.0.0.1:443"
+        prefix = f"{base_url}/proxy/protect/api"
+        client = ProtectClient(base_url=base_url, api_key="k", timeout=5, max_retries=1)
+
+        # Config with a tight cap.
+        config = UniFiConfig(
+            _env_file=None,
+            unifi_mode=UniFiMode.READONLY,
+            unifi_network_api="k",
+            unifi_protect_api="k",
+            unifi_max_export_bytes=1024,
+        )
+
+        ctx = AsyncMock()
+        ctx.lifespan_context = _FakeLifespan(config=config, clients={"protect": client})
+
+        tool = await server.get_tool("protect_export_video")
+
+        with respx.mock:
+            respx.get(f"{prefix}/cameras/cam-1/video/export").mock(
+                return_value=httpx.Response(200, content=b"x" * 2048),
+            )
+            with pytest.raises(ToolError, match="max_bytes=1024"):
+                await tool.fn(ctx, camera_id="cam-1", start=1, end=2)
