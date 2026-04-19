@@ -47,8 +47,12 @@ class NetworkClient(BaseUniFiClient):
         return result
 
     async def list_events(self, limit: int = 100) -> dict[str, Any]:
-        """List recent events."""
-        result: dict[str, Any] = await self.get("stat/event", params={"_limit": limit})
+        """List recent events / alarms.
+
+        Uses ``stat/alarm`` — the legacy ``stat/event`` path returns 404 on
+        current UniFi controllers.
+        """
+        result: dict[str, Any] = await self.get("stat/alarm", params={"_limit": limit})
         return result
 
     async def list_devices(self) -> dict[str, Any]:
