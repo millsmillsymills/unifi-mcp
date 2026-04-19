@@ -7,11 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.server import ServerContext
-
-
-def _get_ctx(ctx: Context) -> ServerContext:
-    return ctx.lifespan_context  # type: ignore[return-value]
+from unifi_mcp.tools._common import get_server_context
 
 
 def register_camera_tools(mcp: FastMCP) -> None:
@@ -21,7 +17,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
     async def protect_list_cameras(ctx: Context) -> list[dict[str, Any]]:
         """List all cameras managed by UniFi Protect."""
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["protect"].list_cameras()
         except Exception as e:
             handle_client_error(e)
@@ -34,7 +30,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
             camera_id: The camera ID.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["protect"].get_camera(camera_id)
         except Exception as e:
             handle_client_error(e)
@@ -48,7 +44,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
             data: Camera settings to update (e.g., {"name": "Front Door", "ledSettings": {"isEnabled": true}}).
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot update camera in read-only mode")
             return await context.clients["protect"].update_camera(camera_id, data)
@@ -72,7 +68,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
             post_padding: Post-event recording padding in seconds (optional).
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot set recording mode in read-only mode")
             return await context.clients["protect"].set_recording_mode(
@@ -90,7 +86,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
             object_types: List of object types to detect — e.g., ["person", "vehicle", "animal"].
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot set smart detection in read-only mode")
             return await context.clients["protect"].set_smart_detection(camera_id, object_types)

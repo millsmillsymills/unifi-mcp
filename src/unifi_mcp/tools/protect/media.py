@@ -8,11 +8,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import handle_client_error
-from unifi_mcp.server import ServerContext
-
-
-def _get_ctx(ctx: Context) -> ServerContext:
-    return ctx.lifespan_context  # type: ignore[return-value]
+from unifi_mcp.tools._common import get_server_context
 
 
 def register_media_tools(mcp: FastMCP) -> None:
@@ -27,7 +23,7 @@ def register_media_tools(mcp: FastMCP) -> None:
             timestamp: Unix timestamp in milliseconds for a historical snapshot (optional, omit for live).
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             data: bytes = await context.clients["protect"].get_snapshot(camera_id, timestamp=timestamp)
             return {
                 "format": "jpeg",
@@ -47,7 +43,7 @@ def register_media_tools(mcp: FastMCP) -> None:
             end: End timestamp in Unix milliseconds.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             data: bytes = await context.clients["protect"].export_video(camera_id, start, end)
             return {
                 "format": "mp4",

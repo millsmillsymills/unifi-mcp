@@ -7,11 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.server import ServerContext
-
-
-def _get_ctx(ctx: Context) -> ServerContext:
-    return ctx.lifespan_context  # type: ignore[return-value]
+from unifi_mcp.tools._common import get_server_context
 
 
 def register_network_config_tools(mcp: FastMCP) -> None:
@@ -21,7 +17,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
     async def network_list_networks(ctx: Context) -> dict[str, Any]:
         """List all network (VLAN/subnet) configurations."""
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["network"].list_networks()
         except Exception as e:
             handle_client_error(e)
@@ -34,7 +30,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
             network_id: The network configuration ID.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["network"].get_network(network_id)
         except Exception as e:
             handle_client_error(e)
@@ -58,7 +54,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
             dhcpd_enabled: Whether DHCP server is enabled.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot create network in read-only mode")
             data: dict[str, Any] = {"name": name, "purpose": purpose, "dhcpd_enabled": dhcpd_enabled}
@@ -79,7 +75,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
             data: Fields to update (e.g., {"name": "new-name", "vlan": 100}).
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot update network in read-only mode")
             return await context.clients["network"].update_network(network_id, data)
@@ -94,7 +90,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
             network_id: The network configuration ID to delete.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot delete network in read-only mode")
             return await context.clients["network"].delete_network(network_id)

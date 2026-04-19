@@ -7,11 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.server import ServerContext
-
-
-def _get_ctx(ctx: Context) -> ServerContext:
-    return ctx.lifespan_context  # type: ignore[return-value]
+from unifi_mcp.tools._common import get_server_context
 
 
 def register_nvr_tools(mcp: FastMCP) -> None:
@@ -21,7 +17,7 @@ def register_nvr_tools(mcp: FastMCP) -> None:
     async def protect_get_bootstrap(ctx: Context) -> dict[str, Any]:
         """Get the full Protect bootstrap data (NVR, cameras, users, groups)."""
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["protect"].get_bootstrap()
         except Exception as e:
             handle_client_error(e)
@@ -30,7 +26,7 @@ def register_nvr_tools(mcp: FastMCP) -> None:
     async def protect_get_nvr(ctx: Context) -> dict[str, Any]:
         """Get NVR (Network Video Recorder) status and configuration."""
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["protect"].get_nvr()
         except Exception as e:
             handle_client_error(e)
@@ -43,7 +39,7 @@ def register_nvr_tools(mcp: FastMCP) -> None:
             data: NVR settings to update.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot update NVR in read-only mode")
             return await context.clients["protect"].update_nvr(data)

@@ -7,11 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.server import ServerContext
-
-
-def _get_ctx(ctx: Context) -> ServerContext:
-    return ctx.lifespan_context  # type: ignore[return-value]
+from unifi_mcp.tools._common import get_server_context
 
 
 def register_port_forward_tools(mcp: FastMCP) -> None:
@@ -21,7 +17,7 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
     async def network_list_port_forwards(ctx: Context) -> dict[str, Any]:
         """List all port forwarding rules."""
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["network"].list_port_forwards()
         except Exception as e:
             handle_client_error(e)
@@ -34,7 +30,7 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
             port_forward_id: The port forward rule ID.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             return await context.clients["network"].get_port_forward(port_forward_id)
         except Exception as e:
             handle_client_error(e)
@@ -60,7 +56,7 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
             enabled: Whether the rule is enabled.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot create port forward in read-only mode")
             data: dict[str, Any] = {
@@ -84,7 +80,7 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
             data: Fields to update (e.g., {"enabled": false, "fwd_port": "8080"}).
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot update port forward in read-only mode")
             return await context.clients["network"].update_port_forward(port_forward_id, data)
@@ -99,7 +95,7 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
             port_forward_id: The port forward rule ID to delete.
         """
         try:
-            context = _get_ctx(ctx)
+            context = get_server_context(ctx)
             if not context.config.is_readwrite:
                 raise UniFiReadOnlyError("Cannot delete port forward in read-only mode")
             return await context.clients["network"].delete_port_forward(port_forward_id)
