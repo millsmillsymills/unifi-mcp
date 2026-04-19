@@ -143,11 +143,33 @@ class BaseUniFiClient(ABC):
             return {}
         return self._parse_json(response)
 
-    async def get_raw(self, path: str, **kwargs: Any) -> bytes:
-        """HTTP GET, returns raw bytes (for media endpoints)."""
-        response = await self._request("GET", path, **kwargs)
-        result: bytes = response.content
-        return result
+    async def get_raw(self, path: str, *, max_bytes: int | None = None, **kwargs: Any) -> bytes:
+        """HTTP GET returning raw bytes (for media endpoints).
+
+        When ``max_bytes`` is set the response is streamed and aborted as soon
+        as the accumulated payload exceeds the cap, raising ``UniFiError``
+        instead of silently consuming unbounded memory.
+        """
+        if max_bytes is None:
+            response = await self._request("GET", path, **kwargs)
+            result: bytes = response.content
+            return result
+
+        # Streamed path: enforce size cap without loading the whole body at once.
+        url = self._url(path)
+        async with self._client.stream("GET", url, **kwargs) as response:
+            self._raise_for_status(response)
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in response.aiter_bytes():
+                total += len(chunk)
+                if total > max_bytes:
+                    raise UniFiError(
+                        f"Response exceeded max_bytes={max_bytes} while streaming {path}",
+                        status_code=response.status_code,
+                    )
+                chunks.append(chunk)
+            return b"".join(chunks)
 
     # ── Lifecycle ───────────────────────────────────────────────────────
 

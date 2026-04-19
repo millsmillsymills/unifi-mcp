@@ -185,13 +185,15 @@ class ProtectClient(BaseUniFiClient):
             params["ts"] = timestamp
         return await self.get_raw(f"cameras/{camera_id}/snapshot", params=params)
 
-    async def export_video(self, camera_id: str, start: int, end: int) -> bytes:
+    async def export_video(self, camera_id: str, start: int, end: int, *, max_bytes: int | None = None) -> bytes:
         """Export a video clip from a camera.
 
         Args:
             camera_id: The camera ID.
             start: Start timestamp in milliseconds.
             end: End timestamp in milliseconds.
+            max_bytes: If set, stream the response and abort if the export
+                exceeds this many bytes. Prevents OOM on unbounded clips.
 
         Returns:
             Raw video bytes.
@@ -199,6 +201,7 @@ class ProtectClient(BaseUniFiClient):
         return await self.get_raw(
             f"cameras/{camera_id}/video/export",
             params={"start": start, "end": end},
+            max_bytes=max_bytes,
         )
 
     # -- Lifecycle ----------------------------------------------------------

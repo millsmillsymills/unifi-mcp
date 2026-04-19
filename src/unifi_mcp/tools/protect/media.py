@@ -37,6 +37,10 @@ def register_media_tools(mcp: FastMCP) -> None:
     async def protect_export_video(ctx: Context, camera_id: str, start: int, end: int) -> dict[str, Any]:
         """Export a video clip from a camera for a time range.
 
+        The response is base64-encoded inline, so the server caps the clip at
+        ``UNIFI_MAX_EXPORT_BYTES`` (default 500 MB). Requests above that
+        threshold are aborted mid-stream with a UniFiError to avoid OOM.
+
         Args:
             camera_id: The camera ID.
             start: Start timestamp in Unix milliseconds.
@@ -44,7 +48,9 @@ def register_media_tools(mcp: FastMCP) -> None:
         """
         try:
             context = get_server_context(ctx)
-            data: bytes = await context.clients["protect"].export_video(camera_id, start, end)
+            data: bytes = await context.clients["protect"].export_video(
+                camera_id, start, end, max_bytes=context.config.unifi_max_export_bytes
+            )
             return {
                 "format": "mp4",
                 "data_base64": base64.b64encode(data).decode("ascii"),
