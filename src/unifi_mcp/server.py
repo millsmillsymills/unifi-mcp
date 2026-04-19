@@ -58,7 +58,7 @@ async def server_lifespan(_server: FastMCP) -> AsyncIterator[ServerContext]:
             "network",
             NetworkClient(
                 base_url=config.network_base_url,
-                api_key=config.unifi_network_api,  # type: ignore[arg-type]
+                api_key=config.unifi_network_api.get_secret_value(),  # type: ignore[union-attr]
                 site=config.unifi_network_site,
                 verify_ssl=config.unifi_network_verify_ssl,
                 timeout=config.unifi_request_timeout,
@@ -72,7 +72,7 @@ async def server_lifespan(_server: FastMCP) -> AsyncIterator[ServerContext]:
             "protect",
             ProtectClient(
                 base_url=config.protect_base_url,
-                api_key=config.unifi_protect_api,  # type: ignore[arg-type]
+                api_key=config.unifi_protect_api.get_secret_value(),  # type: ignore[union-attr]
                 verify_ssl=config.unifi_protect_verify_ssl,
                 timeout=config.unifi_request_timeout,
                 max_retries=config.unifi_max_retries,
@@ -84,7 +84,7 @@ async def server_lifespan(_server: FastMCP) -> AsyncIterator[ServerContext]:
             context,
             "site_manager",
             SiteManagerClient(
-                api_key=config.unifi_site_manager_api,  # type: ignore[arg-type]
+                api_key=config.unifi_site_manager_api.get_secret_value(),  # type: ignore[union-attr]
                 timeout=config.unifi_request_timeout,
                 max_retries=config.unifi_max_retries,
             ),
