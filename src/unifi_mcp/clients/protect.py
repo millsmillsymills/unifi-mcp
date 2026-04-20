@@ -220,17 +220,19 @@ class ProtectClient(BaseUniFiClient):
     async def validate_connection(self) -> bool:
         """Validate connectivity by fetching NVR info.
 
-        Returns False on any UniFi or HTTP error. A False return causes the
-        server lifespan to deregister every Protect tool — see the base
-        class docstring and #104 for the operator-visibility plan.
+        Returns False on any UniFi or HTTP error. The caught exception is
+        stored on ``self._last_validation_error`` so the lifespan can
+        surface the failure class in its WARN log.
 
         On current ``main``, #103 causes this to return False against any
         live UniFi OS 7.x install (HTTP 401 from ``/proxy/protect/api/``).
         """
         try:
             await self.get_nvr()
-        except (UniFiError, httpx.HTTPError):
+        except (UniFiError, httpx.HTTPError) as exc:
+            self._last_validation_error = exc
             logger.debug("Protect API connection validation failed", exc_info=True)
             return False
         else:
+            self._last_validation_error = None
             return True

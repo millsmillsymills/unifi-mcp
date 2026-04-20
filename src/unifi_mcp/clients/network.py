@@ -469,14 +469,16 @@ class NetworkClient(BaseUniFiClient):
     async def validate_connection(self) -> bool:
         """Validate connectivity by fetching system info.
 
-        Returns False on any UniFi or HTTP error. A False return causes the
-        server lifespan to deregister every Network tool — see the base
-        class docstring and #104 for the operator-visibility plan.
+        Returns False on any UniFi or HTTP error. The caught exception is
+        stored on ``self._last_validation_error`` so the lifespan can
+        surface the failure class in its WARN log.
         """
         try:
             await self.get_sysinfo()
-        except (UniFiError, httpx.HTTPError):
+        except (UniFiError, httpx.HTTPError) as exc:
+            self._last_validation_error = exc
             logger.debug("Network API connection validation failed", exc_info=True)
             return False
         else:
+            self._last_validation_error = None
             return True
