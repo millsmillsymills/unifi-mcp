@@ -56,12 +56,22 @@ class UniFiConfig(BaseSettings):
         WARNING: on deployments where Protect runs on a separate NVR (e.g.
         UCK-G2-Plus on a different IP from the gateway), leaving
         ``UNIFI_PROTECT_HOST`` unset points Protect at the wrong device.
-        ``validate_connection`` then fails, and all Protect tools
-        deregister at startup with only a DEBUG-level log. See #107 for
-        the proposed config-load-time warning, and #104 for the
-        lifespan-level diagnostic.
+        ``validate_connection`` then fails, and all Protect tools deregister
+        at startup. See #104 for the lifespan-level diagnostic.
+
+        When the fallback fires *and* a Protect API key is configured, emit
+        an INFO log so the operator can see that the default was applied and
+        decide whether it matches their topology.
         """
         if self.unifi_protect_host is None:
+            if self.unifi_protect_api is not None:
+                logger.info(
+                    "UNIFI_PROTECT_HOST not set; defaulting to UNIFI_NETWORK_HOST=%s. "
+                    "If Protect runs on a different device (e.g. a separate UCK NVR), "
+                    "set UNIFI_PROTECT_HOST explicitly to avoid a silent "
+                    "validate_connection failure.",
+                    self.unifi_network_host,
+                )
             self.unifi_protect_host = self.unifi_network_host
         return self
 

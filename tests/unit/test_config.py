@@ -1,5 +1,7 @@
 """Tests for UniFi MCP configuration."""
 
+import logging
+
 import pytest
 from pydantic import ValidationError
 
@@ -93,6 +95,48 @@ class TestDefaults:
             unifi_protect_host="10.0.0.2",
         )
         assert config.unifi_protect_host == "10.0.0.2"
+
+    def test_protect_host_default_logs_info_when_api_key_set(self, caplog):
+        """When the Protect host default fires and Protect is enabled, emit an
+        INFO log so the operator can catch the split-host misconfig.
+        """
+        with caplog.at_level(logging.INFO, logger="unifi_mcp.config"):
+            config = UniFiConfig(
+                _env_file=None,
+                unifi_network_host="10.0.0.1",
+                unifi_protect_api="k",
+            )
+        assert config.unifi_protect_host == "10.0.0.1"
+        matching = [
+            r for r in caplog.records if r.levelno == logging.INFO and "UNIFI_PROTECT_HOST not set" in r.getMessage()
+        ]
+        assert matching, f"expected INFO log about Protect host default; got {caplog.records!r}"
+        assert "10.0.0.1" in matching[0].getMessage()
+
+    def test_protect_host_default_silent_when_api_key_unset(self, caplog):
+        """When Protect isn't configured, the host default must not log — the
+        fallback is inconsequential because Protect tools won't register.
+        """
+        with caplog.at_level(logging.INFO, logger="unifi_mcp.config"):
+            config = UniFiConfig(_env_file=None, unifi_network_host="10.0.0.1")
+        assert config.unifi_protect_host == "10.0.0.1"
+        assert not [r for r in caplog.records if "UNIFI_PROTECT_HOST not set" in r.getMessage()], (
+            "host-default log should only fire when UNIFI_PROTECT_API is set"
+        )
+
+    def test_protect_host_default_silent_when_host_explicit(self, caplog):
+        """When the operator set UNIFI_PROTECT_HOST explicitly, no default
+        fires and no log is emitted even if the value happens to match the
+        Network host.
+        """
+        with caplog.at_level(logging.INFO, logger="unifi_mcp.config"):
+            UniFiConfig(
+                _env_file=None,
+                unifi_network_host="10.0.0.1",
+                unifi_protect_host="10.0.0.1",
+                unifi_protect_api="k",
+            )
+        assert not [r for r in caplog.records if "UNIFI_PROTECT_HOST not set" in r.getMessage()]
 
     def test_default_timeout(self):
         config = UniFiConfig(_env_file=None)
