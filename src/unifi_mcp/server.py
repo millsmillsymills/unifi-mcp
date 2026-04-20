@@ -40,20 +40,33 @@ class ServerContext:
     clients: APIClients = field(default_factory=APIClients)
 
 
+async def _safe_close(name: str, client: Any) -> None:
+    """Close a client, swallowing and logging any exception.
+
+    Used in failure/cleanup paths where a close() that raises must not
+    mask the original failure (in _register_client) or abort the rest of
+    the shutdown close-loop (in the lifespan's finally block).
+    """
+    try:
+        await client.close()
+    except Exception:
+        logger.exception("Error closing %s client during cleanup", name)
+
+
 async def _register_client(context: ServerContext, name: str, client: Any) -> None:
     """Validate and register a client, closing it if validation fails."""
     try:
         valid = await client.validate_connection()
     except (UniFiError, httpx.HTTPError):
         logger.exception("Failed to connect to %s API — skipping", name)
-        await client.close()
+        await _safe_close(name, client)
         return
     if valid:
         context.clients[name] = client  # type: ignore[literal-required]
         logger.info("%s API client initialized", name)
     else:
         logger.warning("%s API validation returned False — skipping", name)
-        await client.close()
+        await _safe_close(name, client)
 
 
 @lifespan  # type: ignore[arg-type]
@@ -141,12 +154,17 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
     try:
         yield context
     finally:
+        # Close each client independently — one client's close() failure
+        # must never prevent the others from being closed. Broadening to
+        # bare Exception here is deliberate: this is a cleanup path, and
+        # leaking the first failure aborts the loop and leaks sockets for
+        # the remaining clients.
         clients_to_close: list[tuple[str, BaseUniFiClient]] = list(context.clients.items())  # type: ignore[arg-type]
         for name, c in clients_to_close:
             try:
                 await c.close()
                 logger.info("Closed %s client", name)
-            except (OSError, httpx.HTTPError):
+            except Exception:
                 logger.exception("Error closing %s client", name)
 
 

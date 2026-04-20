@@ -195,6 +195,69 @@ class TestServerLifespan:
                     await gen.__anext__()
         # No exception escaped.
 
+    async def test_shutdown_close_loop_isolates_failures_across_clients(self, monkeypatch):
+        """A failing close() on one client must not skip close() on the others.
+
+        Before this PR the close loop caught only (OSError, httpx.HTTPError);
+        a RuntimeError from one client's close would abort the loop and leak
+        the remaining clients' sockets.
+        """
+        _setup_env_for_lifespan(monkeypatch)
+
+        net_client = _make_validating_client()
+        prot_client = _make_validating_client()
+        sm_client = _make_validating_client()
+        # Pick the middle one to fail; the loop must still close sm_client.
+        prot_client.close.side_effect = RuntimeError("unexpected close failure")
+
+        with (
+            patch("unifi_mcp.clients.network.NetworkClient", return_value=net_client),
+            patch("unifi_mcp.clients.protect.ProtectClient", return_value=prot_client),
+            patch("unifi_mcp.clients.site_manager.SiteManagerClient", return_value=sm_client),
+        ):
+            gen = server_lifespan._fn(None)
+            async with aclosing(gen):
+                await gen.__anext__()
+                with pytest.raises(StopAsyncIteration):
+                    await gen.__anext__()
+
+        net_client.close.assert_awaited_once()
+        prot_client.close.assert_awaited_once()  # failed, but was called
+        sm_client.close.assert_awaited_once()  # would be skipped pre-fix
+
+    async def test_register_client_close_failure_does_not_mask_original_error(self, monkeypatch, caplog):
+        """If validate_connection raises UniFiAuthError and then close() itself
+        raises, the original auth failure context must still reach the logs —
+        and the lifespan must keep running (not crash on the close failure).
+        """
+        _setup_env_for_lifespan(monkeypatch)
+        monkeypatch.delenv("UNIFI_PROTECT_API", raising=False)
+        monkeypatch.delenv("UNIFI_SITE_MANAGER_API", raising=False)
+
+        failing_net = AsyncMock()
+        failing_net.validate_connection.side_effect = UniFiAuthError("bad key", status_code=401)
+        failing_net.close.side_effect = RuntimeError("socket reset during close")
+
+        import logging
+
+        with (
+            patch("unifi_mcp.clients.network.NetworkClient", return_value=failing_net),
+            caplog.at_level(logging.WARNING, logger="unifi_mcp.server"),
+        ):
+            gen = server_lifespan._fn(None)
+            async with aclosing(gen):
+                context = await gen.__anext__()
+                assert "network" not in context.clients
+                with pytest.raises(StopAsyncIteration):
+                    await gen.__anext__()
+
+        # The original auth error was logged at exception-level.
+        auth_logs = [r for r in caplog.records if "Failed to connect" in r.getMessage()]
+        assert auth_logs, f"expected the original auth failure to be logged; got {caplog.records!r}"
+        # The close-phase RuntimeError was also logged but didn't propagate.
+        close_logs = [r for r in caplog.records if "Error closing" in r.getMessage()]
+        assert close_logs, "expected the close failure to be logged (not swallowed silently)"
+
     async def test_unreachable_api_disables_its_tools(self, monkeypatch):
         """#87: when validate_connection returns False for Protect, every
         protect_* tool must be hidden via server.disable(tags={"protect"}),

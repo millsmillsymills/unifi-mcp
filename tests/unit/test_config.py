@@ -233,3 +233,37 @@ class TestHandleClientError:
             handle_client_error(cancel)
         # The exact exception object should propagate, not a new one.
         assert exc_info.value is cancel
+
+    def test_auth_error_message_includes_status_code_prefix(self):
+        """Agents branch on HTTP status — surface it explicitly in the
+        ToolError so they don't have to regex the inner exception.
+        """
+        with pytest.raises(Exception, match=r"\[HTTP 401\] Authentication failed"):
+            handle_client_error(UniFiAuthError("Invalid API key", status_code=401))
+
+    def test_not_found_error_message_includes_status_code_prefix(self):
+        with pytest.raises(Exception, match=r"\[HTTP 404\] Resource not found"):
+            handle_client_error(UniFiNotFoundError("Device xyz not found", status_code=404))
+
+    def test_rate_limit_error_message_includes_status_code_prefix(self):
+        with pytest.raises(Exception, match=r"\[HTTP 429\] Rate limit exceeded"):
+            handle_client_error(UniFiRateLimitError("Slow down", status_code=429))
+
+    def test_server_error_message_includes_status_code_prefix(self):
+        from unifi_mcp.errors import UniFiServerError
+
+        with pytest.raises(Exception, match=r"\[HTTP 503\] UniFi server error"):
+            handle_client_error(UniFiServerError("Service Unavailable", status_code=503))
+
+    def test_connection_error_message_omits_status_code_when_none(self):
+        """Transport-layer failures don't have a status code; no prefix."""
+        with pytest.raises(Exception, match="Connection failed") as exc_info:
+            handle_client_error(UniFiConnectionError("Host unreachable"))
+        msg = str(exc_info.value)
+        assert msg.startswith("Connection failed"), f"expected no [HTTP…] prefix when status is None; got {msg!r}"
+
+    def test_unexpected_error_has_no_status_code_prefix(self):
+        """Non-UniFi exceptions don't have status_code; no prefix."""
+        with pytest.raises(Exception, match="Unexpected error") as exc_info:
+            handle_client_error(RuntimeError("boom"))
+        assert "[HTTP" not in str(exc_info.value)
