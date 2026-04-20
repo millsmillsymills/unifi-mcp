@@ -220,3 +220,16 @@ class TestHandleClientError:
     def test_unexpected_error_mapping(self):
         with pytest.raises(Exception, match="Unexpected error"):
             handle_client_error(RuntimeError("Boom"))
+
+    def test_cancelled_error_is_reraised_not_wrapped(self):
+        """asyncio.CancelledError must propagate so FastMCP can honor
+        cancellation. Wrapping it as ToolError would turn a cancel into
+        a phantom tool failure.
+        """
+        import asyncio
+
+        cancel = asyncio.CancelledError()
+        with pytest.raises(asyncio.CancelledError) as exc_info:
+            handle_client_error(cancel)
+        # The exact exception object should propagate, not a new one.
+        assert exc_info.value is cancel

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import NoReturn
 
@@ -60,12 +61,19 @@ class UniFiDeviceAlreadyAdoptedError(UniFiError):
     """
 
 
-def handle_client_error(error: Exception) -> NoReturn:
+def handle_client_error(error: BaseException) -> NoReturn:
     """Map UniFi exceptions to FastMCP ToolError with agent-readable messages.
 
+    ``asyncio.CancelledError`` is re-raised untouched — wrapping it as a
+    ``ToolError`` would break FastMCP's cancellation propagation (a shutdown
+    or client-side cancel would look like a tool error instead of a cancel).
+
     Raises:
-        ToolError: Always raised with a descriptive message.
+        asyncio.CancelledError: Propagated without wrapping.
+        ToolError: For any other exception, with a descriptive message.
     """
+    if isinstance(error, asyncio.CancelledError):
+        raise error
     if isinstance(error, UniFiAuthError):
         raise ToolError(f"Authentication failed: {error}. Check your API key.") from error
     if isinstance(error, UniFiBadRequestError):
