@@ -1,5 +1,7 @@
 """Tests for the base UniFi API client."""
 
+import logging
+
 import httpx
 import pytest
 import respx
@@ -169,6 +171,31 @@ class TestMalformedJson:
             await client.get("/test")
         assert exc_info.value.status_code is None
 
+    @respx.mock
+    async def test_200_with_html_body_raises_auth_error_not_invalid_json(self, client):
+        """UniFi OS returns the SPA portal HTML on 200 when the request hits a
+        path that rejects X-API-KEY (e.g. a protected proxy endpoint that
+        requires cookie auth). This must classify as an auth/path mismatch,
+        not a generic "Invalid JSON" error.
+        """
+        html_portal = b'<!doctype html><html lang="en"><head><title>UniFi OS</title></head><body></body></html>'
+        respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(200, content=html_portal, headers={"content-type": "text/html; charset=utf-8"})
+        )
+        with pytest.raises(UniFiAuthError, match="HTML instead of JSON") as exc_info:
+            await client.get("/test")
+        assert exc_info.value.status_code == 200
+        assert "auth/path mismatch" in str(exc_info.value)
+
+    @respx.mock
+    async def test_200_with_html_content_type_any_casing_caught(self, client):
+        """Content-type header is case-insensitive; the sniff must lowercase before comparing."""
+        respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(200, content=b"<!DOCTYPE html>", headers={"content-type": "TEXT/HTML"})
+        )
+        with pytest.raises(UniFiAuthError):
+            await client.get("/test")
+
 
 class TestRetry:
     @respx.mock
@@ -241,6 +268,26 @@ class TestRetry:
         result = await client.post("/test", json={"x": 1})
         assert result == {"ok": True}
         assert route.call_count == 2
+
+    @respx.mock
+    async def test_retry_emits_warning_log_on_before_sleep(self, client, caplog):
+        """A transient ConnectError followed by success must leave a WARNING
+        log trail so operators debugging flaky controllers can see retries
+        fired. Without ``before_sleep_log``, retries are invisible.
+        """
+        route = respx.get(f"{BASE_URL}/test")
+        route.side_effect = [
+            httpx.ConnectError("refused"),
+            httpx.Response(200, json={"ok": True}),
+        ]
+        with caplog.at_level(logging.WARNING, logger="unifi_mcp.clients.base"):
+            result = await client.get("/test")
+        assert result == {"ok": True}
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert warnings, f"expected WARNING-level before_sleep log; got {caplog.records!r}"
+        assert any("retrying" in r.getMessage().lower() for r in warnings), (
+            f"expected a retry log; got messages: {[r.getMessage() for r in warnings]}"
+        )
 
 
 class TestPathPrefix:

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
 import httpx
 from tenacity import (
+    before_sleep_log,
     retry,
     retry_if_exception_type,
     stop_after_attempt,
@@ -23,6 +25,8 @@ from unifi_mcp.errors import (
     UniFiServerError,
     UniFiTimeoutError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class BaseUniFiClient(ABC):
@@ -91,6 +95,7 @@ class BaseUniFiClient(ABC):
             stop=stop_after_attempt(self._max_retries),
             wait=wait_exponential(multiplier=1, min=1, max=10),
             retry=retry_if_exception_type(retry_on),
+            before_sleep=before_sleep_log(logger, logging.WARNING),
             reraise=True,
         )
         async def _do() -> httpx.Response:
@@ -107,7 +112,25 @@ class BaseUniFiClient(ABC):
         return response
 
     def _parse_json(self, response: httpx.Response) -> Any:
-        """Parse JSON response body, wrapping decode errors as UniFiError."""
+        """Parse JSON response body, wrapping decode errors as UniFiError.
+
+        Raises UniFiAuthError when the controller returns HTML on a JSON
+        endpoint. UniFi OS serves the SPA portal (HTML) on ``/proxy/<api>/*``
+        when the request hits a path that rejects the configured auth — a
+        signature of wrong ``_path_prefix``, key-for-wrong-host, or an
+        API that requires session auth. Classifying this case as "auth /
+        path mismatch" instead of generic "invalid JSON" lets the operator
+        act on it.
+        """
+        content_type = response.headers.get("content-type", "").lower()
+        if content_type.startswith("text/html"):
+            body = response.text[:200]
+            raise UniFiAuthError(
+                f"Controller returned HTML instead of JSON on HTTP {response.status_code} — "
+                f"likely an auth/path mismatch (hit the UniFi OS portal). Check host, "
+                f"port, and API-key scope. Body: {body}",
+                status_code=response.status_code,
+            )
         try:
             return response.json()
         except ValueError as exc:
