@@ -109,3 +109,22 @@ def register_device_tools(mcp: FastMCP) -> None:
             return await context.clients["network"].provision_device(mac)
         except Exception as e:
             handle_client_error(e)
+
+    @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+    async def network_forget_device(ctx: Context, mac: str) -> dict[str, Any]:
+        """Forget (unadopt) a previously-adopted device.
+
+        The device reverts to the unadopted state and can be re-adopted later.
+        Any in-flight clients on that device lose connectivity during the
+        transition, so this is marked destructive.
+
+        Args:
+            mac: MAC address of the adopted device.
+        """
+        try:
+            context = get_server_context(ctx)
+            if not context.config.is_readwrite:
+                raise UniFiReadOnlyError("Cannot forget device in read-only mode")
+            return await context.clients["network"].forget_device(mac)
+        except Exception as e:
+            handle_client_error(e)

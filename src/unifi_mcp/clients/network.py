@@ -252,6 +252,64 @@ class NetworkClient(BaseUniFiClient):
         result: dict[str, Any] = await self.put("rest/setting", json=data)
         return result
 
+    # ── Port profiles ──────────────────────────────────────────────────
+
+    async def list_port_profiles(self) -> dict[str, Any]:
+        """List switch-port profiles (``rest/portconf``)."""
+        result: dict[str, Any] = await self.get("rest/portconf")
+        return result
+
+    async def get_port_profile(self, profile_id: str) -> dict[str, Any]:
+        """Get a specific switch-port profile by id."""
+        result: dict[str, Any] = await self.get(f"rest/portconf/{profile_id}")
+        return result
+
+    async def create_port_profile(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Create a switch-port profile.
+
+        The controller requires at least ``name``, ``poe_mode`` (e.g. ``auto``),
+        and ``forward`` (e.g. ``all`` / ``native`` / ``customize``). Callers
+        should pass a full payload — we pass it through verbatim.
+        """
+        result: dict[str, Any] = await self.post("rest/portconf", json=data)
+        return result
+
+    async def update_port_profile(self, profile_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        """Update a switch-port profile."""
+        result: dict[str, Any] = await self.put(f"rest/portconf/{profile_id}", json=data)
+        return result
+
+    async def delete_port_profile(self, profile_id: str) -> dict[str, Any]:
+        """Delete a switch-port profile."""
+        result: dict[str, Any] = await self.delete(f"rest/portconf/{profile_id}")
+        return result
+
+    async def assign_port_profile(self, mac: str, port_idx: int, profile_id: str) -> dict[str, Any]:
+        """Assign a port profile to one switch port.
+
+        The legacy API doesn't expose a single-port endpoint — the whole
+        device record must be PUT with an updated ``port_overrides`` array.
+        Resolve the device's ``_id`` from ``stat/device``, splice the new
+        override into the existing list (replacing any entry for the same
+        ``port_idx``), and PUT ``rest/device/{_id}``. See #93.
+        """
+        devices = await self.list_devices()
+        match = next(
+            (d for d in devices.get("data", []) if d.get("mac", "").lower() == mac.lower()),
+            None,
+        )
+        if match is None:
+            raise UniFiNotFoundError(f"Device with MAC {mac} not adopted by this controller")
+        device_id = match.get("_id")
+        if not device_id:
+            raise UniFiError(f"Device {mac} has no '_id' in list_devices response")
+
+        existing: list[dict[str, Any]] = list(match.get("port_overrides", []))
+        overrides = [entry for entry in existing if entry.get("port_idx") != port_idx]
+        overrides.append({"port_idx": port_idx, "portconf_id": profile_id})
+        result: dict[str, Any] = await self.put(f"rest/device/{device_id}", json={"port_overrides": overrides})
+        return result
+
     # ── Write methods: commands ────────────────────────────────────────
 
     async def run_speedtest(self) -> dict[str, Any]:
@@ -299,6 +357,19 @@ class NetworkClient(BaseUniFiClient):
     async def unlocate_device(self, mac: str) -> dict[str, Any]:
         """Disable the locate LED on a device."""
         result: dict[str, Any] = await self.post("cmd/devmgr", json={"cmd": "unset-locate", "mac": mac})
+        return result
+
+    async def forget_device(self, mac: str) -> dict[str, Any]:
+        """Release (unadopt) a previously-adopted device so it can be re-adopted.
+
+        Pre-checks against ``list_devices`` and raises ``UniFiNotFoundError``
+        when the MAC isn't adopted by this controller. See #93.
+        """
+        devices = await self.list_devices()
+        known = {entry.get("mac", "").lower() for entry in devices.get("data", [])}
+        if mac.lower() not in known:
+            raise UniFiNotFoundError(f"Device with MAC {mac} not adopted by this controller")
+        result: dict[str, Any] = await self.post("cmd/sitemgr", json={"cmd": "delete-device", "mac": mac})
         return result
 
     async def provision_device(self, mac: str) -> dict[str, Any]:
