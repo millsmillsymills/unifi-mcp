@@ -61,6 +61,17 @@ class UniFiDeviceAlreadyAdoptedError(UniFiError):
     """
 
 
+def _status_tag(error: BaseException) -> str:
+    """Prefix ToolError messages with ``[HTTP <status>] `` when a code is known.
+
+    Agents typically branch on status to decide whether to retry, re-auth,
+    or give up. Embedding the code in the message avoids forcing them to
+    regex out "HTTP 4xx" from the inner exception stringification.
+    """
+    status = getattr(error, "status_code", None)
+    return f"[HTTP {status}] " if isinstance(status, int) else ""
+
+
 def handle_client_error(error: BaseException) -> NoReturn:
     """Map UniFi exceptions to FastMCP ToolError with agent-readable messages.
 
@@ -71,29 +82,33 @@ def handle_client_error(error: BaseException) -> NoReturn:
     Raises:
         asyncio.CancelledError: Propagated without wrapping.
         ToolError: For any other exception, with a descriptive message.
+            Messages carry a ``[HTTP <status>]`` prefix when the UniFi
+            exception carried a status code, so agents can branch on status
+            without regex-ing the inner message.
     """
     if isinstance(error, asyncio.CancelledError):
         raise error
+    tag = _status_tag(error)
     if isinstance(error, UniFiAuthError):
-        raise ToolError(f"Authentication failed: {error}. Check your API key.") from error
+        raise ToolError(f"{tag}Authentication failed: {error}. Check your API key.") from error
     if isinstance(error, UniFiBadRequestError):
-        raise ToolError(f"Invalid request: {error}.") from error
+        raise ToolError(f"{tag}Invalid request: {error}.") from error
     if isinstance(error, UniFiNotFoundError):
-        raise ToolError(f"Resource not found: {error}") from error
+        raise ToolError(f"{tag}Resource not found: {error}") from error
     if isinstance(error, UniFiRateLimitError):
-        raise ToolError(f"Rate limit exceeded: {error}. Try again later.") from error
+        raise ToolError(f"{tag}Rate limit exceeded: {error}. Try again later.") from error
     if isinstance(error, UniFiServerError):
-        raise ToolError(f"UniFi server error: {error}. The controller may be unhealthy.") from error
+        raise ToolError(f"{tag}UniFi server error: {error}. The controller may be unhealthy.") from error
     if isinstance(error, UniFiTimeoutError):
-        raise ToolError(f"Request timed out: {error}. The controller did not respond in time.") from error
+        raise ToolError(f"{tag}Request timed out: {error}. The controller did not respond in time.") from error
     if isinstance(error, UniFiConnectionError):
-        raise ToolError(f"Connection failed: {error}. Check host and network.") from error
+        raise ToolError(f"{tag}Connection failed: {error}. Check host and network.") from error
     if isinstance(error, UniFiReadOnlyError):
         raise ToolError(f"Write operation blocked: {error}. Server is in read-only mode.") from error
     if isinstance(error, UniFiDeviceAlreadyAdoptedError):
         raise ToolError(f"Device already adopted: {error}") from error
     if isinstance(error, UniFiError):
-        raise ToolError(f"UniFi API error: {error}") from error
+        raise ToolError(f"{tag}UniFi API error: {error}") from error
     # Unexpected errors
     logger.exception("Unexpected error in tool execution")
     raise ToolError(f"Unexpected error: {error}") from error
