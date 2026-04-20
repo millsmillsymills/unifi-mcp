@@ -82,12 +82,52 @@ class BaseUniFiClient(ABC):
             return None
         return max(seconds, 0)
 
+    @staticmethod
+    def _extract_error_body(response: httpx.Response) -> str:
+        """Return a short, actionable error description from a response body.
+
+        UniFi APIs wrap error details in structured JSON; extracting the
+        useful field beats truncating raw JSON at 200 chars and cutting the
+        message off mid-word. Recognized envelopes:
+
+        - Network legacy: ``{"meta": {"rc": "error", "msg": "api.err.X"}}``
+        - Protect integration: ``{"error": {"message": "..."}}``
+        - Simpler forms: ``{"error": "..."}`` or ``{"message": "..."}``
+
+        Anything else (non-JSON, unrecognized shape) falls back to the first
+        200 chars of ``response.text``. The full body is logged at DEBUG
+        regardless so the complete error is recoverable from logs.
+        """
+        # Full-body DEBUG log is always emitted so operators can see the
+        # untruncated payload after the fact without re-triggering the error.
+        logger.debug("Error response body (HTTP %d): %s", response.status_code, response.text)
+        fallback = response.text[:200]
+        try:
+            data = response.json()
+        except ValueError:
+            return fallback
+        if not isinstance(data, dict):
+            return fallback
+        # Try known envelopes in order. The first non-empty string wins.
+        meta = data.get("meta") if isinstance(data.get("meta"), dict) else None
+        err = data.get("error")
+        candidates: list[Any] = [
+            meta.get("msg") if meta else None,
+            err.get("message") if isinstance(err, dict) else None,
+            err if isinstance(err, str) else None,
+            data.get("message"),
+        ]
+        for candidate in candidates:
+            if isinstance(candidate, str) and candidate:
+                return candidate
+        return fallback
+
     def _raise_for_status(self, response: httpx.Response) -> None:
         """Map HTTP status codes to typed exceptions."""
         if response.is_success:
             return
         status = response.status_code
-        body = response.text[:200]
+        body = self._extract_error_body(response)
         if status == 400:
             raise UniFiBadRequestError(f"HTTP {status}: {body}", status_code=status)
         if status in (401, 403):
