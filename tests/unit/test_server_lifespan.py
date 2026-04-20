@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from contextlib import aclosing
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -400,6 +401,126 @@ class TestServerLifespan:
                 assert any(n.startswith("site_manager_") for n in tool_names)
                 with pytest.raises(StopAsyncIteration):
                     await gen.__anext__()
+
+    @pytest.mark.parametrize("api_name", ["network", "protect", "site_manager"])
+    async def test_disabled_tool_warn_includes_exception_class_for_each_api(self, monkeypatch, caplog, api_name):
+        """Locks the operator-visible contract from #108 item 2: every API
+        that fails validation must emit a WARN that names the exception
+        class, not just the API name. Parametrized so adding a fourth API
+        without diagnostic wiring fails a test instead of shipping silently.
+        """
+        import logging
+
+        _setup_env_for_lifespan(monkeypatch)
+
+        failing = AsyncMock()
+        failing.validate_connection.side_effect = UniFiAuthError("HTTP 401: bad key", status_code=401)
+
+        healthy = {
+            name: _make_validating_client() for name in ("network", "protect", "site_manager") if name != api_name
+        }
+        patches = {
+            "network": ("unifi_mcp.clients.network.NetworkClient", healthy.get("network")),
+            "protect": ("unifi_mcp.clients.protect.ProtectClient", healthy.get("protect")),
+            "site_manager": ("unifi_mcp.clients.site_manager.SiteManagerClient", healthy.get("site_manager")),
+        }
+        patches[api_name] = (patches[api_name][0], failing)
+
+        with (
+            patch(patches["network"][0], return_value=patches["network"][1]),
+            patch(patches["protect"][0], return_value=patches["protect"][1]),
+            patch(patches["site_manager"][0], return_value=patches["site_manager"][1]),
+            caplog.at_level(logging.WARNING, logger="unifi_mcp.server"),
+        ):
+            gen = server_lifespan._fn(None)
+            async with aclosing(gen):
+                await gen.__anext__()
+                with pytest.raises(StopAsyncIteration):
+                    await gen.__anext__()
+
+        disabled = [
+            r for r in caplog.records if f"{api_name} tools disabled" in r.getMessage() and r.levelno == logging.WARNING
+        ]
+        assert disabled, f"expected '{api_name} tools disabled' WARN; got {[r.getMessage() for r in caplog.records]!r}"
+        msg = disabled[0].getMessage()
+        assert "UniFiAuthError" in msg, f"expected exception class in WARN for {api_name}; got {msg!r}"
+        assert "HTTP 401" in msg, f"expected exception message text in WARN for {api_name}; got {msg!r}"
+
+    async def test_protect_client_constructed_with_independent_host(self, monkeypatch):
+        """#108 item 3: when UNIFI_PROTECT_HOST differs from UNIFI_NETWORK_HOST,
+        the ProtectClient must be built against the Protect host — mirrors the
+        audit topology (UCG on .1, UCK-G2-Plus on .220) that the suite didn't
+        previously exercise end-to-end.
+        """
+        monkeypatch.setenv("UNIFI_MODE", "readonly")
+        monkeypatch.setenv("UNIFI_NETWORK_HOST", "10.0.0.1")
+        monkeypatch.setenv("UNIFI_NETWORK_API", "n")
+        monkeypatch.setenv("UNIFI_PROTECT_HOST", "10.0.0.2")
+        monkeypatch.setenv("UNIFI_PROTECT_PORT", "7443")
+        monkeypatch.setenv("UNIFI_PROTECT_API", "p")
+        monkeypatch.delenv("UNIFI_SITE_MANAGER_API", raising=False)
+
+        seen: dict[str, str] = {}
+
+        def _capture_protect(*, base_url: str, **_: Any) -> AsyncMock:
+            seen["protect"] = base_url
+            return _make_validating_client()
+
+        def _capture_network(*, base_url: str, **_: Any) -> AsyncMock:
+            seen["network"] = base_url
+            return _make_validating_client()
+
+        with (
+            patch("unifi_mcp.clients.network.NetworkClient", side_effect=_capture_network),
+            patch("unifi_mcp.clients.protect.ProtectClient", side_effect=_capture_protect),
+        ):
+            gen = server_lifespan._fn(None)
+            async with aclosing(gen):
+                await gen.__anext__()
+                with pytest.raises(StopAsyncIteration):
+                    await gen.__anext__()
+
+        assert seen["protect"] == "https://10.0.0.2:7443", seen
+        assert seen["network"] == "https://10.0.0.1:443", seen
+
+    async def test_protect_port_alone_does_not_leak_onto_network_base_url(self, monkeypatch):
+        """#108 item 3 negative: setting only UNIFI_PROTECT_PORT (no HOST)
+        must leave the Network base URL untouched. Protect inherits the
+        Network *host* but uses its own explicit port; Network's port stays
+        at the default.
+        """
+        monkeypatch.setenv("UNIFI_MODE", "readonly")
+        monkeypatch.setenv("UNIFI_NETWORK_HOST", "10.0.0.1")
+        monkeypatch.setenv("UNIFI_NETWORK_API", "n")
+        monkeypatch.setenv("UNIFI_PROTECT_PORT", "7443")
+        monkeypatch.setenv("UNIFI_PROTECT_API", "p")
+        monkeypatch.delenv("UNIFI_PROTECT_HOST", raising=False)
+        monkeypatch.delenv("UNIFI_SITE_MANAGER_API", raising=False)
+
+        seen: dict[str, str] = {}
+
+        def _capture_protect(*, base_url: str, **_: Any) -> AsyncMock:
+            seen["protect"] = base_url
+            return _make_validating_client()
+
+        def _capture_network(*, base_url: str, **_: Any) -> AsyncMock:
+            seen["network"] = base_url
+            return _make_validating_client()
+
+        with (
+            patch("unifi_mcp.clients.network.NetworkClient", side_effect=_capture_network),
+            patch("unifi_mcp.clients.protect.ProtectClient", side_effect=_capture_protect),
+        ):
+            gen = server_lifespan._fn(None)
+            async with aclosing(gen):
+                await gen.__anext__()
+                with pytest.raises(StopAsyncIteration):
+                    await gen.__anext__()
+
+        assert seen["network"] == "https://10.0.0.1:443", f"Protect port must not affect Network base URL; got {seen!r}"
+        assert seen["protect"] == "https://10.0.0.1:7443", (
+            f"Protect should inherit Network host and use its own explicit port; got {seen!r}"
+        )
 
     async def test_unreachable_api_does_not_disable_others(self, monkeypatch):
         """Disabling one API's tools must not touch other APIs' tools."""
