@@ -204,25 +204,31 @@ class TestCommandMethods:
             assert value is None or value >= 300.0, f"{key} timeout too short: {value}"
 
     @pytest.mark.parametrize(
-        ("method_name", "endpoint", "expected_cmd"),
+        ("method_name", "endpoint", "expected_cmd", "needs_client_precheck"),
         [
-            ("adopt_device", "cmd/devmgr", b"adopt"),
-            ("locate_device", "cmd/devmgr", b"set-locate"),
-            ("unlocate_device", "cmd/devmgr", b"unset-locate"),
-            ("provision_device", "cmd/devmgr", b"force-provision"),
-            ("upgrade_device", "cmd/devmgr", b"upgrade"),
-            ("unblock_client", "cmd/stamgr", b"unblock-sta"),
-            ("kick_client", "cmd/stamgr", b"kick-sta"),
-            ("unauthorize_guest", "cmd/stamgr", b"unauthorize-guest"),
+            ("adopt_device", "cmd/devmgr", b"adopt", False),
+            ("locate_device", "cmd/devmgr", b"set-locate", False),
+            ("unlocate_device", "cmd/devmgr", b"unset-locate", False),
+            ("provision_device", "cmd/devmgr", b"force-provision", False),
+            ("upgrade_device", "cmd/devmgr", b"upgrade", False),
+            # stamgr commands now pre-check the MAC against the client list (#96).
+            ("unblock_client", "cmd/stamgr", b"unblock-sta", True),
+            ("kick_client", "cmd/stamgr", b"kick-sta", False),
+            ("unauthorize_guest", "cmd/stamgr", b"unauthorize-guest", True),
         ],
     )
     @respx.mock
-    async def test_mac_command(self, client, method_name, endpoint, expected_cmd):
+    async def test_mac_command(self, client, method_name, endpoint, expected_cmd, needs_client_precheck):
+        mac = "aa:bb:cc:dd:ee:ff"
+        if needs_client_precheck:
+            respx.get(f"{API_PREFIX}stat/alluser").mock(
+                return_value=httpx.Response(200, json={"data": [{"mac": mac}]}),
+            )
         route = respx.post(f"{API_PREFIX}{endpoint}").mock(return_value=httpx.Response(200, json={}))
-        await getattr(client, method_name)("aa:bb:cc:dd:ee:ff")
+        await getattr(client, method_name)(mac)
         body = route.calls[0].request.content
         assert expected_cmd in body
-        assert b"aa:bb:cc:dd:ee:ff" in body
+        assert mac.encode() in body
 
     @respx.mock
     async def test_power_cycle_port_sends_port_idx(self, client):
@@ -234,8 +240,50 @@ class TestCommandMethods:
 
     @respx.mock
     async def test_authorize_guest_sends_minutes(self, client):
+        mac = "aa:bb:cc:dd:ee:ff"
+        respx.get(f"{API_PREFIX}stat/alluser").mock(
+            return_value=httpx.Response(200, json={"data": [{"mac": mac}]}),
+        )
         route = respx.post(f"{API_PREFIX}cmd/stamgr").mock(return_value=httpx.Response(200, json={}))
-        await client.authorize_guest("aa:bb:cc:dd:ee:ff", minutes=90)
+        await client.authorize_guest(mac, minutes=90)
         body = route.calls[0].request.content
         assert b"authorize-guest" in body
         assert b"90" in body
+
+
+class TestSilentNoOpProtection:
+    """#96: the stamgr tools used to return meta.rc='ok' for unknown MACs,
+    silently no-op'ing. Now they pre-check against list_all_clients and
+    raise UniFiNotFoundError if the MAC is absent.
+    """
+
+    @pytest.mark.parametrize(
+        "method_name",
+        ["block_client", "unblock_client", "authorize_guest", "unauthorize_guest"],
+    )
+    @respx.mock
+    async def test_unknown_mac_raises_not_found(self, client, method_name):
+        # stat/alluser returns an empty list — MAC isn't known.
+        respx.get(f"{API_PREFIX}stat/alluser").mock(
+            return_value=httpx.Response(200, json={"data": []}),
+        )
+        # The POST must never be reached.
+        route = respx.post(f"{API_PREFIX}cmd/stamgr").mock(return_value=httpx.Response(200, json={}))
+
+        from unifi_mcp.errors import UniFiNotFoundError
+
+        with pytest.raises(UniFiNotFoundError, match="aa:bb:cc:dd:ee:ff"):
+            await getattr(client, method_name)("aa:bb:cc:dd:ee:ff")
+        assert route.call_count == 0
+
+    @respx.mock
+    async def test_kick_client_skips_precheck(self, client):
+        """kick_client must NOT call stat/alluser — it relies on the controller's
+        own validation so the behavior isn't coupled to active-client listings.
+        """
+        list_route = respx.get(f"{API_PREFIX}stat/alluser").mock(
+            return_value=httpx.Response(200, json={"data": []}),
+        )
+        respx.post(f"{API_PREFIX}cmd/stamgr").mock(return_value=httpx.Response(200, json={}))
+        await client.kick_client("aa:bb:cc:dd:ee:ff")
+        assert list_route.call_count == 0
