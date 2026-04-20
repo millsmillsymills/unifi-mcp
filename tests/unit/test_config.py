@@ -234,6 +234,34 @@ class TestHandleClientError:
         # The exact exception object should propagate, not a new one.
         assert exc_info.value is cancel
 
+    def test_keyboard_interrupt_is_reraised_not_wrapped(self):
+        """KeyboardInterrupt must propagate so SIGINT returns control to
+        the operator. Wrapping it as ToolError would swallow Ctrl-C mid-call.
+        """
+        kbd = KeyboardInterrupt()
+        with pytest.raises(KeyboardInterrupt) as exc_info:
+            handle_client_error(kbd)
+        assert exc_info.value is kbd
+
+    def test_system_exit_is_reraised_not_wrapped(self):
+        """SystemExit must propagate so sys.exit() reaches the interpreter
+        and terminates the process.
+        """
+        exit_exc = SystemExit(2)
+        with pytest.raises(SystemExit) as exc_info:
+            handle_client_error(exit_exc)
+        assert exc_info.value is exit_exc
+        assert exc_info.value.code == 2
+
+    def test_generator_exit_is_reraised_not_wrapped(self):
+        """GeneratorExit must propagate so async generator cleanup completes
+        correctly. Catching it would corrupt coroutine state.
+        """
+        gen_exit = GeneratorExit()
+        with pytest.raises(GeneratorExit) as exc_info:
+            handle_client_error(gen_exit)
+        assert exc_info.value is gen_exit
+
     def test_auth_error_message_includes_status_code_prefix(self):
         """Agents branch on HTTP status — surface it explicitly in the
         ToolError so they don't have to regex the inner exception.

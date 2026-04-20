@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import NoReturn
 
@@ -84,18 +83,29 @@ def _status_tag(error: BaseException) -> str:
 def handle_client_error(error: BaseException) -> NoReturn:
     """Map UniFi exceptions to FastMCP ToolError with agent-readable messages.
 
-    ``asyncio.CancelledError`` is re-raised untouched — wrapping it as a
-    ``ToolError`` would break FastMCP's cancellation propagation (a shutdown
-    or client-side cancel would look like a tool error instead of a cancel).
+    Non-``Exception`` ``BaseException`` subclasses are re-raised untouched —
+    wrapping them as ``ToolError`` would break FastMCP's propagation of
+    cancellation, interrupts, and interpreter shutdown:
+
+    - ``asyncio.CancelledError`` — cooperative task cancellation; wrapping
+      it would turn a cancel into a phantom tool failure and prevent
+      shutdown finally-blocks from running.
+    - ``KeyboardInterrupt`` — SIGINT during tool execution; must propagate
+      so the operator regains control.
+    - ``SystemExit`` — explicit ``sys.exit``; must terminate the process.
+    - ``GeneratorExit`` — async generator cleanup; catching it would
+      corrupt coroutine state.
 
     Raises:
-        asyncio.CancelledError: Propagated without wrapping.
-        ToolError: For any other exception, with a descriptive message.
-            Messages carry a ``[HTTP <status>]`` prefix when the UniFi
-            exception carried a status code, so agents can branch on status
-            without regex-ing the inner message.
+        BaseException (non-``Exception``): Propagated without wrapping.
+        ToolError: For any ``Exception`` subclass, with a descriptive
+            message. Messages carry a ``[HTTP <status>]`` prefix when the
+            UniFi exception carried a status code, so agents can branch
+            on status without regex-ing the inner message.
     """
-    if isinstance(error, asyncio.CancelledError):
+    # BaseException subclasses that aren't Exception must propagate as-is:
+    # asyncio.CancelledError, KeyboardInterrupt, SystemExit, GeneratorExit.
+    if not isinstance(error, Exception):
         raise error
     tag = _status_tag(error)
     if isinstance(error, UniFiAuthError):
