@@ -152,6 +152,95 @@ class TestErrorMapping:
             await client.get("/test")
 
 
+class TestErrorBodyExtraction:
+    """_extract_error_body pulls the actionable message out of known UniFi
+    error envelopes instead of surfacing raw JSON truncated at 200 chars.
+    """
+
+    @respx.mock
+    async def test_network_legacy_envelope_extracts_meta_msg(self, client):
+        respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(
+                400,
+                json={"meta": {"rc": "error", "msg": "api.err.FirewallRuleFieldsRequired"}, "data": []},
+            )
+        )
+        with pytest.raises(UniFiBadRequestError) as exc_info:
+            await client.get("/test")
+        assert "api.err.FirewallRuleFieldsRequired" in str(exc_info.value)
+        # Raw JSON should NOT appear in the final message.
+        assert '"meta":' not in str(exc_info.value)
+
+    @respx.mock
+    async def test_protect_integration_envelope_extracts_error_message(self, client):
+        respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(
+                401,
+                json={"error": {"code": 401, "message": "Unauthorized: invalid API key"}},
+            )
+        )
+        with pytest.raises(UniFiAuthError) as exc_info:
+            await client.get("/test")
+        assert "Unauthorized: invalid API key" in str(exc_info.value)
+        assert '"error":' not in str(exc_info.value)
+
+    @respx.mock
+    async def test_flat_error_string_envelope(self, client):
+        respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(404, json={"error": "device not found"}),
+        )
+        with pytest.raises(UniFiNotFoundError) as exc_info:
+            await client.get("/test")
+        assert "device not found" in str(exc_info.value)
+
+    @respx.mock
+    async def test_flat_message_envelope(self, client):
+        respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(500, json={"message": "internal failure"}),
+        )
+        with pytest.raises(UniFiServerError) as exc_info:
+            await client.get("/test")
+        assert "internal failure" in str(exc_info.value)
+
+    @respx.mock
+    async def test_unrecognized_json_falls_back_to_raw_text_truncated(self, client):
+        """JSON that doesn't match any known envelope falls back to the
+        200-char truncation of response.text — never empty, never None.
+        """
+        respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(500, json={"weird_shape": [1, 2, 3], "other_field": "data"}),
+        )
+        with pytest.raises(UniFiServerError) as exc_info:
+            await client.get("/test")
+        # Fallback surfaces the raw body, so the operator sees something.
+        msg = str(exc_info.value)
+        assert msg  # non-empty
+        assert "HTTP 500" in msg
+
+    @respx.mock
+    async def test_non_json_body_falls_back_to_raw_text(self, client):
+        """Plain-text error body — unchanged behavior, still truncated at 200."""
+        respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(503, text="Service Unavailable"))
+        with pytest.raises(UniFiServerError) as exc_info:
+            await client.get("/test")
+        assert "Service Unavailable" in str(exc_info.value)
+
+    @respx.mock
+    async def test_full_body_logged_at_debug(self, client, caplog):
+        """The full body is always logged at DEBUG so truncation never loses
+        information that's needed for post-hoc debugging.
+        """
+        import logging
+
+        huge_body = "x" * 500  # well above the 200-char truncation
+        respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(500, text=huge_body))
+        with caplog.at_level(logging.DEBUG, logger="unifi_mcp.clients.base"), pytest.raises(UniFiServerError):
+            await client.get("/test")
+        assert any("Error response body" in r.getMessage() and huge_body in r.getMessage() for r in caplog.records), (
+            f"expected DEBUG log with full body; got {[r.getMessage() for r in caplog.records]!r}"
+        )
+
+
 class TestMalformedJson:
     @respx.mock
     async def test_200_with_invalid_json_raises_unifi_error_with_none_status_code(self, client):
