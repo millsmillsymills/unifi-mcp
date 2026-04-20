@@ -58,7 +58,12 @@ class SiteManagerClient(BaseUniFiClient):
         return result
 
     async def validate_connection(self) -> bool:
-        """Validate connectivity by attempting to list hosts."""
+        """Validate connectivity by attempting to list hosts.
+
+        Returns False on any UniFi or HTTP error. A False return causes the
+        server lifespan to deregister every Site Manager tool — see the
+        base class docstring and #104 for the operator-visibility plan.
+        """
         try:
             await self.list_hosts()
         except (UniFiError, httpx.HTTPError):

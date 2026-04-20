@@ -51,7 +51,16 @@ class UniFiConfig(BaseSettings):
 
     @model_validator(mode="after")
     def _default_protect_host(self) -> UniFiConfig:
-        """Default Protect host to Network host when not explicitly set."""
+        """Default Protect host to Network host when not explicitly set.
+
+        WARNING: on deployments where Protect runs on a separate NVR (e.g.
+        UCK-G2-Plus on a different IP from the gateway), leaving
+        ``UNIFI_PROTECT_HOST`` unset points Protect at the wrong device.
+        ``validate_connection`` then fails, and all Protect tools
+        deregister at startup with only a DEBUG-level log. See #107 for
+        the proposed config-load-time warning, and #104 for the
+        lifespan-level diagnostic.
+        """
         if self.unifi_protect_host is None:
             self.unifi_protect_host = self.unifi_network_host
         return self

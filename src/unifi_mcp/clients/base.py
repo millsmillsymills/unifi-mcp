@@ -182,6 +182,16 @@ class BaseUniFiClient(ABC):
         """Validate that the API is reachable and authenticated.
 
         Subclasses must override with a lightweight health-check request.
+
+        Returns False on any UniFi or HTTP error.
+
+        NOTE: a False return causes the server lifespan to deregister every
+        tool for this API via ``server.disable(tags={api_name})``. Failure
+        modes that feel transient — a wrong ``_path_prefix``, expired API
+        key, transient 404, SSL mismatch — will make all of this API's
+        tools disappear from the MCP tool list with only a log line. See
+        #104 for the diagnostic enhancement that surfaces *why* validation
+        failed.
         """
 
     async def close(self) -> None:

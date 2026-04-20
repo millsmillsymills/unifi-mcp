@@ -16,8 +16,14 @@ logger = logging.getLogger(__name__)
 class ProtectClient(BaseUniFiClient):
     """Client for the UniFi Protect API on a local controller.
 
-    Communicates with the controller's proxy API at
-    ``/proxy/protect/api/``.
+    Uses the Protect endpoint exposed through the controller's reverse proxy.
+    The exact path prefix is an implementation detail of ``_path_prefix`` and
+    may change across UniFi Protect major versions.
+
+    KNOWN ISSUE (#103): the current ``_path_prefix`` only accepts session
+    (cookie) auth, not ``X-API-Key``. Against modern UniFi OS 7.x installs
+    every call 401s and ``validate_connection`` returns False, which causes
+    the server lifespan to deregister all Protect tools at startup.
     """
 
     def __init__(
@@ -207,7 +213,15 @@ class ProtectClient(BaseUniFiClient):
     # -- Lifecycle ----------------------------------------------------------
 
     async def validate_connection(self) -> bool:
-        """Validate connectivity by fetching NVR info."""
+        """Validate connectivity by fetching NVR info.
+
+        Returns False on any UniFi or HTTP error. A False return causes the
+        server lifespan to deregister every Protect tool — see the base
+        class docstring and #104 for the operator-visibility plan.
+
+        On current ``main``, #103 causes this to return False against any
+        live UniFi OS 7.x install (HTTP 401 from ``/proxy/protect/api/``).
+        """
         try:
             await self.get_nvr()
         except (UniFiError, httpx.HTTPError):

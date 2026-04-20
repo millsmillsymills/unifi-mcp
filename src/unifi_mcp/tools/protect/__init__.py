@@ -1,4 +1,9 @@
-"""Protect API tools."""
+"""Protect API tools.
+
+KNOWN ISSUE (#103): these tools are deregistered at startup on real Protect
+controllers until the client ``_path_prefix`` is corrected. See
+``src/unifi_mcp/clients/protect.py`` for status.
+"""
 
 from __future__ import annotations
 
