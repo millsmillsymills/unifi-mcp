@@ -446,12 +446,13 @@ class TestServerLifespan:
         assert "UniFiAuthError" in msg, f"expected exception class in WARN for {api_name}; got {msg!r}"
         assert "HTTP 401" in msg, f"expected exception message text in WARN for {api_name}; got {msg!r}"
 
-    async def test_protect_client_constructed_with_independent_host(self, monkeypatch):
+    async def test_protect_client_constructed_with_independent_host(self, monkeypatch, tmp_path):
         """#108 item 3: when UNIFI_PROTECT_HOST differs from UNIFI_NETWORK_HOST,
         the ProtectClient must be built against the Protect host — mirrors the
         audit topology (UCG on .1, UCK-G2-Plus on .220) that the suite didn't
         previously exercise end-to-end.
         """
+        monkeypatch.chdir(tmp_path)  # isolate from any .env that pre-sets these vars
         monkeypatch.setenv("UNIFI_MODE", "readonly")
         monkeypatch.setenv("UNIFI_NETWORK_HOST", "10.0.0.1")
         monkeypatch.setenv("UNIFI_NETWORK_API", "n")
@@ -483,12 +484,13 @@ class TestServerLifespan:
         assert seen["protect"] == "https://10.0.0.2:7443", seen
         assert seen["network"] == "https://10.0.0.1:443", seen
 
-    async def test_protect_port_alone_does_not_leak_onto_network_base_url(self, monkeypatch):
+    async def test_protect_port_alone_does_not_leak_onto_network_base_url(self, monkeypatch, tmp_path):
         """#108 item 3 negative: setting only UNIFI_PROTECT_PORT (no HOST)
         must leave the Network base URL untouched. Protect inherits the
         Network *host* but uses its own explicit port; Network's port stays
         at the default.
         """
+        monkeypatch.chdir(tmp_path)  # isolate from any .env leaking UNIFI_PROTECT_HOST
         monkeypatch.setenv("UNIFI_MODE", "readonly")
         monkeypatch.setenv("UNIFI_NETWORK_HOST", "10.0.0.1")
         monkeypatch.setenv("UNIFI_NETWORK_API", "n")
