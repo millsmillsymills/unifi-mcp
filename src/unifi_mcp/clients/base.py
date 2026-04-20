@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 from typing import Any
@@ -27,6 +28,10 @@ from unifi_mcp.errors import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Upper bound on a single Retry-After sleep. Ubiquiti sometimes returns very
+# generous values; capping keeps a single tool call bounded.
+_MAX_RETRY_AFTER_SECONDS = 30
 
 
 class BaseUniFiClient(ABC):
@@ -61,6 +66,22 @@ class BaseUniFiClient(ABC):
         """Build full path with prefix."""
         return f"{self._path_prefix}{path}"
 
+    @staticmethod
+    def _parse_retry_after(header_value: str | None) -> int | None:
+        """Parse a Retry-After header value in seconds.
+
+        Handles the integer-seconds form (`Retry-After: 30`). The HTTP-date
+        form is rare on JSON APIs and not parsed here; unparseable values
+        return None.
+        """
+        if header_value is None:
+            return None
+        try:
+            seconds = int(header_value.strip())
+        except (TypeError, ValueError):
+            return None
+        return max(seconds, 0)
+
     def _raise_for_status(self, response: httpx.Response) -> None:
         """Map HTTP status codes to typed exceptions."""
         if response.is_success:
@@ -74,7 +95,12 @@ class BaseUniFiClient(ABC):
         if status == 404:
             raise UniFiNotFoundError(f"HTTP {status}: {body}", status_code=status)
         if status == 429:
-            raise UniFiRateLimitError(f"HTTP {status}: {body}", status_code=status)
+            retry_after = self._parse_retry_after(response.headers.get("retry-after"))
+            raise UniFiRateLimitError(
+                f"HTTP {status}: {body}",
+                status_code=status,
+                retry_after=retry_after,
+            )
         if 500 <= status < 600:
             raise UniFiServerError(f"HTTP {status}: {body}", status_code=status)
         raise UniFiError(f"HTTP {status}: {body}", status_code=status)
@@ -86,9 +112,14 @@ class BaseUniFiClient(ABC):
         TimeoutException is only retried for GET/HEAD — for POST/PUT/DELETE/PATCH
         the server may have processed the write before the response was lost,
         and a retry would cause double-execution.
+
+        HTTP 429 is retried for idempotent methods (GET/HEAD), sleeping for
+        the ``Retry-After`` duration (capped at ``_MAX_RETRY_AFTER_SECONDS``)
+        or 1 second if the header is absent. Bounded by ``self._max_retries``.
         """
+        method_upper = method.upper()
         retry_on: tuple[type[BaseException], ...] = (httpx.ConnectError,)
-        if method.upper() in ("GET", "HEAD"):
+        if method_upper in ("GET", "HEAD"):
             retry_on = (httpx.ConnectError, httpx.TimeoutException)
 
         @retry(
@@ -101,15 +132,39 @@ class BaseUniFiClient(ABC):
         async def _do() -> httpx.Response:
             return await self._client.request(method, self._url(path), **kwargs)
 
-        try:
-            response = await _do()
-        except httpx.TimeoutException as exc:
-            raise UniFiTimeoutError(str(exc)) from exc
-        except httpx.ConnectError as exc:
-            raise UniFiConnectionError(str(exc)) from exc
+        rate_limit_attempts = 0
+        while True:
+            try:
+                response = await _do()
+            except httpx.TimeoutException as exc:
+                raise UniFiTimeoutError(str(exc)) from exc
+            except httpx.ConnectError as exc:
+                raise UniFiConnectionError(str(exc)) from exc
 
-        self._raise_for_status(response)
-        return response
+            try:
+                self._raise_for_status(response)
+            except UniFiRateLimitError as exc:
+                # Honor Retry-After on idempotent methods only; a POST/PUT/DELETE
+                # that returned 429 may have partially processed, and a retry
+                # could cause double-execution.
+                if method_upper not in ("GET", "HEAD"):
+                    raise
+                if rate_limit_attempts >= self._max_retries:
+                    raise
+                sleep_seconds = min(exc.retry_after or 1, _MAX_RETRY_AFTER_SECONDS)
+                rate_limit_attempts += 1
+                logger.warning(
+                    "Rate limited (429) on %s %s; sleeping %ds before retry %d/%d",
+                    method_upper,
+                    path,
+                    sleep_seconds,
+                    rate_limit_attempts,
+                    self._max_retries,
+                )
+                await asyncio.sleep(sleep_seconds)
+                continue
+
+            return response
 
     def _parse_json(self, response: httpx.Response) -> Any:
         """Parse JSON response body, wrapping decode errors as UniFiError.
