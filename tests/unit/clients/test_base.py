@@ -464,6 +464,49 @@ class TestGetRaw:
         with pytest.raises(UniFiNotFoundError):
             await client.get_raw("/clip", max_bytes=1024)
 
+    @respx.mock
+    async def test_get_raw_streaming_retries_connect_error(self, client):
+        """The streaming branch must share the tenacity retry semantics of
+        ``_request``: a transient ConnectError retries and succeeds on the
+        second attempt.
+        """
+        route = respx.get(f"{BASE_URL}/clip")
+        route.side_effect = [
+            httpx.ConnectError("refused"),
+            httpx.Response(200, content=b"\xff\xd8\xff\xe0ok"),
+        ]
+        result = await client.get_raw("/clip", max_bytes=1024)
+        assert result == b"\xff\xd8\xff\xe0ok"
+        assert route.call_count == 2
+
+    @respx.mock
+    async def test_get_raw_streaming_maps_connect_error_when_retries_exhausted(self, client):
+        """ConnectError after exhausted retries must surface as
+        UniFiConnectionError, not a raw httpx exception that would fall
+        through handle_client_error's 'Unexpected error' branch.
+        """
+        respx.get(f"{BASE_URL}/clip").mock(side_effect=httpx.ConnectError("refused"))
+        with pytest.raises(UniFiConnectionError, match="refused"):
+            await client.get_raw("/clip", max_bytes=1024)
+
+    @respx.mock
+    async def test_get_raw_streaming_maps_timeout(self, client):
+        """ReadTimeout in the streaming path must map to UniFiTimeoutError."""
+        respx.get(f"{BASE_URL}/clip").mock(side_effect=httpx.ReadTimeout("slow"))
+        with pytest.raises(UniFiTimeoutError, match="slow"):
+            await client.get_raw("/clip", max_bytes=1024)
+
+    @respx.mock
+    async def test_get_raw_streaming_does_not_retry_max_bytes_exceeded(self, client):
+        """max_bytes exceeded is a deliberate abort, not transient — must not
+        retry (tenacity only retries on Connect/Timeout).
+        """
+        payload = b"x" * 4096
+        route = respx.get(f"{BASE_URL}/clip").mock(return_value=httpx.Response(200, content=payload))
+        with pytest.raises(UniFiError, match="max_bytes=1024"):
+            await client.get_raw("/clip", max_bytes=1024)
+        assert route.call_count == 1
+
 
 class TestClose:
     async def test_close_calls_aclose(self, client):

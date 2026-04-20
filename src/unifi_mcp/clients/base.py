@@ -227,31 +227,57 @@ class BaseUniFiClient(ABC):
         When ``max_bytes`` is set the response is streamed and aborted as soon
         as the accumulated payload exceeds the cap, raising ``UniFiError``
         instead of silently consuming unbounded memory.
+
+        Both branches share the same transient-error retry semantics as
+        ``_request``: ``ConnectError`` and ``TimeoutException`` are retried
+        (bounded by ``max_retries``), status-code errors are mapped to typed
+        UniFi exceptions.
         """
         if max_bytes is None:
             response = await self._request("GET", path, **kwargs)
             result: bytes = response.content
             return result
 
-        # Streamed path: enforce size cap without loading the whole body at once.
         url = self._url(path)
-        async with self._client.stream("GET", url, **kwargs) as response:
-            if not response.is_success:
-                # _raise_for_status reads response.text, which on a streaming
-                # response requires the body to be loaded first.
-                await response.aread()
-                self._raise_for_status(response)
-            chunks: list[bytes] = []
-            total = 0
-            async for chunk in response.aiter_bytes():
-                total += len(chunk)
-                if total > max_bytes:
-                    raise UniFiError(
-                        f"Response exceeded max_bytes={max_bytes} while streaming {path}",
-                        status_code=response.status_code,
-                    )
-                chunks.append(chunk)
-            return b"".join(chunks)
+        retry_on: tuple[type[BaseException], ...] = (httpx.ConnectError, httpx.TimeoutException)
+
+        @retry(
+            stop=stop_after_attempt(self._max_retries),
+            wait=wait_exponential(multiplier=1, min=1, max=10),
+            retry=retry_if_exception_type(retry_on),
+            reraise=True,
+        )
+        async def _stream_once() -> bytes:
+            """Stream one request attempt, enforcing max_bytes mid-stream.
+
+            Transport errors raised in here bubble out of the context manager
+            and are caught by tenacity for retry. Mapped UniFi errors bubble
+            unchanged (they aren't in ``retry_on``).
+            """
+            async with self._client.stream("GET", url, **kwargs) as response:
+                if not response.is_success:
+                    # _raise_for_status reads response.text, which on a
+                    # streaming response requires the body to be loaded first.
+                    await response.aread()
+                    self._raise_for_status(response)
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise UniFiError(
+                            f"Response exceeded max_bytes={max_bytes} while streaming {path}",
+                            status_code=response.status_code,
+                        )
+                    chunks.append(chunk)
+                return b"".join(chunks)
+
+        try:
+            return await _stream_once()
+        except httpx.TimeoutException as exc:
+            raise UniFiTimeoutError(str(exc)) from exc
+        except httpx.ConnectError as exc:
+            raise UniFiConnectionError(str(exc)) from exc
 
     # ── Lifecycle ───────────────────────────────────────────────────────
 
