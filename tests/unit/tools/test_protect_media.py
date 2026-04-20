@@ -133,3 +133,74 @@ class TestExportVideoToolLayerCap:
             )
             with pytest.raises(ToolError, match="max_bytes=1024"):
                 await tool.fn(ctx, camera_id="cam-1", start=1, end=2)
+
+
+class TestGetSnapshotToolLayerCap:
+    """End-to-end handler test for protect_get_snapshot respecting the configured cap.
+
+    Mirrors ``TestExportVideoToolLayerCap`` for the snapshot path: the tool must
+    forward ``unifi_max_snapshot_bytes`` from the lifespan context to
+    ``ProtectClient.get_snapshot`` so that an oversized snapshot (a misconfigured
+    or hostile camera) aborts mid-stream instead of loading into memory.
+    """
+
+    async def test_tool_aborts_when_snapshot_exceeds_cap(self):
+        server = FastMCP(name="snapshot-cap-test")
+        register_media_tools(server)
+
+        base_url = "https://10.0.0.1:443"
+        prefix = f"{base_url}/proxy/protect/api"
+        client = ProtectClient(base_url=base_url, api_key="k", timeout=5, max_retries=1)
+
+        config = UniFiConfig(
+            _env_file=None,
+            unifi_mode=UniFiMode.READONLY,
+            unifi_network_api="k",
+            unifi_protect_api="k",
+            unifi_max_snapshot_bytes=1024,
+        )
+
+        ctx = AsyncMock()
+        ctx.lifespan_context = _FakeLifespan(config=config, clients={"protect": client})
+
+        tool = await server.get_tool("protect_get_snapshot")
+
+        with respx.mock:
+            respx.get(f"{prefix}/cameras/cam-1/snapshot").mock(
+                return_value=httpx.Response(200, content=b"x" * 2048),
+            )
+            with pytest.raises(ToolError, match="max_bytes=1024"):
+                await tool.fn(ctx, camera_id="cam-1")
+
+    async def test_tool_returns_base64_body_when_under_cap(self):
+        """Happy path: a small snapshot streams through and returns base64 + size."""
+        import base64
+
+        server = FastMCP(name="snapshot-ok-test")
+        register_media_tools(server)
+
+        base_url = "https://10.0.0.1:443"
+        prefix = f"{base_url}/proxy/protect/api"
+        client = ProtectClient(base_url=base_url, api_key="k", timeout=5, max_retries=1)
+
+        config = UniFiConfig(
+            _env_file=None,
+            unifi_mode=UniFiMode.READONLY,
+            unifi_network_api="k",
+            unifi_protect_api="k",
+            unifi_max_snapshot_bytes=50 * 1024 * 1024,
+        )
+
+        ctx = AsyncMock()
+        ctx.lifespan_context = _FakeLifespan(config=config, clients={"protect": client})
+
+        tool = await server.get_tool("protect_get_snapshot")
+        jpeg = b"\xff\xd8\xff\xe0fake-jpeg"
+
+        with respx.mock:
+            respx.get(f"{prefix}/cameras/cam-1/snapshot").mock(return_value=httpx.Response(200, content=jpeg))
+            result = await tool.fn(ctx, camera_id="cam-1")
+
+        assert result["format"] == "jpeg"
+        assert result["size_bytes"] == len(jpeg)
+        assert base64.b64decode(result["data_base64"]) == jpeg

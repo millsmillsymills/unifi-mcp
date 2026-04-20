@@ -176,12 +176,17 @@ class ProtectClient(BaseUniFiClient):
 
     # -- Media methods ------------------------------------------------------
 
-    async def get_snapshot(self, camera_id: str, timestamp: int | None = None) -> bytes:
+    async def get_snapshot(
+        self, camera_id: str, timestamp: int | None = None, *, max_bytes: int | None = None
+    ) -> bytes:
         """Get a snapshot image from a camera.
 
         Args:
             camera_id: The camera ID.
             timestamp: Optional Unix timestamp (ms) for a historical snapshot.
+            max_bytes: If set, stream the response and abort if the snapshot
+                exceeds this many bytes. Prevents OOM on a malformed or
+                hostile camera returning an oversized image.
 
         Returns:
             Raw snapshot bytes (JPEG).
@@ -189,7 +194,7 @@ class ProtectClient(BaseUniFiClient):
         params: dict[str, int] = {}
         if timestamp is not None:
             params["ts"] = timestamp
-        return await self.get_raw(f"cameras/{camera_id}/snapshot", params=params)
+        return await self.get_raw(f"cameras/{camera_id}/snapshot", params=params, max_bytes=max_bytes)
 
     async def export_video(self, camera_id: str, start: int, end: int, *, max_bytes: int | None = None) -> bytes:
         """Export a video clip from a camera.
