@@ -9,6 +9,7 @@ from unifi_mcp.errors import (
     UniFiAuthError,
     UniFiBadRequestError,
     UniFiConnectionError,
+    UniFiDeviceAlreadyAdoptedError,
     UniFiError,
     UniFiNotFoundError,
     UniFiRateLimitError,
@@ -34,6 +35,7 @@ class TestExceptionHierarchy:
         [
             UniFiAuthError,
             UniFiBadRequestError,
+            UniFiDeviceAlreadyAdoptedError,
             UniFiNotFoundError,
             UniFiRateLimitError,
             UniFiServerError,
@@ -84,6 +86,10 @@ class TestHandleClientError:
     def test_readonly_error_maps(self):
         with pytest.raises(ToolError, match="Write operation blocked"):
             handle_client_error(UniFiReadOnlyError("not allowed"))
+
+    def test_device_already_adopted_error_maps(self):
+        with pytest.raises(ToolError, match="Device already adopted"):
+            handle_client_error(UniFiDeviceAlreadyAdoptedError("aa:bb:cc:dd:ee:ff"))
 
     def test_generic_unifi_error_maps(self):
         with pytest.raises(ToolError, match="UniFi API error"):

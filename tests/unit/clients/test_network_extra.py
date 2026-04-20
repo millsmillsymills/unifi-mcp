@@ -204,25 +204,32 @@ class TestCommandMethods:
             assert value is None or value >= 300.0, f"{key} timeout too short: {value}"
 
     @pytest.mark.parametrize(
-        ("method_name", "endpoint", "expected_cmd", "needs_client_precheck"),
+        ("method_name", "endpoint", "expected_cmd", "precheck"),
         [
-            ("adopt_device", "cmd/devmgr", b"adopt", False),
-            ("locate_device", "cmd/devmgr", b"set-locate", False),
-            ("unlocate_device", "cmd/devmgr", b"unset-locate", False),
-            ("provision_device", "cmd/devmgr", b"force-provision", False),
-            ("upgrade_device", "cmd/devmgr", b"upgrade", False),
-            # stamgr commands now pre-check the MAC against the client list (#96).
-            ("unblock_client", "cmd/stamgr", b"unblock-sta", True),
-            ("kick_client", "cmd/stamgr", b"kick-sta", False),
-            ("unauthorize_guest", "cmd/stamgr", b"unauthorize-guest", True),
+            # adopt_device now pre-checks stat/device to avoid the non-idempotent
+            # api.err.InvalidTarget on already-adopted devices (#93).
+            ("adopt_device", "cmd/devmgr", b"adopt", "device"),
+            ("locate_device", "cmd/devmgr", b"set-locate", None),
+            ("unlocate_device", "cmd/devmgr", b"unset-locate", None),
+            ("provision_device", "cmd/devmgr", b"force-provision", None),
+            ("upgrade_device", "cmd/devmgr", b"upgrade", None),
+            # stamgr commands pre-check against the client list (#96).
+            ("unblock_client", "cmd/stamgr", b"unblock-sta", "client"),
+            ("kick_client", "cmd/stamgr", b"kick-sta", None),
+            ("unauthorize_guest", "cmd/stamgr", b"unauthorize-guest", "client"),
         ],
     )
     @respx.mock
-    async def test_mac_command(self, client, method_name, endpoint, expected_cmd, needs_client_precheck):
+    async def test_mac_command(self, client, method_name, endpoint, expected_cmd, precheck):
         mac = "aa:bb:cc:dd:ee:ff"
-        if needs_client_precheck:
+        if precheck == "client":
             respx.get(f"{API_PREFIX}stat/alluser").mock(
                 return_value=httpx.Response(200, json={"data": [{"mac": mac}]}),
+            )
+        elif precheck == "device":
+            # Return empty device list so adopt proceeds (MAC not yet adopted).
+            respx.get(f"{API_PREFIX}stat/device").mock(
+                return_value=httpx.Response(200, json={"data": []}),
             )
         route = respx.post(f"{API_PREFIX}{endpoint}").mock(return_value=httpx.Response(200, json={}))
         await getattr(client, method_name)(mac)
@@ -287,3 +294,35 @@ class TestSilentNoOpProtection:
         respx.post(f"{API_PREFIX}cmd/stamgr").mock(return_value=httpx.Response(200, json={}))
         await client.kick_client("aa:bb:cc:dd:ee:ff")
         assert list_route.call_count == 0
+
+
+class TestAdoptIdempotency:
+    """#93 part 1: adopt_device must surface UniFiDeviceAlreadyAdoptedError
+    when the MAC is already adopted, rather than letting the controller's
+    opaque api.err.InvalidTarget 400 flow through.
+    """
+
+    @respx.mock
+    async def test_already_adopted_raises_typed_error(self, client):
+        from unifi_mcp.errors import UniFiDeviceAlreadyAdoptedError
+
+        mac = "aa:bb:cc:dd:ee:ff"
+        respx.get(f"{API_PREFIX}stat/device").mock(
+            return_value=httpx.Response(200, json={"data": [{"mac": mac, "adopted": True}]}),
+        )
+        # The POST must never be reached.
+        post_route = respx.post(f"{API_PREFIX}cmd/devmgr").mock(return_value=httpx.Response(200, json={}))
+
+        with pytest.raises(UniFiDeviceAlreadyAdoptedError, match=mac):
+            await client.adopt_device(mac)
+        assert post_route.call_count == 0
+
+    @respx.mock
+    async def test_known_mac_not_yet_adopted_proceeds(self, client):
+        mac = "aa:bb:cc:dd:ee:ff"
+        respx.get(f"{API_PREFIX}stat/device").mock(
+            return_value=httpx.Response(200, json={"data": [{"mac": mac, "adopted": False}]}),
+        )
+        post_route = respx.post(f"{API_PREFIX}cmd/devmgr").mock(return_value=httpx.Response(200, json={}))
+        await client.adopt_device(mac)
+        assert post_route.call_count == 1
