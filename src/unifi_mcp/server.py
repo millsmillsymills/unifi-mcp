@@ -53,20 +53,32 @@ async def _safe_close(name: str, client: Any) -> None:
         logger.exception("Error closing %s client during cleanup", name)
 
 
-async def _register_client(context: ServerContext, name: str, client: Any) -> None:
-    """Validate and register a client, closing it if validation fails."""
+async def _register_client(context: ServerContext, name: str, client: Any) -> BaseException | None:
+    """Validate and register a client, closing it if validation fails.
+
+    Returns the exception that caused registration to fail (or None on
+    success). The caller uses this to include the failure class in the
+    operator-visible WARN log at the end of the lifespan — a generic
+    "validate_connection failed" doesn't distinguish auth failures from
+    host unreachability from path mismatches.
+    """
     try:
         valid = await client.validate_connection()
-    except (UniFiError, httpx.HTTPError):
+    except (UniFiError, httpx.HTTPError) as exc:
         logger.exception("Failed to connect to %s API — skipping", name)
         await _safe_close(name, client)
-        return
+        return exc
     if valid:
         context.clients[name] = client  # type: ignore[literal-required]
         logger.info("%s API client initialized", name)
-    else:
-        logger.warning("%s API validation returned False — skipping", name)
-        await _safe_close(name, client)
+        return None
+    logger.warning("%s API validation returned False — skipping", name)
+    await _safe_close(name, client)
+    # validate_connection swallows the exception internally and returns
+    # False; recover it from the client's _last_validation_error attr
+    # (set by BaseUniFiClient subclasses on failure).
+    stashed: BaseException | None = getattr(client, "_last_validation_error", None)
+    return stashed
 
 
 @lifespan  # type: ignore[arg-type]
@@ -89,10 +101,14 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
     from unifi_mcp.clients.protect import ProtectClient
     from unifi_mcp.clients.site_manager import SiteManagerClient
 
+    # Failure reasons captured per API, used in the WARN log below so
+    # operators can distinguish auth / unreachability / path mismatch.
+    failures: dict[str, BaseException | None] = {}
+
     if config.network_enabled:
         # network_enabled guarantees unifi_network_api is not None.
         assert config.unifi_network_api is not None
-        await _register_client(
+        failures["network"] = await _register_client(
             context,
             "network",
             NetworkClient(
@@ -107,7 +123,7 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
 
     if config.protect_enabled:
         assert config.unifi_protect_api is not None
-        await _register_client(
+        failures["protect"] = await _register_client(
             context,
             "protect",
             ProtectClient(
@@ -121,7 +137,7 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
 
     if config.site_manager_enabled:
         assert config.unifi_site_manager_api is not None
-        await _register_client(
+        failures["site_manager"] = await _register_client(
             context,
             "site_manager",
             SiteManagerClient(
@@ -143,10 +159,19 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
         if enabled and api_name not in context.clients:
             if server is not None:
                 server.disable(tags={api_name})
-            logger.warning(
-                "%s tools disabled — validate_connection failed and the backend is unreachable",
-                api_name,
-            )
+            err = failures.get(api_name)
+            if err is not None:
+                logger.warning(
+                    "%s tools disabled — %s: %s",
+                    api_name,
+                    type(err).__name__,
+                    err,
+                )
+            else:
+                logger.warning(
+                    "%s tools disabled — validate_connection failed and the backend is unreachable",
+                    api_name,
+                )
 
     if not context.clients:
         logger.warning("No API clients initialized — server will have no tools")

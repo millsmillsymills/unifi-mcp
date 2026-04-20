@@ -225,6 +225,117 @@ class TestServerLifespan:
         prot_client.close.assert_awaited_once()  # failed, but was called
         sm_client.close.assert_awaited_once()  # would be skipped pre-fix
 
+    async def test_validation_failure_warn_includes_exception_class(self, monkeypatch, caplog):
+        """When validate_connection raises, the lifespan's 'tools disabled'
+        WARN must name the exception class and message so operators can
+        distinguish auth failures from unreachability from path mismatches
+        (#104).
+        """
+        import logging
+
+        _setup_env_for_lifespan(monkeypatch)
+
+        failing_net = AsyncMock()
+        failing_net.validate_connection.side_effect = UniFiAuthError("HTTP 401: bad key", status_code=401)
+
+        good_prot = _make_validating_client()
+        good_sm = _make_validating_client()
+
+        with (
+            patch("unifi_mcp.clients.network.NetworkClient", return_value=failing_net),
+            patch("unifi_mcp.clients.protect.ProtectClient", return_value=good_prot),
+            patch("unifi_mcp.clients.site_manager.SiteManagerClient", return_value=good_sm),
+            caplog.at_level(logging.WARNING, logger="unifi_mcp.server"),
+        ):
+            gen = server_lifespan._fn(None)
+            async with aclosing(gen):
+                await gen.__anext__()
+                with pytest.raises(StopAsyncIteration):
+                    await gen.__anext__()
+
+        disabled_warns = [
+            r for r in caplog.records if "network tools disabled" in r.getMessage() and r.levelno == logging.WARNING
+        ]
+        assert disabled_warns, f"expected 'network tools disabled' WARN; got {[r.getMessage() for r in caplog.records]}"
+        msg = disabled_warns[0].getMessage()
+        assert "UniFiAuthError" in msg, f"expected exception class in WARN; got {msg!r}"
+        assert "HTTP 401" in msg, f"expected exception message text in WARN; got {msg!r}"
+
+    async def test_validation_false_return_warn_includes_stashed_exception(self, monkeypatch, caplog):
+        """When validate_connection returns False after swallowing the
+        exception internally (the default BaseUniFiClient pattern), the
+        lifespan recovers the exception from _last_validation_error and
+        still surfaces the class in the WARN.
+        """
+        import logging
+
+        from unifi_mcp.errors import UniFiConnectionError
+
+        _setup_env_for_lifespan(monkeypatch)
+
+        # Stub a client that returned False from validate AND stashed an exc.
+        failing_prot = AsyncMock()
+        failing_prot.validate_connection.return_value = False
+        failing_prot._last_validation_error = UniFiConnectionError("host unreachable")
+
+        good_net = _make_validating_client()
+        good_sm = _make_validating_client()
+
+        with (
+            patch("unifi_mcp.clients.network.NetworkClient", return_value=good_net),
+            patch("unifi_mcp.clients.protect.ProtectClient", return_value=failing_prot),
+            patch("unifi_mcp.clients.site_manager.SiteManagerClient", return_value=good_sm),
+            caplog.at_level(logging.WARNING, logger="unifi_mcp.server"),
+        ):
+            gen = server_lifespan._fn(None)
+            async with aclosing(gen):
+                await gen.__anext__()
+                with pytest.raises(StopAsyncIteration):
+                    await gen.__anext__()
+
+        disabled_warns = [
+            r for r in caplog.records if "protect tools disabled" in r.getMessage() and r.levelno == logging.WARNING
+        ]
+        assert disabled_warns, "expected 'protect tools disabled' WARN"
+        msg = disabled_warns[0].getMessage()
+        assert "UniFiConnectionError" in msg, f"expected stashed exception class in WARN; got {msg!r}"
+        assert "host unreachable" in msg, f"expected stashed exception text in WARN; got {msg!r}"
+
+    async def test_validation_false_return_without_stashed_exception_falls_back(self, monkeypatch, caplog):
+        """If a client returns False but stashed nothing (e.g. pre-#104
+        client or a legitimate 'not reachable, no error captured' state),
+        the lifespan still emits the generic WARN — never silently skips.
+        """
+        import logging
+
+        _setup_env_for_lifespan(monkeypatch)
+
+        failing_prot = AsyncMock()
+        failing_prot.validate_connection.return_value = False
+        # No _last_validation_error attribute at all (AsyncMock auto-creates
+        # attrs, so explicitly None).
+        failing_prot._last_validation_error = None
+
+        good_net = _make_validating_client()
+        good_sm = _make_validating_client()
+
+        with (
+            patch("unifi_mcp.clients.network.NetworkClient", return_value=good_net),
+            patch("unifi_mcp.clients.protect.ProtectClient", return_value=failing_prot),
+            patch("unifi_mcp.clients.site_manager.SiteManagerClient", return_value=good_sm),
+            caplog.at_level(logging.WARNING, logger="unifi_mcp.server"),
+        ):
+            gen = server_lifespan._fn(None)
+            async with aclosing(gen):
+                await gen.__anext__()
+                with pytest.raises(StopAsyncIteration):
+                    await gen.__anext__()
+
+        disabled_warns = [r for r in caplog.records if "protect tools disabled" in r.getMessage()]
+        assert disabled_warns
+        msg = disabled_warns[0].getMessage()
+        assert "backend is unreachable" in msg, f"expected fallback WARN shape; got {msg!r}"
+
     async def test_register_client_close_failure_does_not_mask_original_error(self, monkeypatch, caplog):
         """If validate_connection raises UniFiAuthError and then close() itself
         raises, the original auth failure context must still reach the logs —

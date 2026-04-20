@@ -59,6 +59,11 @@ class BaseUniFiClient(ABC):
             verify=verify_ssl,
             timeout=httpx.Timeout(timeout),
         )
+        # Captured by validate_connection on failure so the lifespan can
+        # report WHY the API was disabled (auth vs. unreachability vs. path
+        # mismatch) instead of a generic "validate_connection failed". See
+        # #104.
+        self._last_validation_error: BaseException | None = None
 
     # ── HTTP helpers ────────────────────────────────────────────────────
 

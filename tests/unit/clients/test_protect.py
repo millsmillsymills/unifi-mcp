@@ -184,3 +184,31 @@ class TestValidateConnection:
         respx.get(f"{API_PREFIX}nvr").mock(side_effect=httpx.ConnectError("Connection refused"))
         result = await client.validate_connection()
         assert result is False
+
+    @respx.mock
+    async def test_validate_stashes_exception_on_failure(self, client):
+        """When validate_connection catches an error and returns False, the
+        exception is stashed on _last_validation_error so the server
+        lifespan can surface the failure class in its WARN log (#104).
+        """
+        from unifi_mcp.errors import UniFiConnectionError
+
+        respx.get(f"{API_PREFIX}nvr").mock(side_effect=httpx.ConnectError("refused"))
+        assert await client.validate_connection() is False
+        assert isinstance(client._last_validation_error, UniFiConnectionError)
+
+    @respx.mock
+    async def test_validate_clears_stashed_exception_on_success(self, client):
+        """A successful validate after a prior failure must clear the
+        stashed exception so stale errors don't leak into later WARN logs.
+        """
+        # First call fails and stashes the exception.
+        respx.get(f"{API_PREFIX}nvr").mock(side_effect=httpx.ConnectError("refused"))
+        await client.validate_connection()
+        assert client._last_validation_error is not None
+
+        # Reset and simulate success.
+        respx.reset()
+        respx.get(f"{API_PREFIX}nvr").mock(return_value=httpx.Response(200, json=FIXTURES["nvr"]))
+        assert await client.validate_connection() is True
+        assert client._last_validation_error is None
