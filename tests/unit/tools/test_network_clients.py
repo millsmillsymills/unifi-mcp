@@ -83,27 +83,38 @@ class TestClientModeGating:
 
 class TestClientCommandEndpoints:
     @pytest.mark.parametrize(
-        ("method_name", "expected_cmd"),
+        ("method_name", "expected_cmd", "needs_precheck"),
         [
-            ("block_client", b"block-sta"),
-            ("unblock_client", b"unblock-sta"),
-            ("kick_client", b"kick-sta"),
+            # block/unblock now pre-check the MAC against the client list (#96).
+            ("block_client", b"block-sta", True),
+            ("unblock_client", b"unblock-sta", True),
+            # kick_client relies on the controller's own validation.
+            ("kick_client", b"kick-sta", False),
         ],
     )
     @respx.mock
-    async def test_client_command(self, network_client, method_name, expected_cmd):
+    async def test_client_command(self, network_client, method_name, expected_cmd, needs_precheck):
+        mac = "aa:bb:cc:dd:ee:ff"
+        if needs_precheck:
+            respx.get(f"{SITE_PREFIX}/stat/alluser").mock(
+                return_value=httpx.Response(200, json={"data": [{"mac": mac}]}),
+            )
         route = respx.post(f"{SITE_PREFIX}/cmd/stamgr").mock(
             return_value=httpx.Response(200, json={"meta": {"rc": "ok"}}),
         )
-        await getattr(network_client, method_name)("aa:bb:cc:dd:ee:ff")
+        await getattr(network_client, method_name)(mac)
         body = route.calls[0].request.content
         assert expected_cmd in body
-        assert b"aa:bb:cc:dd:ee:ff" in body
+        assert mac.encode() in body
 
     @respx.mock
     async def test_authorize_guest_passes_minutes(self, network_client):
+        mac = "aa:bb:cc:dd:ee:ff"
+        respx.get(f"{SITE_PREFIX}/stat/alluser").mock(
+            return_value=httpx.Response(200, json={"data": [{"mac": mac}]}),
+        )
         route = respx.post(f"{SITE_PREFIX}/cmd/stamgr").mock(return_value=httpx.Response(200, json={}))
-        await network_client.authorize_guest("aa:bb:cc:dd:ee:ff", minutes=120)
+        await network_client.authorize_guest(mac, minutes=120)
         body = route.calls[0].request.content
         assert b"authorize-guest" in body
         assert b"120" in body

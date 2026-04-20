@@ -120,13 +120,18 @@ class TestRestartDevice:
 class TestBlockClient:
     @respx.mock
     async def test_block_client_sends_correct_cmd_payload(self, client):
+        # block_client now pre-checks the MAC (#96), so mock both endpoints.
+        mac = "aa:bb:cc:dd:ee:02"
+        respx.get(f"{API_PREFIX}stat/alluser").mock(
+            return_value=httpx.Response(200, json={"data": [{"mac": mac}]}),
+        )
         route = respx.post(f"{API_PREFIX}cmd/stamgr").mock(
             return_value=httpx.Response(200, json={"meta": {"rc": "ok"}, "data": []})
         )
-        await client.block_client("aa:bb:cc:dd:ee:02")
+        await client.block_client(mac)
         assert route.called
         request_body = json.loads(route.calls[0].request.content)
-        assert request_body == {"cmd": "block-sta", "mac": "aa:bb:cc:dd:ee:02"}
+        assert request_body == {"cmd": "block-sta", "mac": mac}
 
 
 class TestValidateConnection:

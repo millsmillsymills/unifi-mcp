@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 
 from unifi_mcp.clients.base import BaseUniFiClient
-from unifi_mcp.errors import UniFiError
+from unifi_mcp.errors import UniFiError, UniFiNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -307,30 +307,68 @@ class NetworkClient(BaseUniFiClient):
         )
         return result
 
+    async def _assert_client_known(self, mac: str) -> None:
+        """Raise UniFiNotFoundError if ``mac`` isn't in the controller's client list.
+
+        The legacy ``cmd/stamgr`` endpoints (block-sta, unblock-sta,
+        authorize-guest, unauthorize-guest) return HTTP 200 with
+        ``meta.rc == "ok"`` regardless of whether the MAC corresponds to a
+        real client, so an agent can't distinguish a real action from a
+        silent no-op on a typo. Pre-check against ``list_all_clients``
+        (active + historical) to surface a typed 404-style error instead.
+        See #96.
+        """
+        response = await self.list_all_clients()
+        known = {entry.get("mac", "").lower() for entry in response.get("data", [])}
+        if mac.lower() not in known:
+            raise UniFiNotFoundError(f"Client with MAC {mac} not found")
+
     async def block_client(self, mac: str) -> dict[str, Any]:
-        """Block a client from connecting."""
+        """Block a client from connecting.
+
+        Raises ``UniFiNotFoundError`` (→ ``ToolError: Resource not found``)
+        when ``mac`` is unknown to the controller, rather than silently
+        succeeding on a typo. See #96.
+        """
+        await self._assert_client_known(mac)
         result: dict[str, Any] = await self.post("cmd/stamgr", json={"cmd": "block-sta", "mac": mac})
         return result
 
     async def unblock_client(self, mac: str) -> dict[str, Any]:
-        """Unblock a previously blocked client."""
+        """Unblock a previously blocked client.
+
+        Raises ``UniFiNotFoundError`` when ``mac`` is unknown (see #96).
+        """
+        await self._assert_client_known(mac)
         result: dict[str, Any] = await self.post("cmd/stamgr", json={"cmd": "unblock-sta", "mac": mac})
         return result
 
     async def kick_client(self, mac: str) -> dict[str, Any]:
-        """Disconnect (kick) a client."""
+        """Disconnect (kick) a client.
+
+        The controller already validates this endpoint (returns
+        ``api.err.UnknownStation`` on missing MAC), so no pre-check.
+        """
         result: dict[str, Any] = await self.post("cmd/stamgr", json={"cmd": "kick-sta", "mac": mac})
         return result
 
     async def authorize_guest(self, mac: str, minutes: int = 60) -> dict[str, Any]:
-        """Authorize a guest client for a given duration."""
+        """Authorize a guest client for a given duration.
+
+        Raises ``UniFiNotFoundError`` when ``mac`` is unknown (see #96).
+        """
+        await self._assert_client_known(mac)
         result: dict[str, Any] = await self.post(
             "cmd/stamgr", json={"cmd": "authorize-guest", "mac": mac, "minutes": minutes}
         )
         return result
 
     async def unauthorize_guest(self, mac: str) -> dict[str, Any]:
-        """Revoke guest authorization."""
+        """Revoke guest authorization.
+
+        Raises ``UniFiNotFoundError`` when ``mac`` is unknown (see #96).
+        """
+        await self._assert_client_known(mac)
         result: dict[str, Any] = await self.post("cmd/stamgr", json={"cmd": "unauthorize-guest", "mac": mac})
         return result
 
