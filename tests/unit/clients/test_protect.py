@@ -114,6 +114,24 @@ class TestGetSnapshot:
         assert "ts=1700000000000" in str(request.url)
         assert result == snapshot_data
 
+    @respx.mock
+    async def test_get_snapshot_under_max_bytes_returns_full_body(self, client):
+        """Snapshot under the cap streams through and returns complete bytes."""
+        snapshot_data = b"\xff\xd8\xff\xe0fake-jpeg-data"
+        respx.get(f"{API_PREFIX}cameras/cam-1/snapshot").mock(return_value=httpx.Response(200, content=snapshot_data))
+        result = await client.get_snapshot("cam-1", max_bytes=1024)
+        assert result == snapshot_data
+
+    @respx.mock
+    async def test_get_snapshot_over_max_bytes_raises(self, client):
+        """Snapshot exceeding the cap aborts mid-stream with UniFiError."""
+        from unifi_mcp.errors import UniFiError
+
+        oversized = b"x" * 2000
+        respx.get(f"{API_PREFIX}cameras/cam-1/snapshot").mock(return_value=httpx.Response(200, content=oversized))
+        with pytest.raises(UniFiError, match="exceeded max_bytes=1024"):
+            await client.get_snapshot("cam-1", max_bytes=1024)
+
 
 class TestUpdateCamera:
     @respx.mock

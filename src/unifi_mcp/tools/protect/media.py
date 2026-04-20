@@ -18,13 +18,19 @@ def register_media_tools(mcp: FastMCP) -> None:
     async def protect_get_snapshot(ctx: Context, camera_id: str, timestamp: int | None = None) -> dict[str, Any]:
         """Get a JPEG snapshot from a camera.
 
+        The response is base64-encoded inline, so the server caps the snapshot
+        at ``UNIFI_MAX_SNAPSHOT_BYTES`` (default 50 MB). Requests above that
+        threshold are aborted mid-stream with a UniFiError to avoid OOM.
+
         Args:
             camera_id: The camera ID.
             timestamp: Unix timestamp in milliseconds for a historical snapshot (optional, omit for live).
         """
         try:
             context = get_server_context(ctx)
-            data: bytes = await context.clients["protect"].get_snapshot(camera_id, timestamp=timestamp)
+            data: bytes = await context.clients["protect"].get_snapshot(
+                camera_id, timestamp=timestamp, max_bytes=context.config.unifi_max_snapshot_bytes
+            )
             return {
                 "format": "jpeg",
                 "data_base64": base64.b64encode(data).decode("ascii"),
