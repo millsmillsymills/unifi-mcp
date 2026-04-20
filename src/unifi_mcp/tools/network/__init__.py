@@ -15,6 +15,7 @@ def register_network_tools(mcp: FastMCP) -> None:
     from unifi_mcp.tools.network.firewall import register_firewall_tools
     from unifi_mcp.tools.network.networks import register_network_config_tools
     from unifi_mcp.tools.network.port_forward import register_port_forward_tools
+    from unifi_mcp.tools.network.port_profiles import register_port_profile_tools
     from unifi_mcp.tools.network.routing import register_routing_tools
     from unifi_mcp.tools.network.stats import register_stats_tools
     from unifi_mcp.tools.network.system import register_system_tools
@@ -27,5 +28,6 @@ def register_network_tools(mcp: FastMCP) -> None:
     register_network_config_tools(mcp)
     register_firewall_tools(mcp)
     register_port_forward_tools(mcp)
+    register_port_profile_tools(mcp)
     register_routing_tools(mcp)
     register_system_tools(mcp)

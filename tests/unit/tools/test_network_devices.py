@@ -21,6 +21,7 @@ WRITE_TOOL_NAMES = {
     "network_locate_device",
     "network_unlocate_device",
     "network_provision_device",
+    "network_forget_device",
 }
 READ_TOOL_NAMES = {"network_get_device"}
 
@@ -123,3 +124,42 @@ class TestDeviceClientEndpoints:
         route = respx.post(f"{SITE_PREFIX}/cmd/devmgr").mock(return_value=httpx.Response(200, json={}))
         await network_client.unlocate_device("aa:bb:cc:dd:ee:ff")
         assert b"unset-locate" in route.calls[0].request.content
+
+
+class TestForgetDevice:
+    """#93 part 2: forget_device adds a reverse of adopt_device."""
+
+    async def test_forget_device_registered(self, mcp_with_devices):
+        tools = await mcp_with_devices.list_tools()
+        names = {t.name for t in tools}
+        assert "network_forget_device" in names
+
+    async def test_forget_device_marked_destructive(self, mcp_with_devices):
+        tools = await mcp_with_devices.list_tools()
+        tool = next(t for t in tools if t.name == "network_forget_device")
+        assert tool.annotations.destructiveHint is True
+        assert "write" in tool.tags
+
+    @respx.mock
+    async def test_forget_device_posts_delete_device(self, network_client):
+        mac = "aa:bb:cc:dd:ee:ff"
+        respx.get(f"{SITE_PREFIX}/stat/device").mock(
+            return_value=httpx.Response(200, json={"data": [{"mac": mac, "adopted": True}]}),
+        )
+        route = respx.post(f"{SITE_PREFIX}/cmd/sitemgr").mock(return_value=httpx.Response(200, json={}))
+        await network_client.forget_device(mac)
+        body = route.calls[0].request.content
+        assert b"delete-device" in body
+        assert mac.encode() in body
+
+    @respx.mock
+    async def test_forget_device_unknown_mac_raises(self, network_client):
+        from unifi_mcp.errors import UniFiNotFoundError
+
+        respx.get(f"{SITE_PREFIX}/stat/device").mock(return_value=httpx.Response(200, json={"data": []}))
+        post_route = respx.post(f"{SITE_PREFIX}/cmd/sitemgr").mock(
+            return_value=httpx.Response(200, json={}),
+        )
+        with pytest.raises(UniFiNotFoundError, match="aa:bb"):
+            await network_client.forget_device("aa:bb:cc:dd:ee:ff")
+        assert post_route.call_count == 0
