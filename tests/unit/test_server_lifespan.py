@@ -178,9 +178,9 @@ class TestServerLifespan:
         # failing_net was closed via the exception branch in _register_client.
         failing_net.close.assert_awaited_once()
 
-    async def test_close_error_does_not_bubble(self, monkeypatch):
+    async def test_close_error_does_not_bubble(self, monkeypatch, tmp_path):
         """A close() raising OSError during shutdown must not propagate."""
-        _setup_env_for_lifespan(monkeypatch)
+        _setup_env_for_lifespan(monkeypatch, tmp_path)  # isolate from .env leaking disabled keys
         monkeypatch.delenv("UNIFI_PROTECT_API", raising=False)
         monkeypatch.delenv("UNIFI_SITE_MANAGER_API", raising=False)
 
