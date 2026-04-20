@@ -290,6 +290,138 @@ class TestRetry:
         )
 
 
+class TestRateLimitRetry:
+    """Retry-After handling for idempotent 429 responses.
+
+    Ubiquiti's integration API returns 429 with a Retry-After header when
+    rate-limited. A single server-side retry removes the round-trip for
+    transient bursts without surfacing the rate limit to the MCP client.
+    """
+
+    @respx.mock
+    async def test_429_with_retry_after_on_get_is_retried_then_succeeds(self, client, monkeypatch):
+        slept: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            slept.append(seconds)
+
+        monkeypatch.setattr("unifi_mcp.clients.base.asyncio.sleep", fake_sleep)
+
+        route = respx.get(f"{BASE_URL}/test")
+        route.side_effect = [
+            httpx.Response(429, text="rate limited", headers={"Retry-After": "2"}),
+            httpx.Response(200, json={"ok": True}),
+        ]
+        result = await client.get("/test")
+        assert result == {"ok": True}
+        assert route.call_count == 2
+        assert slept == [2]
+
+    @respx.mock
+    async def test_429_without_retry_after_falls_back_to_one_second(self, client, monkeypatch):
+        slept: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            slept.append(seconds)
+
+        monkeypatch.setattr("unifi_mcp.clients.base.asyncio.sleep", fake_sleep)
+
+        route = respx.get(f"{BASE_URL}/test")
+        route.side_effect = [
+            httpx.Response(429, text="rate limited"),
+            httpx.Response(200, json={"ok": True}),
+        ]
+        result = await client.get("/test")
+        assert result == {"ok": True}
+        assert slept == [1]
+
+    @respx.mock
+    async def test_429_retry_after_is_capped(self, client, monkeypatch):
+        """An unreasonably large Retry-After must be capped so a single
+        tool call doesn't block for many minutes."""
+        from unifi_mcp.clients.base import _MAX_RETRY_AFTER_SECONDS
+
+        slept: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            slept.append(seconds)
+
+        monkeypatch.setattr("unifi_mcp.clients.base.asyncio.sleep", fake_sleep)
+
+        route = respx.get(f"{BASE_URL}/test")
+        route.side_effect = [
+            httpx.Response(429, text="rate limited", headers={"Retry-After": "3600"}),
+            httpx.Response(200, json={"ok": True}),
+        ]
+        await client.get("/test")
+        assert slept == [_MAX_RETRY_AFTER_SECONDS]
+
+    @respx.mock
+    async def test_429_on_post_is_not_retried(self, client):
+        """POST is non-idempotent; retrying 429 risks double-execution if the
+        server partially processed the request before rate-limiting.
+        """
+        from unifi_mcp.errors import UniFiRateLimitError
+
+        route = respx.post(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(429, text="rate limited", headers={"Retry-After": "1"})
+        )
+        with pytest.raises(UniFiRateLimitError):
+            await client.post("/test", json={"x": 1})
+        assert route.call_count == 1
+
+    @respx.mock
+    async def test_429_on_put_is_not_retried(self, client):
+        from unifi_mcp.errors import UniFiRateLimitError
+
+        route = respx.put(f"{BASE_URL}/test/1").mock(return_value=httpx.Response(429, text="rate limited"))
+        with pytest.raises(UniFiRateLimitError):
+            await client.put("/test/1", json={"x": 1})
+        assert route.call_count == 1
+
+    @respx.mock
+    async def test_429_exhausts_retries_and_surfaces_rate_limit_error(self, client, monkeypatch):
+        from unifi_mcp.errors import UniFiRateLimitError
+
+        async def fake_sleep(seconds: float) -> None:
+            pass
+
+        monkeypatch.setattr("unifi_mcp.clients.base.asyncio.sleep", fake_sleep)
+
+        # Client is configured with max_retries=2 in the fixture.
+        route = respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(429, text="rate limited", headers={"Retry-After": "1"})
+        )
+        with pytest.raises(UniFiRateLimitError, match="429"):
+            await client.get("/test")
+        # Bounded: initial request + max_retries retries.
+        assert route.call_count == 1 + client._max_retries
+
+    @respx.mock
+    async def test_rate_limit_error_carries_retry_after(self, client):
+        """The parsed Retry-After value is attached to the raised exception
+        even on non-retried methods, so downstream logic (or the agent) can
+        see how long to wait."""
+        from unifi_mcp.errors import UniFiRateLimitError
+
+        respx.post(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(429, text="rate limited", headers={"Retry-After": "42"})
+        )
+        with pytest.raises(UniFiRateLimitError) as exc_info:
+            await client.post("/test", json={"x": 1})
+        assert exc_info.value.retry_after == 42
+        assert exc_info.value.status_code == 429
+
+    def test_parse_retry_after_handles_invalid_values(self, client):
+        """Non-integer Retry-After values must not crash; return None."""
+        assert client._parse_retry_after(None) is None
+        assert client._parse_retry_after("") is None
+        assert client._parse_retry_after("not-a-number") is None
+        assert client._parse_retry_after("Wed, 21 Oct 2026 07:28:00 GMT") is None  # HTTP-date form unsupported
+        assert client._parse_retry_after("  5  ") == 5
+        assert client._parse_retry_after("-3") == 0  # clamped non-negative
+
+
 class TestPathPrefix:
     @respx.mock
     async def test_path_prefix_applied(self):

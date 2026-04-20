@@ -34,6 +34,15 @@ class UniFiNotFoundError(UniFiError):
 class UniFiRateLimitError(UniFiError):
     """Rate limit exceeded (429)."""
 
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        retry_after: int | None = None,
+    ) -> None:
+        super().__init__(message, status_code=status_code)
+        self.retry_after = retry_after
+
 
 class UniFiServerError(UniFiError):
     """Upstream server failure (5xx)."""
