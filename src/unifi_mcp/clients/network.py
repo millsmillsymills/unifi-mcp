@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 
 from unifi_mcp.clients.base import BaseUniFiClient
-from unifi_mcp.errors import UniFiError, UniFiNotFoundError
+from unifi_mcp.errors import UniFiDeviceAlreadyAdoptedError, UniFiError, UniFiNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +276,18 @@ class NetworkClient(BaseUniFiClient):
         return result
 
     async def adopt_device(self, mac: str) -> dict[str, Any]:
-        """Adopt a new device."""
+        """Adopt a new device.
+
+        The legacy endpoint responds with HTTP 400 ``api.err.InvalidTarget``
+        when the device is already adopted — indistinguishable from
+        "MAC unknown to controller" at the raw API level. Pre-check against
+        ``list_devices`` so already-adopted devices surface a typed
+        ``UniFiDeviceAlreadyAdoptedError`` that agents can branch on (#93).
+        """
+        existing = await self.list_devices()
+        for device in existing.get("data", []):
+            if device.get("mac", "").lower() == mac.lower() and device.get("adopted"):
+                raise UniFiDeviceAlreadyAdoptedError(f"Device {mac} is already adopted by this controller")
         result: dict[str, Any] = await self.post("cmd/devmgr", json={"cmd": "adopt", "mac": mac})
         return result
 

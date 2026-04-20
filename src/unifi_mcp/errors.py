@@ -50,6 +50,16 @@ class UniFiReadOnlyError(UniFiError):
     """Write operation attempted in read-only mode."""
 
 
+class UniFiDeviceAlreadyAdoptedError(UniFiError):
+    """Adopt invoked on a device that's already adopted by this controller.
+
+    The controller returns a generic ``api.err.InvalidTarget`` for this case,
+    which is indistinguishable from "MAC unknown to controller" at the raw API
+    level. ``NetworkClient.adopt_device`` pre-checks against ``list_devices``
+    and raises this to give agents a specific, actionable error to branch on.
+    """
+
+
 def handle_client_error(error: Exception) -> NoReturn:
     """Map UniFi exceptions to FastMCP ToolError with agent-readable messages.
 
@@ -72,6 +82,8 @@ def handle_client_error(error: Exception) -> NoReturn:
         raise ToolError(f"Connection failed: {error}. Check host and network.") from error
     if isinstance(error, UniFiReadOnlyError):
         raise ToolError(f"Write operation blocked: {error}. Server is in read-only mode.") from error
+    if isinstance(error, UniFiDeviceAlreadyAdoptedError):
+        raise ToolError(f"Device already adopted: {error}") from error
     if isinstance(error, UniFiError):
         raise ToolError(f"UniFi API error: {error}") from error
     # Unexpected errors
