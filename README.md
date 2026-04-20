@@ -8,7 +8,7 @@ Production-grade Python MCP server for UniFi Site Manager, Network, and Protect 
 
 ## Features
 
-- **77 MCP tools** covering UniFi Network (59), Protect (15), and Site Manager (3) APIs
+- **77 MCP tools** covering UniFi Network (59), Protect (15)[†](#known-issues), and Site Manager (3) APIs
 - **Read/write mode separation** — write tools invisible in readonly mode
 - **Graceful per-API degradation** — only registers tools for configured APIs
 - **Typed, linted, tested** — strict mypy, ruff, pytest with CI across Python 3.11-3.13
@@ -62,6 +62,24 @@ uv run pytest tests/unit/ -v
 # Pre-commit hooks
 uv run pre-commit install
 ```
+
+## Known Issues
+
+- **Protect tools fail to register on modern UniFi OS installs** —
+  [#103](https://github.com/millsmillsymills/unifi-mcp/issues/103).
+  `ProtectClient` targets `/proxy/protect/api/` which rejects `X-API-KEY`
+  auth (401). Symptom: server starts, Network and Site Manager tools
+  appear, no `protect_*` tools in the MCP tool list. Workaround: none
+  until #103 ships. Diagnostic improvements tracked in
+  [#104](https://github.com/millsmillsymills/unifi-mcp/issues/104) and
+  [#105](https://github.com/millsmillsymills/unifi-mcp/issues/105).
+
+- **Protect on a separate device requires explicit `UNIFI_PROTECT_HOST`** —
+  [#107](https://github.com/millsmillsymills/unifi-mcp/issues/107). If your
+  Protect NVR is on a different IP than your Network controller (common
+  with UCK-G2-Plus + UDM/UCG setups), set `UNIFI_PROTECT_HOST` in `.env`.
+  The default silently inherits `UNIFI_NETWORK_HOST` and produces the
+  same "no Protect tools" symptom as #103.
 
 ## License
 

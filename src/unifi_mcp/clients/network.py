@@ -467,7 +467,12 @@ class NetworkClient(BaseUniFiClient):
     # ── Lifecycle ──────────────────────────────────────────────────────
 
     async def validate_connection(self) -> bool:
-        """Validate connectivity by fetching system info."""
+        """Validate connectivity by fetching system info.
+
+        Returns False on any UniFi or HTTP error. A False return causes the
+        server lifespan to deregister every Network tool — see the base
+        class docstring and #104 for the operator-visibility plan.
+        """
         try:
             await self.get_sysinfo()
         except (UniFiError, httpx.HTTPError):
