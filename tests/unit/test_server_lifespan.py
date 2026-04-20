@@ -71,8 +71,15 @@ class TestRegisterClient:
 # ── server_lifespan full boot path ────────────────────────────────────────
 
 
-def _setup_env_for_lifespan(monkeypatch):
-    """Ensure UniFiConfig() in the lifespan reads a valid full-stack config."""
+def _setup_env_for_lifespan(monkeypatch, tmp_path=None):
+    """Ensure UniFiConfig() in the lifespan reads a valid full-stack config.
+
+    ``tmp_path`` (optional): when supplied, ``monkeypatch.chdir(tmp_path)``
+    isolates the test from any ``.env`` in cwd. Tests that explicitly set
+    every API key they care about can omit it; tests that *subtract* keys
+    from the config must pass it, otherwise a contributor's real ``.env``
+    at repo root leaks the "absent" key back in.
+    """
     monkeypatch.setenv("UNIFI_MODE", "readonly")
     monkeypatch.setenv("UNIFI_NETWORK_API", "net-k")
     monkeypatch.setenv("UNIFI_PROTECT_API", "prot-k")
@@ -80,6 +87,8 @@ def _setup_env_for_lifespan(monkeypatch):
     # Ensure no stray .env is read.
     for var in ("UNIFI_PROTECT_HOST", "UNIFI_NETWORK_HOST"):
         monkeypatch.delenv(var, raising=False)
+    if tmp_path is not None:
+        monkeypatch.chdir(tmp_path)
 
 
 def _make_validating_client(valid: bool = True) -> AsyncMock:
@@ -114,7 +123,8 @@ class TestServerLifespan:
         prot_client.close.assert_awaited_once()
         sm_client.close.assert_awaited_once()
 
-    async def test_skips_disabled_apis(self, monkeypatch):
+    async def test_skips_disabled_apis(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)  # isolate from any .env leaking the "absent" keys
         monkeypatch.setenv("UNIFI_MODE", "readonly")
         monkeypatch.setenv("UNIFI_NETWORK_API", "k")
         # Protect and Site Manager stay unset.
@@ -130,7 +140,8 @@ class TestServerLifespan:
                 with pytest.raises(StopAsyncIteration):
                     await gen.__anext__()
 
-    async def test_handles_no_configured_apis(self, monkeypatch):
+    async def test_handles_no_configured_apis(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)  # isolate from any .env leaking API keys
         monkeypatch.setenv("UNIFI_MODE", "readonly")
         for var in ("UNIFI_NETWORK_API", "UNIFI_PROTECT_API", "UNIFI_SITE_MANAGER_API"):
             monkeypatch.delenv(var, raising=False)
@@ -167,9 +178,9 @@ class TestServerLifespan:
         # failing_net was closed via the exception branch in _register_client.
         failing_net.close.assert_awaited_once()
 
-    async def test_close_error_does_not_bubble(self, monkeypatch):
+    async def test_close_error_does_not_bubble(self, monkeypatch, tmp_path):
         """A close() raising OSError during shutdown must not propagate."""
-        _setup_env_for_lifespan(monkeypatch)
+        _setup_env_for_lifespan(monkeypatch, tmp_path)  # isolate from .env leaking disabled keys
         monkeypatch.delenv("UNIFI_PROTECT_API", raising=False)
         monkeypatch.delenv("UNIFI_SITE_MANAGER_API", raising=False)
 
