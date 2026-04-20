@@ -77,9 +77,17 @@ class TestReadonlyHidesEveryWriteTool:
 # ── Shared helpers for the lifespan-driven tests ──────────────────────────
 
 
-def _clear_api_env(monkeypatch) -> None:
+def _clear_api_env(monkeypatch, tmp_path) -> None:
+    """Clear API env vars and isolate from any ``.env`` in cwd.
+
+    ``UniFiConfig`` reads ``.env`` via pydantic-settings' ``env_file`` option,
+    so ``monkeypatch.delenv`` alone doesn't prevent a contributor's real
+    ``.env`` (or one placed at repo root) from leaking API keys into the
+    test. Chdir to a tmp path that has no ``.env``.
+    """
     for var in ("UNIFI_NETWORK_API", "UNIFI_PROTECT_API", "UNIFI_SITE_MANAGER_API"):
         monkeypatch.delenv(var, raising=False)
+    monkeypatch.chdir(tmp_path)
 
 
 def _stub_client(valid: bool = True) -> AsyncMock:
@@ -106,8 +114,8 @@ class TestDegradationMatrix:
             ("UNIFI_SITE_MANAGER_API", "site_manager_"),
         ],
     )
-    async def test_single_api_exposes_only_its_namespace(self, monkeypatch, env_key, expected_prefix):
-        _clear_api_env(monkeypatch)
+    async def test_single_api_exposes_only_its_namespace(self, monkeypatch, tmp_path, env_key, expected_prefix):
+        _clear_api_env(monkeypatch, tmp_path)
         monkeypatch.setenv(env_key, "k")
         monkeypatch.setenv("UNIFI_MODE", "readonly")
 
@@ -131,8 +139,8 @@ class TestDegradationMatrix:
                 with pytest.raises(StopAsyncIteration):
                     await gen.__anext__()
 
-    async def test_no_apis_configured_yields_empty_tool_set(self, monkeypatch):
-        _clear_api_env(monkeypatch)
+    async def test_no_apis_configured_yields_empty_tool_set(self, monkeypatch, tmp_path):
+        _clear_api_env(monkeypatch, tmp_path)
         monkeypatch.setenv("UNIFI_MODE", "readonly")
         server = create_server()
         gen = server_lifespan._fn(server)
