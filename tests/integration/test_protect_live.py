@@ -39,6 +39,15 @@ async def test_get_snapshot_returns_jpeg(protect_live_client):
     assert len(snapshot) > 1024, "Snapshot suspiciously small"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "#130 — the integration API at /proxy/protect/integration/v1/ does not "
+        "expose an events endpoint (returns 404 NOT_FOUND). Flip this xfail to "
+        "a plain test when #130 ships either the removal or a WebSocket-based "
+        "replacement."
+    ),
+)
 async def test_list_events_returns_list(protect_live_client):
     events = await protect_live_client.list_events(limit=1)
     assert isinstance(events, list)

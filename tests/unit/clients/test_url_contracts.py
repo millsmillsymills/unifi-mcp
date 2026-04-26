@@ -22,7 +22,6 @@ removed.
 from __future__ import annotations
 
 import httpx
-import pytest
 import respx
 
 from unifi_mcp.clients.network import NetworkClient
@@ -72,20 +71,12 @@ class TestSiteManagerURLContract:
 
 
 class TestProtectURLContract:
-    # Verified HTTP 200 against UCK-G2-Plus running Protect 7.0.104. The
+    # Verified HTTP 200 against UCK-G2-Plus running Protect 7.0.107. The
     # X-API-Key scheme that the rest of the codebase uses is only accepted
     # under this prefix; the legacy /proxy/protect/api/ path requires the
     # session-cookie auth flow.
     EXPECTED_PREFIX = "/proxy/protect/integration/v1/"
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "#103 — ProtectClient._path_prefix is still '/proxy/protect/api/' "
-            "which only accepts cookie auth. Flip this xfail to a plain test "
-            "the moment #103 lands the switch to the integration path."
-        ),
-    )
     @respx.mock
     async def test_protect_client_uses_published_integration_prefix(self):
         base = "https://10.9.9.9:8443"

@@ -11,7 +11,7 @@ from unifi_mcp.clients.protect import ProtectClient
 from unifi_mcp.tools.protect.events import register_event_tools
 
 BASE_URL = "https://10.0.0.1:443"
-PROTECT_PREFIX = f"{BASE_URL}/proxy/protect/api"
+PROTECT_PREFIX = f"{BASE_URL}/proxy/protect/integration/v1"
 
 
 @pytest.fixture

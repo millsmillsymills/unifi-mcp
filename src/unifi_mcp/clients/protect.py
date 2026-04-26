@@ -16,14 +16,15 @@ logger = logging.getLogger(__name__)
 class ProtectClient(BaseUniFiClient):
     """Client for the UniFi Protect API on a local controller.
 
-    Uses the Protect endpoint exposed through the controller's reverse proxy.
-    The exact path prefix is an implementation detail of ``_path_prefix`` and
-    may change across UniFi Protect major versions.
+    Uses the Protect integration API exposed through the controller's reverse
+    proxy at ``/proxy/protect/integration/v1/`` — verified against UCK-G2-Plus
+    running Protect ``7.0.107``. The legacy ``/proxy/protect/api/`` path only
+    accepts session-cookie auth and rejects the ``X-API-Key`` scheme used by
+    the rest of the codebase.
 
-    KNOWN ISSUE (#103): the current ``_path_prefix`` only accepts session
-    (cookie) auth, not ``X-API-Key``. Against modern UniFi OS 7.x installs
-    every call 401s and ``validate_connection`` returns False, which causes
-    the server lifespan to deregister all Protect tools at startup.
+    Note: ``get_bootstrap`` and ``list_events`` have no integration-v1
+    equivalent; they will 404 with ``Entity 'endpoint' not found`` until
+    #130 decides whether to remove them or replace them.
     """
 
     def __init__(
@@ -35,7 +36,7 @@ class ProtectClient(BaseUniFiClient):
         timeout: int = 30,
         max_retries: int = 3,
     ) -> None:
-        self._path_prefix = "/proxy/protect/api/"
+        self._path_prefix = "/proxy/protect/integration/v1/"
         super().__init__(
             base_url=base_url,
             api_key=api_key,
@@ -98,8 +99,12 @@ class ProtectClient(BaseUniFiClient):
         return result
 
     async def get_nvr(self) -> dict[str, Any]:
-        """Get NVR system information."""
-        result: dict[str, Any] = await self.get("nvr")
+        """Get NVR system information.
+
+        The integration API exposes the NVR at ``nvrs`` (plural) and returns a
+        single object — there is exactly one NVR per controller.
+        """
+        result: dict[str, Any] = await self.get("nvrs")
         return result
 
     async def list_chimes(self) -> list[dict[str, Any]]:
@@ -170,8 +175,14 @@ class ProtectClient(BaseUniFiClient):
         return result
 
     async def update_nvr(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Update NVR settings."""
-        result: dict[str, Any] = await self.put("nvr", json=data)
+        """Update NVR settings.
+
+        Targets the integration-API ``nvrs`` resource for symmetry with
+        :meth:`get_nvr`. Untested against live hardware in readonly CI; if a
+        future deployment exercises this in readwrite mode and the integration
+        API requires a different verb or path, surface the failure here.
+        """
+        result: dict[str, Any] = await self.put("nvrs", json=data)
         return result
 
     # -- Media methods ------------------------------------------------------
@@ -223,9 +234,6 @@ class ProtectClient(BaseUniFiClient):
         Returns False on any UniFi or HTTP error. The caught exception is
         stored on ``self._last_validation_error`` so the lifespan can
         surface the failure class in its WARN log.
-
-        On current ``main``, #103 causes this to return False against any
-        live UniFi OS 7.x install (HTTP 401 from ``/proxy/protect/api/``).
         """
         try:
             await self.get_nvr()

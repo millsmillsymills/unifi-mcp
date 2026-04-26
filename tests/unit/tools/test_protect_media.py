@@ -25,7 +25,7 @@ class _FakeLifespan:
 
 
 BASE_URL = "https://10.0.0.1:443"
-PROTECT_PREFIX = f"{BASE_URL}/proxy/protect/api"
+PROTECT_PREFIX = f"{BASE_URL}/proxy/protect/integration/v1"
 
 
 @pytest.fixture
@@ -110,7 +110,7 @@ class TestExportVideoToolLayerCap:
 
         # Real client so the streaming abort in BaseUniFiClient.get_raw actually runs.
         base_url = "https://10.0.0.1:443"
-        prefix = f"{base_url}/proxy/protect/api"
+        prefix = f"{base_url}/proxy/protect/integration/v1"
         client = ProtectClient(base_url=base_url, api_key="k", timeout=5, max_retries=1)
 
         # Config with a tight cap.
@@ -149,7 +149,7 @@ class TestGetSnapshotToolLayerCap:
         register_media_tools(server)
 
         base_url = "https://10.0.0.1:443"
-        prefix = f"{base_url}/proxy/protect/api"
+        prefix = f"{base_url}/proxy/protect/integration/v1"
         client = ProtectClient(base_url=base_url, api_key="k", timeout=5, max_retries=1)
 
         config = UniFiConfig(
@@ -180,7 +180,7 @@ class TestGetSnapshotToolLayerCap:
         register_media_tools(server)
 
         base_url = "https://10.0.0.1:443"
-        prefix = f"{base_url}/proxy/protect/api"
+        prefix = f"{base_url}/proxy/protect/integration/v1"
         client = ProtectClient(base_url=base_url, api_key="k", timeout=5, max_retries=1)
 
         config = UniFiConfig(

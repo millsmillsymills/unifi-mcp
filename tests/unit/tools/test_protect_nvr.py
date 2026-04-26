@@ -13,7 +13,7 @@ from unifi_mcp.server import create_server
 from unifi_mcp.tools.protect.nvr import register_nvr_tools
 
 BASE_URL = "https://10.0.0.1:443"
-PROTECT_PREFIX = f"{BASE_URL}/proxy/protect/api"
+PROTECT_PREFIX = f"{BASE_URL}/proxy/protect/integration/v1"
 
 READ_TOOL_NAMES = {"protect_get_bootstrap", "protect_get_nvr"}
 WRITE_TOOL_NAMES = {"protect_update_nvr"}
@@ -64,11 +64,11 @@ class TestNvrClientEndpoints:
 
     @respx.mock
     async def test_get_nvr(self, protect_client_local):
-        respx.get(f"{PROTECT_PREFIX}/nvr").mock(return_value=httpx.Response(200, json={"name": "nvr-1"}))
+        respx.get(f"{PROTECT_PREFIX}/nvrs").mock(return_value=httpx.Response(200, json={"name": "nvr-1"}))
         assert await protect_client_local.get_nvr() == {"name": "nvr-1"}
 
     @respx.mock
     async def test_update_nvr_puts_body(self, protect_client_local):
-        route = respx.put(f"{PROTECT_PREFIX}/nvr").mock(return_value=httpx.Response(200, json={}))
+        route = respx.put(f"{PROTECT_PREFIX}/nvrs").mock(return_value=httpx.Response(200, json={}))
         await protect_client_local.update_nvr({"name": "renamed"})
         assert b"renamed" in route.calls[0].request.content
