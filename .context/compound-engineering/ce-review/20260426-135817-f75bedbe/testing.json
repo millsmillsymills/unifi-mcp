@@ -1,0 +1,77 @@
+{
+  "reviewer": "testing",
+  "findings": [
+    {
+      "id": "T-001",
+      "title": "Integration test xfail mark not applied to async function — will not trigger against live hardware",
+      "severity": "high",
+      "confidence": 0.90,
+      "category": "missing_edge_case_coverage",
+      "file": "tests/integration/test_protect_live.py",
+      "lines": "42-53",
+      "description": "The `@pytest.mark.xfail(strict=True)` decorator is placed on `test_list_events_returns_list` at line 42, but the function is a plain `async def` with no `@pytest.mark.asyncio` decorator (pytest-asyncio `asyncio_mode = 'auto'` handles async execution automatically, so that part is fine). The deeper problem: `pytestmark = pytest.mark.integration` applies `integration` to all tests in the module, but the `xfail` decorator is applied only via the function-level decorator, not via `pytestmark`. This combination is correct structurally — pytest merges module-level marks with function-level marks. However, the critical gap is that this test only runs against live hardware (it skips in CI because `UNIFI_PROTECT_API` is not set). The xfail annotation documents that the function body will raise (a 404-derived exception), but: (1) if the fixture skips due to missing env var, the xfail mark is never evaluated — pytest reports the test as SKIPPED, not XFAIL, so the strict guarantee provides no signal in CI; (2) the mark is therefore only meaningful on a developer machine with real hardware. This is documented intent, not a bug, but the PR comment 'xfail(strict=True) ... ensures the test FAILS if events ever start returning a list' is only true in the manual-run scenario. The CI regression signal for bootstrap/events 404 behavior lives entirely in the unit tests, not here.",
+      "recommendation": "No code change is required, but the PR description overstates this mark's CI value. Add an inline comment clarifying that this mark fires only during live runs."
+    },
+    {
+      "id": "T-002",
+      "title": "Stale module docstring in test_url_contracts.py still describes removed xfail",
+      "severity": "low",
+      "confidence": 0.95,
+      "category": "brittle_implementation_coupled_tests",
+      "file": "tests/unit/clients/test_url_contracts.py",
+      "lines": "16-19",
+      "description": "The module docstring at lines 16–19 reads: 'The Protect test is marked xfail(strict=True) while #103 is open: it proves the bug exists today, and the moment #103 ships a fix the marker forces the test to flip to fail-on-unexpected-pass so the marker gets removed.' This PR is exactly that moment — the xfail was removed and the marker is gone — but the docstring was not updated. The docstring now describes behavior that does not exist. A future reader will look for a `pytest.mark.xfail` in the file and find none, then question whether the documentation is accurate. The `import pytest` was also removed (correct, since it's no longer needed), but the prose was not cleaned up.",
+      "recommendation": "Update the docstring paragraph (lines 16–19) to describe the current state: the Protect test is now a plain passing test pinning the integration-v1 prefix, with #103 resolved."
+    },
+    {
+      "id": "T-003",
+      "title": "No integration test (even xfail) for update_nvr — PUT nvrs path is unverified against live hardware",
+      "severity": "medium",
+      "confidence": 0.82,
+      "category": "missing_edge_case_coverage",
+      "file": "src/unifi_mcp/clients/protect.py",
+      "lines": "177-186",
+      "description": "The source docstring for `update_nvr` explicitly acknowledges: 'Untested against live hardware in readonly CI; if a future deployment exercises this in readwrite mode and the integration API requires a different verb or path, surface the failure here.' The unit tests in `test_protect_extra.py::TestWriteMethods::test_update_nvr_puts_body` and `test_protect_nvr.py::TestNvrClientEndpoints::test_update_nvr_puts_body` both mock `PUT .../nvrs` and confirm the body is forwarded — they correctly pin the *unit contract*. But there is no integration test verifying that the Protect integration API at `/proxy/protect/integration/v1/nvrs` actually accepts a PUT and returns a meaningful response. The parallel `get_nvr` has `test_get_nvr_returns_identifier` in the integration suite. `update_nvr` has nothing. The PR ships a changed path (`nvr` -> `nvrs`) for a write operation with zero live-hardware confirmation. Adding even an `xfail(strict=False)` integration test that attempts a benign PUT (e.g., no-op `{}` body or same-name update) would lock in the assumption and surface a wrong-path error on the first live run.",
+      "recommendation": "Add an integration test `test_update_nvr_accepts_put` in `tests/integration/test_protect_live.py`, marked `xfail(strict=False)` to acknowledge it may fail (write operations need readwrite mode on hardware), which at minimum confirms the endpoint path doesn't 404/405 when called."
+    },
+    {
+      "id": "T-004",
+      "title": "Unit tests for get_bootstrap and list_events pin a contract that contradicts the known live behavior",
+      "severity": "medium",
+      "confidence": 0.88,
+      "category": "false_confidence",
+      "file": "tests/unit/clients/test_protect_extra.py",
+      "lines": "22-24",
+      "description": "In `test_protect_extra.py::TestReadMethods::test_get_bootstrap`, the mock returns HTTP 200 for `GET .../bootstrap`, and the assertion verifies the returned dict. In `tests/unit/clients/test_protect.py::TestListEvents` both filter tests mock `GET .../events` returning HTTP 200 with list payloads. The production code (`get_bootstrap` calls `self.get('bootstrap')`, `list_events` calls `self.get('events')`) is accurately tested at the unit level. However, the project's own CLAUDE.md and the PR description document that both of these endpoints return 404 against the live integration API. The unit tests assert a success contract that will never fire in production. This creates false confidence: the tests pass in CI, but both tools return errors on any real deployment. The tests are not wrong per se (they correctly describe what the *code* does if the server cooperated), but there is no unit-level indicator that these paths are known-broken, making it easy to ship them without noticing.",
+      "recommendation": "Add a comment block to both test classes (`TestListEvents`, `TestReadMethods::test_get_bootstrap`) noting that these paths 404 on the live integration API per #130, so a reader understands the unit tests document aspirational behavior rather than observable production behavior. Alternatively, add a separate negative test mocking a 404 response and confirming the error surfaces through the tool layer, which would at least test the error path for the known failure mode."
+    }
+  ],
+  "residual_risks": [
+    {
+      "description": "The `test_url_contracts.py` URL-contract test (`TestProtectURLContract::test_protect_client_uses_published_integration_prefix`) now correctly catches a regression to `/proxy/protect/api/` — it uses a hardcoded literal `EXPECTED_PREFIX = '/proxy/protect/integration/v1/'` that is not derived from the module, and verifies a real outbound request is made to that prefix. A prefix regression will fail this test loudly. This is the primary regression guard and it is sound.",
+      "severity": "low"
+    },
+    {
+      "description": "The `nvr` -> `nvrs` rename for `get_nvr` is locked in by `TestGetNvr::test_get_nvr_calls_correct_endpoint` (test_protect.py line 169), `TestNvrClientEndpoints::test_get_nvr` (test_protect_nvr.py line 67), and all four `TestValidateConnection` tests. A revert to `nvr` (singular) would fail at least four independent tests. Coverage for the GET path is solid.",
+      "severity": "low"
+    },
+    {
+      "description": "The `nvrs` path for `update_nvr` (PUT) is pinned in two unit tests (`test_protect_extra.py` line 59, `test_protect_nvr.py` line 72). Both confirm the URL and the body reach the mock correctly. The unit-level regression guard is present. The gap noted in T-003 is about live-hardware confidence, not unit coverage.",
+      "severity": "low"
+    }
+  ],
+  "testing_gaps": [
+    {
+      "gap": "No integration test for update_nvr with the new nvrs path",
+      "affected_code": "src/unifi_mcp/clients/protect.py:185 (PUT nvrs)",
+      "test_file_missing": "tests/integration/test_protect_live.py",
+      "suggested_test": "test_update_nvr_accepts_put — live PUT to nvrs with xfail(strict=False) to confirm path is reachable before committing to it in production write-mode deployments"
+    },
+    {
+      "gap": "No unit-level test for the 404 error path on get_bootstrap and list_events through the tool layer",
+      "affected_code": "src/unifi_mcp/clients/protect.py:52 (get_bootstrap), src/unifi_mcp/clients/protect.py:98 (list_events)",
+      "test_file_missing": "tests/unit/tools/test_protect_nvr.py, tests/unit/tools/test_protect_events.py",
+      "suggested_test": "Mock 404 responses for bootstrap and events endpoints and assert the tool layer propagates a ToolError with an actionable message, locking in the known-broken behavior and the error-handling path simultaneously"
+    }
+  ]
+}

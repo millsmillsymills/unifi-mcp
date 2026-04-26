@@ -1,0 +1,69 @@
+{
+  "reviewer": "maintainability",
+  "findings": [
+    {
+      "id": "M-001",
+      "title": "Protect test URL prefix duplicated across 8 files with inconsistent trailing-slash convention",
+      "confidence": 0.88,
+      "severity": "medium",
+      "files": [
+        "tests/unit/clients/test_protect.py:15",
+        "tests/unit/clients/test_protect_extra.py:12",
+        "tests/unit/tools/test_protect_cameras.py:16",
+        "tests/unit/tools/test_protect_devices.py:14",
+        "tests/unit/tools/test_protect_events.py:14",
+        "tests/unit/tools/test_protect_nvr.py:16",
+        "tests/unit/tools/test_protect_media.py:28 (+ inline duplication at lines 113, 152, 183)",
+        "tests/unit/clients/test_url_contracts.py:78 (EXPECTED_PREFIX class constant)"
+      ],
+      "description": "Eight test files each define their own module-level constant for the Protect API prefix string. Client-layer tests (test_protect.py:15, test_protect_extra.py:12) trail with a slash — API_PREFIX = f\"{BASE_URL}/proxy/protect/integration/v1/\" — and concatenate resource names without a separator: f\"{API_PREFIX}cameras\". Tool-layer tests (5 files) omit the trailing slash — PROTECT_PREFIX = f\"{BASE_URL}/proxy/protect/integration/v1\" — and append an explicit separator: f\"{PROTECT_PREFIX}/cameras/cam-1\". Both conventions produce correct URLs at runtime, but a reader cannot tell which applies from the constant name alone. Additionally, test_protect_media.py declares PROTECT_PREFIX at line 28 but three test methods in TestExportVideoToolLayerCap and TestGetSnapshotToolLayerCap redeclare it as a local variable at lines 113, 152, and 183 — these are easy to miss in a find-and-replace pass because they are co-located with class method bodies, not module scope. This PR touched seven of these eight files. The next path migration will require the same seven-file pass. tests/conftest.py already owns the protect_client fixture (which implicitly encodes BASE_URL = \"https://10.0.0.1:443\") but exposes no path constant. A single PROTECT_API_PREFIX in conftest.py would reduce the next migration to a one-line change.",
+      "suggested_fix": "Add PROTECT_API_PREFIX = \"https://10.0.0.1:443/proxy/protect/integration/v1/\" to tests/conftest.py alongside the existing protect_client fixture. Standardize all per-file copies on this constant and pick one trailing-slash convention consistently (trailing slash is already used in the actual _path_prefix value in protect.py:39). In test_protect_media.py, replace the three inline local prefix variables with the module-level PROTECT_PREFIX constant that already exists at line 28.",
+      "pre_existing": false,
+      "introduced_by_pr": true
+    },
+    {
+      "id": "M-002",
+      "title": "test_url_contracts.py module docstring still describes the removed xfail and characterizes #103 as open",
+      "confidence": 0.92,
+      "severity": "low",
+      "file": "tests/unit/clients/test_url_contracts.py",
+      "lines": "16-19",
+      "description": "The module docstring lines 16-19 read: 'The Protect test is marked xfail(strict=True) while #103 is open: it proves the bug exists today, and the moment #103 ships a fix the marker forces the test to flip to fail-on-unexpected-pass so the marker gets removed.' This PR is exactly that moment. The xfail decorator was removed and import pytest was cleaned up (both correct), but the prose was not updated. The docstring now describes behavior that does not exist in the file. A developer reading the file to understand the test design will search for the xfail marker, find none, and the docstring will actively mislead them about the test's history and current purpose.",
+      "suggested_fix": "Replace lines 16-19 with a description of the current state: the Protect test is a plain passing assertion that pins the integration-v1 prefix as a hardcoded literal independent of the module constant; #103 is resolved by this PR; remaining known-broken paths (bootstrap, events) are tracked in #130.",
+      "pre_existing": false,
+      "introduced_by_pr": true
+    },
+    {
+      "id": "M-003",
+      "title": "update_nvr docstring embeds a speculative future-deployment instruction that will rot",
+      "confidence": 0.72,
+      "severity": "low",
+      "file": "src/unifi_mcp/clients/protect.py",
+      "lines": "181-183",
+      "description": "The second paragraph of the update_nvr docstring reads: 'Untested against live hardware in readonly CI; if a future deployment exercises this in readwrite mode and the integration API requires a different verb or path, surface the failure here.' This is a maintenance reminder about a future scenario, not an explanation of why the current implementation works the way it does. It will silently become inaccurate once #130 validates or corrects the path. 'Surface the failure here' is ambiguous to any reader who encounters the docstring without context for what 'here' means. The first paragraph ('Targets the integration-API nvrs resource for symmetry with get_nvr') already captures the non-obvious design rationale.",
+      "suggested_fix": "Remove the second paragraph from the docstring. If the reminder must stay in source, replace it with an inline comment above the put() call: # TODO(#130): verify PUT /nvrs on live readwrite hardware. An inline comment is scoped to the implementation line and makes the temporary nature explicit; a docstring claim about what the caller should do if the API is wrong is not documentation.",
+      "pre_existing": false,
+      "introduced_by_pr": true
+    },
+    {
+      "id": "M-004",
+      "title": "ProtectClient class docstring pins firmware version 7.0.107 — ages poorly and sets no precedent in NetworkClient",
+      "confidence": 0.68,
+      "severity": "low",
+      "file": "src/unifi_mcp/clients/protect.py",
+      "lines": "20-21",
+      "description": "The class docstring says 'verified against UCK-G2-Plus running Protect 7.0.107'. NetworkClient (clients/network.py:17-21) has no equivalent firmware version reference — it states only the path it uses. The Protect version pin will silently become misleading on the first firmware upgrade. The verification context belongs in the commit message or PR description, not the class docstring. As a secondary observation: the Protect path uses /proxy/protect/integration/v1/ (singular 'integration') while the Network path uses /proxy/network/api/s/{site}/ — a different naming convention from a different Ubiquiti API tier. This asymmetry is noted only in a test class comment at tests/unit/clients/test_url_contracts.py:74-77, not in either client's source. A developer comparing the two clients would not see the explanation at the source level.",
+      "suggested_fix": "Remove the firmware version from the ProtectClient docstring; the verification belongs in the PR description. Optionally add a one-sentence note to the ProtectClient docstring acknowledging that the Protect integration API path naming differs from the Network API path naming — this is a genuine non-obvious fact that would surprise a reader navigating between the two clients.",
+      "pre_existing": false,
+      "introduced_by_pr": true
+    }
+  ],
+  "residual_risks": [
+    "docs/plans/2026-04-16-001-feat-unifi-mcp-server-plan.md:70 and :572 still reference the legacy /proxy/protect/api/ path. The plan is a frozen historical document and not used at runtime. Any developer who reads it to understand the current architecture will see a direct contradiction with the now-correct protect.py. Low priority; noted in the run's learnings.md.",
+    "get_bootstrap and list_events remain as registered MCP tools that are documented to always return HTTP 404 against the integration API. There is no deprecation signal, no DeprecationWarning emission, and no inline indicator within the tool docstrings that the failure is permanent rather than transient. An agent that retries on ToolError has no programmatic signal to stop. This is a latent confusion risk for any caller who discovers these tools after the Protect path fix ships. Tracked in #130 but unmitigated in this PR."
+  ],
+  "testing_gaps": [
+    "tests/conftest.py owns the protect_client fixture and BASE_URL implicitly but exposes no shared PROTECT_API_PREFIX constant. All eight test files that reference the Protect path must maintain their own copies. Adding a single shared constant to conftest.py would eliminate this gap for all future path changes.",
+    "test_protect_media.py has a module-level PROTECT_PREFIX constant at line 28 that is used correctly in TestMediaClientEndpoints. However, TestExportVideoToolLayerCap and TestGetSnapshotToolLayerCap each declare a redundant local prefix variable at lines 113, 152, and 183. Because these are buried in test method bodies rather than at module scope, they are easy to miss in find-and-replace migrations. Replacing them with the module-level constant would eliminate three silent miss-risks."
+  ]
+}

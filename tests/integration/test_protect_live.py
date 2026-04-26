@@ -45,7 +45,8 @@ async def test_get_snapshot_returns_jpeg(protect_live_client):
         "#130 — the integration API at /proxy/protect/integration/v1/ does not "
         "expose an events endpoint (returns 404 NOT_FOUND). Flip this xfail to "
         "a plain test when #130 ships either the removal or a WebSocket-based "
-        "replacement."
+        "replacement. Note: silently skips when UNIFI_PROTECT_API is unset; the "
+        "strict marker only fires on live manual runs, not in CI."
     ),
 )
 async def test_list_events_returns_list(protect_live_client):

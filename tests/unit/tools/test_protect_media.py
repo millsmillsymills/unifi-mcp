@@ -109,9 +109,7 @@ class TestExportVideoToolLayerCap:
         register_media_tools(server)
 
         # Real client so the streaming abort in BaseUniFiClient.get_raw actually runs.
-        base_url = "https://10.0.0.1:443"
-        prefix = f"{base_url}/proxy/protect/integration/v1"
-        client = ProtectClient(base_url=base_url, api_key="k", timeout=5, max_retries=1)
+        client = ProtectClient(base_url=BASE_URL, api_key="k", timeout=5, max_retries=1)
 
         # Config with a tight cap.
         config = UniFiConfig(
@@ -128,7 +126,7 @@ class TestExportVideoToolLayerCap:
         tool = await server.get_tool("protect_export_video")
 
         with respx.mock:
-            respx.get(f"{prefix}/cameras/cam-1/video/export").mock(
+            respx.get(f"{PROTECT_PREFIX}/cameras/cam-1/video/export").mock(
                 return_value=httpx.Response(200, content=b"x" * 2048),
             )
             with pytest.raises(ToolError, match="max_bytes=1024"):
@@ -148,9 +146,7 @@ class TestGetSnapshotToolLayerCap:
         server = FastMCP(name="snapshot-cap-test")
         register_media_tools(server)
 
-        base_url = "https://10.0.0.1:443"
-        prefix = f"{base_url}/proxy/protect/integration/v1"
-        client = ProtectClient(base_url=base_url, api_key="k", timeout=5, max_retries=1)
+        client = ProtectClient(base_url=BASE_URL, api_key="k", timeout=5, max_retries=1)
 
         config = UniFiConfig(
             _env_file=None,
@@ -166,7 +162,7 @@ class TestGetSnapshotToolLayerCap:
         tool = await server.get_tool("protect_get_snapshot")
 
         with respx.mock:
-            respx.get(f"{prefix}/cameras/cam-1/snapshot").mock(
+            respx.get(f"{PROTECT_PREFIX}/cameras/cam-1/snapshot").mock(
                 return_value=httpx.Response(200, content=b"x" * 2048),
             )
             with pytest.raises(ToolError, match="max_bytes=1024"):
@@ -179,9 +175,7 @@ class TestGetSnapshotToolLayerCap:
         server = FastMCP(name="snapshot-ok-test")
         register_media_tools(server)
 
-        base_url = "https://10.0.0.1:443"
-        prefix = f"{base_url}/proxy/protect/integration/v1"
-        client = ProtectClient(base_url=base_url, api_key="k", timeout=5, max_retries=1)
+        client = ProtectClient(base_url=BASE_URL, api_key="k", timeout=5, max_retries=1)
 
         config = UniFiConfig(
             _env_file=None,
@@ -198,7 +192,7 @@ class TestGetSnapshotToolLayerCap:
         jpeg = b"\xff\xd8\xff\xe0fake-jpeg"
 
         with respx.mock:
-            respx.get(f"{prefix}/cameras/cam-1/snapshot").mock(return_value=httpx.Response(200, content=jpeg))
+            respx.get(f"{PROTECT_PREFIX}/cameras/cam-1/snapshot").mock(return_value=httpx.Response(200, content=jpeg))
             result = await tool.fn(ctx, camera_id="cam-1")
 
         assert result["format"] == "jpeg"

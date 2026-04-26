@@ -1,0 +1,41 @@
+{
+  "reviewer": "correctness",
+  "findings": [
+    {
+      "title": "update_nvr uses PUT nvrs (plural) but the integration API may require PUT nvrs/{id} — untested against live hardware",
+      "severity": "P2",
+      "file": "src/unifi_mcp/clients/protect.py",
+      "line": 185,
+      "confidence": 0.65,
+      "autofix_class": "manual",
+      "owner": "human",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Run a live test against the UCK-G2-Plus in readwrite mode: PUT /proxy/protect/integration/v1/nvrs with a benign payload (e.g. {\"name\": current_name}). If the API returns 404 or 405, change the path to nvrs/{id} where the id comes from a preceding get_nvr() call. Add an integration test for update_nvr in test_protect_live.py once the correct path is confirmed."
+    },
+    {
+      "title": "get_nvr return shape assumption: integration API GET nvrs may return a list, not a single object — callers and type annotation assume dict",
+      "severity": "P2",
+      "file": "src/unifi_mcp/clients/protect.py",
+      "line": 107,
+      "confidence": 0.62,
+      "autofix_class": "manual",
+      "owner": "human",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "The live integration test test_get_nvr_returns_identifier passes (PR body says 3 pass), which empirically confirms the response is a dict. However there is no unit test asserting the shape; add an explicit assertion in the integration test: assert isinstance(nvr, dict), not just any(key in nvr for key in ...). If the API ever returns a list, validate_connection will succeed (get_nvr returns without error) but every downstream caller treating the return value as a dict will silently misbehave. Low-cost guard: add assert isinstance(result, dict) inside get_nvr and raise UniFiError on list shape."
+    }
+  ],
+  "residual_risks": [
+    "update_nvr is a write operation behind the 'write' tag (disabled in readonly mode) so the bad path cannot be triggered in normal readonly deployments. Risk is bounded to explicitly readwrite deployments exercising protect_update_nvr.",
+    "test_list_events_returns_list is marked xfail(strict=True) but has no @pytest.mark.asyncio — asyncio_mode=auto covers this, confirmed by the full unit suite passing. Not a bug.",
+    "_url() trailing-slash handling: prefix ends with '/' and per-method paths have no leading slash (e.g. 'nvrs', 'cameras'). f'{prefix}{path}' produces correct double-slash-free URLs in all current call sites. A future caller passing a leading slash would produce a double slash, but no such caller exists in the current codebase.",
+    "The URL-contract test (TestProtectURLContract) calls list_cameras() and asserts url__startswith the expected prefix. This is not circular because EXPECTED_PREFIX is a hardcoded literal independent of the module constant, so a future silent prefix rewrite would be caught.",
+    "bootstrap and events are known 404 on integration v1 and are documented in CLAUDE.md and the module docstring. The tools remain registered and will surface ToolError to callers — not a silent failure, and tracked in #130."
+  ],
+  "testing_gaps": [
+    "No integration test for update_nvr — the only verified write path against live hardware. At minimum a readonly-mode guard test (which exists) but no live PUT test confirms the correct endpoint shape.",
+    "No unit test asserts that get_nvr returns a dict rather than a list. The type annotation and docstring both assert single-object response, but no assertion guards against a shape change in the integration API response.",
+    "test_list_events_returns_list is xfail(strict=True) but is only meaningful against live hardware. The unit test mocks return a list successfully, so the xfail is only exercised in integration mode. This is correct and expected, but worth noting that the strict xfail will become a test suite failure (XPASS) if #130 ships a fix and this marker is not removed."
+  ]
+}

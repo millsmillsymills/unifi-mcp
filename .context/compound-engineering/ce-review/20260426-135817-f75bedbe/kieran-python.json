@@ -1,0 +1,99 @@
+{
+  "reviewer": "kieran-python",
+  "findings": [
+    {
+      "id": "KP-1",
+      "severity": "low",
+      "confidence": 0.90,
+      "file": "src/unifi_mcp/clients/protect.py",
+      "line": 39,
+      "title": "_path_prefix set before super().__init__() — ordering is safe but the pattern is fragile",
+      "description": "Setting self._path_prefix before super().__init__() is intentional here because BaseUniFiClient reads _path_prefix only inside _url(), which is called at request time — not during __init__. The diff did not change this ordering; the pattern was already present. However, BaseUniFiClient also declares _path_prefix as a class-level default (line 43 of base.py: `_path_prefix: str = \"\"`), which means a subclass that forgot the pre-super assignment would silently inherit an empty string rather than raising AttributeError. The diff leaves this as-is, which is fine, but the docstring comment that explains the ordering constraint (\"Subclasses must set _path_prefix\") lives only on the class — not on __init__ — making the invariant easy to miss when adding a new client. No action required for this PR; noting for documentation hygiene.",
+      "category": "code_quality"
+    },
+    {
+      "id": "KP-2",
+      "severity": "low",
+      "confidence": 0.65,
+      "file": "src/unifi_mcp/clients/protect.py",
+      "lines": [101, 177],
+      "title": "get_nvr / update_nvr still return dict[str, Any] — weaker than warranted given the API shape is now known",
+      "description": "The integration API at /proxy/protect/integration/v1/nvrs returns a single NVR object with stable top-level identifiers (id, mac, name — asserted in the live test). The return type dict[str, Any] gives callers no static information about the shape. A TypedDict or dataclass with at minimum id: str, mac: str, name: str would let mypy flag access to non-existent keys and remove the `any(key in nvr for key in ...)` dance in the live test. Confidence is moderate because the full NVR payload from the integration API has not been exhaustively documented in the codebase, so the full set of fields that should be pinned is unclear. This is not a regression from the diff; the dict[str, Any] typing was already present on the old path. Raise as a follow-on to #130.",
+      "category": "typing"
+    },
+    {
+      "id": "KP-3",
+      "severity": "medium",
+      "confidence": 0.82,
+      "file": "src/unifi_mcp/clients/protect.py",
+      "lines": [178, 186],
+      "title": "update_nvr docstring communicates uncertainty in the wrong layer",
+      "description": "The docstring on update_nvr reads: 'Untested against live hardware in readonly CI; if a future deployment exercises this in readwrite mode and the integration API requires a different verb or path, surface the failure here.' This embeds a maintenance instruction inside a public API docstring — the kind of comment that rots silently and misleads callers who read the docstring to understand what the method does. The docstring should describe behaviour, not self-doubt about untested paths. The appropriate home for 'this is unverified on live hardware' is a `# TODO(#130):` comment on the same line as the implementation, or a note in the PR description. The sentence 'surface the failure here' is especially confusing for a future reader who doesn't know what 'here' refers to. Recommend removing the second paragraph from the docstring entirely and adding a `# TODO(#130): verify PUT /nvrs on live readwrite hardware` inline comment above the put() call if the reminder is needed at all.",
+      "category": "documentation"
+    },
+    {
+      "id": "KP-4",
+      "severity": "low",
+      "confidence": 0.95,
+      "file": "tests/unit/clients/test_url_contracts.py",
+      "line": 17,
+      "title": "Module docstring still describes an xfail that no longer exists",
+      "description": "Lines 16-19 of the module docstring say: 'The Protect test is marked xfail(strict=True) while #103 is open ... the marker forces the test to flip to fail-on-unexpected-pass so the marker gets removed.' The @pytest.mark.xfail decorator was removed by this PR (correctly), but the docstring paragraph was not updated. A future reader will search for the xfail marker and not find it, or assume the docstring is describing the current state. The `import pytest` removal confirms the author knew the decorator was gone — the docstring update was missed. This is a correctness issue for developer docs, not a behaviour bug.",
+      "category": "documentation"
+    },
+    {
+      "id": "KP-5",
+      "severity": "low",
+      "confidence": 0.78,
+      "file": "tests/integration/test_protect_live.py",
+      "lines": [42, 51],
+      "title": "@pytest.mark.xfail(strict=True) on a bare async def with asyncio_mode=auto — will work but xfail strictness interacts unexpectedly with fixture-skip",
+      "description": "With pytest-asyncio 1.3.0 and asyncio_mode=auto, @pytest.mark.xfail on a bare async function is handled correctly; the decorator is applied before coroutine wrapping. The concern is not decorator ordering but xfail strictness semantics: strict=True means an unexpected *pass* fails the test suite. test_list_events_returns_list takes the protect_live_client fixture, which calls pytest.skip() if UNIFI_PROTECT_API is unset. A skipped test is neither xfail nor xpass — it is simply skipped — so strict=True has no effect when the fixture skips. This is harmless in CI (the test is excluded via -m 'not integration'), but when the integration suite is run without credentials, the test silently skips rather than xfailing, which means the xfail marker gives no signal. Worth documenting in the reason string: 'Note: skips silently when UNIFI_PROTECT_API is unset.' Low severity because this is an integration-only test with no CI impact.",
+      "category": "testing"
+    },
+    {
+      "id": "KP-6",
+      "severity": "medium",
+      "confidence": 0.85,
+      "file": "src/unifi_mcp/clients/protect.py",
+      "lines": [50, 65],
+      "title": "get_bootstrap and list_events are retained as known-404 emitters with no deprecation signal",
+      "description": "Both methods still exist in ProtectClient and are wired to tools (protect_get_bootstrap in nvr.py line 17, protect_list_events in events.py line 17). The CLAUDE.md and protect/__init__.py module docstring document that they always return 404 against the integration API. From a Python-API hygiene standpoint, a public method on a production client that is documented to always fail at the HTTP layer is a maintainability liability: callers cannot distinguish 'this will 404 by design' from 'something is misconfigured'. The right signal is warnings.warn('protect_get_bootstrap is not available on the integration API and will be removed in a future release; see #130', DeprecationWarning, stacklevel=2) at the top of each method body. That way callers (including the tool layer) get a runtime signal rather than a silent 404 that surfaces only in logs. Alternatively, raise NotImplementedError immediately with a message pointing to #130 — this is more honest than silently issuing a network request that is guaranteed to fail. The diff chose to leave them in place, which is a defensible short-term decision, but without a deprecation signal the methods are a maintenance trap.",
+      "category": "code_quality"
+    },
+    {
+      "id": "KP-7",
+      "severity": "low",
+      "confidence": 0.72,
+      "file": "tests/unit/tools/test_protect_media.py",
+      "lines": [647, 671, 693],
+      "title": "Repeated local prefix = f'{base_url}/proxy/protect/integration/v1' inside test methods — would benefit from a shared constant",
+      "description": "Three test methods in TestExportVideoToolLayerCap, TestGetSnapshotToolLayerCap.test_tool_aborts_when_snapshot_exceeds_cap, and TestGetSnapshotToolLayerCap.test_tool_returns_base64_body_when_under_cap each declare their own local `prefix` variable set to the same string. The module-level PROTECT_PREFIX constant already exists and is used in other tests in the same file. These three methods were not refactored to use it, leaving three independent strings that will drift silently if the prefix changes again. Since the module-level constant is right there, the fix is a one-line change per method. Low severity because it is a maintainability issue, not a correctness issue — the test suite passes.",
+      "category": "code_quality"
+    }
+  ],
+  "residual_risks": [
+    {
+      "id": "RR-1",
+      "description": "update_nvr targets PUT /nvrs but this has not been validated against live hardware. If the integration API uses PATCH instead of PUT, or a different resource path (e.g. /nvrs/{id}), the method will silently return an error at runtime in readwrite mode. There is no integration test covering this path. The xfail on test_list_events at least signals the events 404 explicitly; no equivalent signal exists for update_nvr.",
+      "files": ["src/unifi_mcp/clients/protect.py"]
+    },
+    {
+      "id": "RR-2",
+      "description": "get_bootstrap and list_events will raise UniFiNotFoundError (HTTP 404) at runtime against the integration API. The tool layer (protect_get_bootstrap, protect_list_events) catches Exception and calls handle_client_error, which converts this to a ToolError. Agents calling these tools will receive a 'Resource not found' error message with no indication that the method is permanently broken rather than transiently unavailable. An agent that retries on ToolError will loop indefinitely on these two tools.",
+      "files": ["src/unifi_mcp/tools/protect/nvr.py", "src/unifi_mcp/tools/protect/events.py", "src/unifi_mcp/clients/protect.py"]
+    }
+  ],
+  "testing_gaps": [
+    {
+      "id": "TG-1",
+      "description": "No unit test verifies that calling get_bootstrap or list_events returns a 404-mapped ToolError at the tool layer. The unit tests in test_protect_nvr.py mock /bootstrap successfully (line 62), which tests the happy path of a method that is documented to always fail in production. A test that mocks 404 on /bootstrap and asserts the tool raises ToolError would be more honest and catch any regression if someone accidentally 'fixes' the endpoint path.",
+      "files": ["tests/unit/tools/test_protect_nvr.py", "tests/unit/tools/test_protect_events.py"]
+    },
+    {
+      "id": "TG-2",
+      "description": "update_nvr has no integration test. test_update_nvr_puts_body in both test_protect.py and test_protect_extra.py only verify that the PUT body is constructed correctly against a mocked 200 response. There is no test that exercises the actual HTTP verb and path against a real or simulated readwrite NVR. Given that the docstring explicitly flags this as untested on live hardware, the gap is known — but it should be tracked.",
+      "files": ["tests/unit/clients/test_protect.py", "tests/unit/clients/test_protect_extra.py"]
+    }
+  ]
+}

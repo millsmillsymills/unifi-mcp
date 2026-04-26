@@ -14,17 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 class ProtectClient(BaseUniFiClient):
-    """Client for the UniFi Protect API on a local controller.
+    """Client for the UniFi Protect integration API on a local controller.
 
-    Uses the Protect integration API exposed through the controller's reverse
-    proxy at ``/proxy/protect/integration/v1/`` — verified against UCK-G2-Plus
-    running Protect ``7.0.107``. The legacy ``/proxy/protect/api/`` path only
-    accepts session-cookie auth and rejects the ``X-API-Key`` scheme used by
-    the rest of the codebase.
-
+    Uses ``/proxy/protect/integration/v1/`` (X-API-Key compatible). The
+    legacy ``/proxy/protect/api/`` path only accepts session-cookie auth.
     Note: ``get_bootstrap`` and ``list_events`` have no integration-v1
-    equivalent; they will 404 with ``Entity 'endpoint' not found`` until
-    #130 decides whether to remove them or replace them.
+    equivalent; they 404 with ``Entity 'endpoint' not found`` (see #130).
     """
 
     def __init__(
@@ -101,8 +96,8 @@ class ProtectClient(BaseUniFiClient):
     async def get_nvr(self) -> dict[str, Any]:
         """Get NVR system information.
 
-        The integration API exposes the NVR at ``nvrs`` (plural) and returns a
-        single object — there is exactly one NVR per controller.
+        The integration API exposes the NVR at ``nvrs`` (plural) but returns
+        a single object — there is one NVR per controller.
         """
         result: dict[str, Any] = await self.get("nvrs")
         return result
@@ -175,13 +170,8 @@ class ProtectClient(BaseUniFiClient):
         return result
 
     async def update_nvr(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Update NVR settings.
-
-        Targets the integration-API ``nvrs`` resource for symmetry with
-        :meth:`get_nvr`. Untested against live hardware in readonly CI; if a
-        future deployment exercises this in readwrite mode and the integration
-        API requires a different verb or path, surface the failure here.
-        """
+        """Update NVR settings."""
+        # TODO(#130): verify PUT /nvrs (vs /nvrs/{id}) on live readwrite hardware.
         result: dict[str, Any] = await self.put("nvrs", json=data)
         return result
 

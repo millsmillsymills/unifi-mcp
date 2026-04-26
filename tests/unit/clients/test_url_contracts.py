@@ -13,10 +13,8 @@ integration-API documentation at the time of writing:
 * Protect:      /proxy/protect/integration/v1/   (X-API-Key compatible)
 * Site Manager: /v1/  (base host https://api.ui.com)
 
-The Protect test is marked ``xfail(strict=True)`` while #103 is open: it
-proves the bug exists today, and the moment #103 ships a fix the marker
-forces the test to flip to fail-on-unexpected-pass so the marker gets
-removed.
+Note the asymmetry: Network uses plural ``integrations`` while Protect
+uses singular ``integration``. Both are real Ubiquiti paths.
 """
 
 from __future__ import annotations

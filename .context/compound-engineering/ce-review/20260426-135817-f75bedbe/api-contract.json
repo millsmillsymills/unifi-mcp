@@ -1,0 +1,78 @@
+{
+  "reviewer": "api-contract",
+  "findings": [
+    {
+      "id": "AC-001",
+      "severity": "high",
+      "confidence": 0.92,
+      "title": "get_nvr() and update_nvr() silently change upstream resource path — response shape is unknown for callers who assumed legacy API structure",
+      "description": "ProtectClient.get_nvr() previously issued GET /proxy/protect/api/nvr and returned the legacy Protect API shape (a flat dict with fields like mac, host, firmwareVersion, version, uptime, etc.). Post-PR it issues GET /proxy/protect/integration/v1/nvrs and returns whatever the integration API delivers — documented in the PR as a dict with id, modelKey, name, doorbellSettings. These are different shapes from different API surfaces. Any caller (direct Python import or MCP tool handler) that indexes into the old shape by field name (e.g. result['version'], result['uptime'], result['host']) will receive a KeyError or None at runtime. The return-type annotation dict[str, Any] is unchanged, so type checkers will not catch this.",
+      "file": "/Users/mills/Desktop/Projects/unifi-mcp/src/unifi_mcp/clients/protect.py",
+      "lines": "101-108",
+      "contract_surface": "ProtectClient.get_nvr() — importable Python API + MCP tool protect_get_nvr",
+      "breaking": true,
+      "additive": false,
+      "notes": "The PR description acknowledges the shape difference but no migration path or version bump is included. The same applies to update_nvr(): it now PUTs to nvrs instead of nvr, and the integration API may require a different request body schema or return a different response shape. Both the getter and setter are affected."
+    },
+    {
+      "id": "AC-002",
+      "severity": "high",
+      "confidence": 0.88,
+      "title": "protect_get_bootstrap and protect_list_events are now visible in the MCP tool list but deterministically return ToolError (404) on every call",
+      "description": "Pre-PR these two tools did not appear in the MCP tool list at all — validate_connection() returned False and the lifespan deregistered all 15 Protect tools. Any MCP caller that handled 'tool not found' as the expected outcome for bootstrap/events (e.g. by enumerating available tools and branching on their absence) now sees those tools present but always failing. The error shape is a ToolError with message 'Resource not found: Entity endpoint not found' — this is a different failure mode than 'tool does not exist'. Callers that were routing around the missing-tools state have a behavior change with no version signal.",
+      "file": "/Users/mills/Desktop/Projects/unifi-mcp/src/unifi_mcp/tools/protect/nvr.py",
+      "lines": "16-23",
+      "contract_surface": "MCP tool list — protect_get_bootstrap, protect_list_events",
+      "breaking": true,
+      "additive": false,
+      "notes": "Strictly speaking, in the pre-PR world the tools never worked on real hardware (they were deregistered). But the contract change is from 'tool absent' to 'tool present, always errors'. A caller that uses tool-list enumeration as its signal will change behavior. A caller that was always calling them and catching ToolError for a missing-tool reason may now receive a different ToolError message and misroute."
+    },
+    {
+      "id": "AC-003",
+      "severity": "medium",
+      "confidence": 0.75,
+      "title": "update_nvr() path change to nvrs is unverified against live hardware — integration API may not accept PUT /nvrs",
+      "description": "The PR comment in update_nvr() explicitly states 'Untested against live hardware in readonly CI; if a future deployment exercises this in readwrite mode and the integration API requires a different verb or path, surface the failure here.' The integration v1 API path prefix is documented only for GET operations in the PR. If PUT /proxy/protect/integration/v1/nvrs does not exist on the upstream API (returns 404 or 405), update_nvr() will throw on every call and the protect_update_nvr MCP tool will always return ToolError. This is a latent contract break for any caller that uses protect_update_nvr.",
+      "file": "/Users/mills/Desktop/Projects/unifi-mcp/src/unifi_mcp/clients/protect.py",
+      "lines": "177-186",
+      "contract_surface": "ProtectClient.update_nvr() — importable Python API + MCP tool protect_update_nvr",
+      "breaking": false,
+      "additive": false,
+      "notes": "Flagged as medium rather than high because the pre-PR protect_update_nvr was also broken (deregistered). The regression risk is real but it is a regression from a state that never worked on production hardware, so no caller was relying on it."
+    }
+  ],
+  "residual_risks": [
+    {
+      "id": "RR-001",
+      "description": "The fixture file fixtures/protect_responses.json is used by unit tests to validate get_nvr() output. The diff does not show the fixture being updated. If it still contains the old legacy-API NVR shape (mac, host, firmwareVersion, etc.) the unit tests pass against stale data and give false confidence that the new integration-API response shape is handled correctly.",
+      "severity": "medium"
+    },
+    {
+      "id": "RR-002",
+      "description": "No remaining references to /proxy/protect/api/ exist in src/ beyond a docstring comment in protect.py (line 21). That docstring is accurate and not a live code path. The migration is complete in source.",
+      "severity": "info"
+    },
+    {
+      "id": "RR-003",
+      "description": "The package is at 0.1.0. Under semver, a 0.x version has no stability guarantee and breaking changes are permitted in patch releases. However if downstream consumers treat 0.1.x as stable (common with published PyPI packages), the absence of a version bump is a signal gap. The PR should ship as 0.2.0 to communicate the Protect API surface change.",
+      "severity": "low"
+    }
+  ],
+  "testing_gaps": [
+    {
+      "id": "TG-001",
+      "description": "No unit test validates the shape of the dict returned by get_nvr() against the integration API's documented structure (id, modelKey, name, doorbellSettings). The test at test_protect_nvr.py:743 mocks the response with {\"name\": \"nvr-1\"}, which does not reflect what the integration API actually returns. If tool handlers downstream key on integration-API-specific fields this gap will not be caught.",
+      "files": ["/Users/mills/Desktop/Projects/unifi-mcp/tests/unit/tools/test_protect_nvr.py", "/Users/mills/Desktop/Projects/unifi-mcp/tests/unit/clients/test_protect.py"]
+    },
+    {
+      "id": "TG-002",
+      "description": "protect_get_bootstrap and protect_list_events are registered and visible in the tool list but no unit test asserts that calling them returns a ToolError with the correct message shape. An agent that calls them and inspects the error text has no pinned contract.",
+      "files": ["/Users/mills/Desktop/Projects/unifi-mcp/src/unifi_mcp/tools/protect/nvr.py", "/Users/mills/Desktop/Projects/unifi-mcp/src/unifi_mcp/tools/protect/events.py"]
+    },
+    {
+      "id": "TG-003",
+      "description": "update_nvr() has no integration test and its unit test (test_update_nvr_puts_body) only asserts the request body is forwarded — it does not assert the endpoint path changed from nvr to nvrs (the respx mock in test_protect_extra.py does patch nvrs but the test name does not call this out). A dedicated path-contract test for update_nvr mirroring TestGetNvr would close this.",
+      "files": ["/Users/mills/Desktop/Projects/unifi-mcp/tests/unit/clients/test_protect_extra.py"]
+    }
+  ]
+}
