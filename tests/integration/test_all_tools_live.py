@@ -416,6 +416,159 @@ class TestProtectWriteRoundtrips:
             )
             artifacts.dump("recording_mode_restored", {"restored_mode": original_mode})
 
+    async def test_smart_detection_roundtrip(self, live_client, artifacts):
+        """Capture current smartDetectSettings.objectTypes, set ['person'],
+        read back, then restore.
+        """
+        camera_id = await _first_protect_camera_id(live_client)
+
+        before = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+        original = (
+            list(before.get("smartDetectSettings", {}).get("objectTypes", []))
+            if isinstance(before, dict)
+            else None
+        )
+        artifacts.dump(
+            "smart_detection_before",
+            {"camera_id": camera_id, "original": original, "snapshot": before},
+        )
+        if original is None:
+            pytest.skip(f"Could not read smartDetectSettings from camera (got {before!r})")
+
+        target = ["person"]
+
+        try:
+            applied = await _invoke(
+                live_client,
+                "protect_set_smart_detection",
+                {"camera_id": camera_id, "object_types": target},
+            )
+            artifacts.dump("smart_detection_applied", {"target": target, "response": applied})
+
+            after = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+            after_types = (
+                list(after.get("smartDetectSettings", {}).get("objectTypes", []))
+                if isinstance(after, dict)
+                else None
+            )
+            artifacts.dump("smart_detection_readback", {"after_types": after_types, "snapshot": after})
+            assert after_types == target, (
+                f"Read-back mismatch: set {target!r}, read back {after_types!r}"
+            )
+        finally:
+            await _invoke(
+                live_client,
+                "protect_set_smart_detection",
+                {"camera_id": camera_id, "object_types": original},
+            )
+            artifacts.dump("smart_detection_restored", {"restored": original})
+
+    async def test_update_camera_roundtrip(self, live_client, artifacts):
+        """Round-trip a string field (name) and a nested settings field
+        (ledSettings.isEnabled) via protect_update_camera. Exercises both
+        the simple-key and nested-dict shapes of PUT cameras/{id} on
+        integration v1.
+        """
+        camera_id = await _first_protect_camera_id(live_client)
+
+        before = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+        if not isinstance(before, dict):
+            pytest.skip(f"Camera response is not a dict: {before!r}")
+        original_name = before.get("name")
+        original_led = before.get("ledSettings", {}).get("isEnabled")
+        artifacts.dump(
+            "update_camera_before",
+            {"camera_id": camera_id, "name": original_name, "led": original_led, "snapshot": before},
+        )
+        if original_name is None or original_led is None:
+            pytest.skip(
+                f"Camera missing name or ledSettings.isEnabled "
+                f"(got name={original_name!r}, led={original_led!r})"
+            )
+
+        target_name = f"{original_name} [mcp-test]"
+        target_led = not original_led
+
+        try:
+            applied = await _invoke(
+                live_client,
+                "protect_update_camera",
+                {
+                    "camera_id": camera_id,
+                    "data": {"name": target_name, "ledSettings": {"isEnabled": target_led}},
+                },
+            )
+            artifacts.dump(
+                "update_camera_applied",
+                {"target_name": target_name, "target_led": target_led, "response": applied},
+            )
+
+            after = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+            after_name = after.get("name") if isinstance(after, dict) else None
+            after_led = (
+                after.get("ledSettings", {}).get("isEnabled") if isinstance(after, dict) else None
+            )
+            artifacts.dump(
+                "update_camera_readback",
+                {"after_name": after_name, "after_led": after_led, "snapshot": after},
+            )
+            assert after_name == target_name, (
+                f"name read-back mismatch: set {target_name!r}, read back {after_name!r}"
+            )
+            assert after_led == target_led, (
+                f"led read-back mismatch: set {target_led!r}, read back {after_led!r}"
+            )
+        finally:
+            await _invoke(
+                live_client,
+                "protect_update_camera",
+                {
+                    "camera_id": camera_id,
+                    "data": {"name": original_name, "ledSettings": {"isEnabled": original_led}},
+                },
+            )
+            artifacts.dump(
+                "update_camera_restored",
+                {"restored_name": original_name, "restored_led": original_led},
+            )
+
+    async def test_update_nvr_roundtrip(self, live_client, artifacts):
+        """Round-trip the NVR name via protect_update_nvr. First live-hardware
+        validation of PUT /nvrs on integration v1 — see TODO(#130) in
+        clients/protect.py.
+        """
+        before = await _invoke(live_client, "protect_get_nvr")
+        if not isinstance(before, dict):
+            pytest.skip(f"NVR response is not a dict: {before!r}")
+        original_name = before.get("name")
+        artifacts.dump("update_nvr_before", {"name": original_name, "snapshot": before})
+        if not original_name:
+            pytest.skip(f"NVR missing name field (got {before!r})")
+
+        target_name = f"{original_name} [mcp-test]"
+
+        try:
+            applied = await _invoke(
+                live_client,
+                "protect_update_nvr",
+                {"data": {"name": target_name}},
+            )
+            artifacts.dump("update_nvr_applied", {"target_name": target_name, "response": applied})
+
+            after = await _invoke(live_client, "protect_get_nvr")
+            after_name = after.get("name") if isinstance(after, dict) else None
+            artifacts.dump("update_nvr_readback", {"after_name": after_name, "snapshot": after})
+            assert after_name == target_name, (
+                f"NVR name read-back mismatch: set {target_name!r}, read back {after_name!r}"
+            )
+        finally:
+            await _invoke(
+                live_client,
+                "protect_update_nvr",
+                {"data": {"name": original_name}},
+            )
+            artifacts.dump("update_nvr_restored", {"restored_name": original_name})
+
 
 # ── Device LED locate/unlocate cycle (only runs in LIVE_TEST_WRITES mode) ─
 
