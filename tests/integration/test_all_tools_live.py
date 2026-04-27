@@ -24,6 +24,7 @@ so a diff between runs is easy.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import uuid
@@ -222,6 +223,52 @@ class TestReadTools:
         # If we got here, the integration API now exposes this endpoint —
         # capture the payload so the operator can confirm the new shape.
         artifacts.dump(tool_name, {"ok": True, "payload": payload})
+
+    async def test_protect_get_snapshot_shape(self, live_client, artifacts):
+        """Snapshot tool returns the documented {format, data_base64, size_bytes}
+        shape and the decoded bytes are a real JPEG.
+        """
+        tool_defs = {t.name for t in await live_client.list_tools()}
+        if "protect_get_snapshot" not in tool_defs or "protect_list_cameras" not in tool_defs:
+            pytest.skip("Protect tools not registered")
+
+        cameras = _unwrap_list(await _invoke(live_client, "protect_list_cameras"))
+        if not cameras:
+            pytest.skip("No cameras adopted on the NVR")
+        camera_id = cameras[0].get("id")
+        assert camera_id, f"First camera entry missing id: {cameras[0]!r}"
+
+        payload = await _invoke(live_client, "protect_get_snapshot", {"camera_id": camera_id})
+        artifacts.dump(
+            "protect_get_snapshot",
+            {"ok": True, "camera_id": camera_id, "payload": _redact_data_base64(payload)},
+        )
+
+        assert isinstance(payload, dict), f"Snapshot payload must be dict, got {type(payload).__name__}"
+        assert payload.get("format") == "jpeg", f"Expected format='jpeg', got {payload.get('format')!r}"
+        assert payload.get("size_bytes", 0) > 1024, (
+            f"Snapshot suspiciously small: {payload.get('size_bytes')} bytes"
+        )
+        data_b64 = payload.get("data_base64") or ""
+        assert data_b64, "Missing or empty data_base64 field"
+        decoded = base64.b64decode(data_b64)
+        assert decoded.startswith(b"\xff\xd8\xff"), (
+            f"Decoded bytes are not a JPEG (first 4 bytes: {decoded[:4]!r})"
+        )
+        assert len(decoded) == payload["size_bytes"], (
+            f"size_bytes={payload['size_bytes']} disagrees with decoded length {len(decoded)}"
+        )
+
+
+def _redact_data_base64(payload: Any) -> Any:
+    """Replace base64 image/video data with a size summary in artifact dumps.
+
+    Snapshot/export payloads carry the entire encoded media inline. Without
+    redaction, every artifact run would write multi-megabyte JSON files.
+    """
+    if isinstance(payload, dict) and "data_base64" in payload:
+        return {**payload, "data_base64": f"<{len(payload['data_base64'])} chars redacted>"}
+    return payload
 
 
 def _unwrap_list(payload: Any) -> list[dict[str, Any]]:
