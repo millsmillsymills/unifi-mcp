@@ -292,6 +292,21 @@ def _unwrap_list(payload: Any) -> list[dict[str, Any]]:
     return []
 
 
+async def _first_protect_camera_id(client: Client) -> str:
+    """Return the id of the first adopted camera, or pytest.skip if none.
+
+    Used by every Protect write test to pick a target. Skips cleanly
+    rather than failing when no camera is adopted (e.g., NVR exists but
+    operator hasn't added a camera yet).
+    """
+    cameras = _unwrap_list(await _invoke(client, "protect_list_cameras"))
+    if not cameras:
+        pytest.skip("No cameras adopted on the NVR")
+    camera_id = cameras[0].get("id")
+    assert camera_id, f"First camera entry missing id: {cameras[0]!r}"
+    return camera_id
+
+
 # ── Write-tool audit (opt-in via LIVE_TEST_WRITES=1) ───────────────────────
 
 
@@ -344,6 +359,62 @@ class TestWriteRoundtrips:
         pf_id = items[0]["_id"]
         deleted = await _invoke(live_client, "network_delete_port_forward", {"port_forward_id": pf_id})
         artifacts.dump(f"delete_port_forward-{suffix}", {"ok": True, "payload": deleted})
+
+
+@pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
+class TestProtectWriteRoundtrips:
+    """Curated capture → mutate → read-back → restore roundtrips for the
+    four Protect write tools. Each test runs against the first adopted
+    camera (or the NVR for update_nvr) and restores the original value in
+    `finally` even on assertion failure.
+    """
+
+    async def test_recording_mode_roundtrip(self, live_client, artifacts):
+        """Capture current recordingSettings.mode, set 'always', read back,
+        then restore. The legal modes are always | motion | never | schedule.
+        """
+        camera_id = await _first_protect_camera_id(live_client)
+
+        before = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+        original_mode = (
+            before.get("recordingSettings", {}).get("mode")
+            if isinstance(before, dict)
+            else None
+        )
+        artifacts.dump(
+            "recording_mode_before",
+            {"camera_id": camera_id, "original_mode": original_mode, "snapshot": before},
+        )
+        if not original_mode:
+            pytest.skip(f"Could not read recordingSettings.mode from camera (got {before!r})")
+
+        target = "always" if original_mode != "always" else "motion"
+
+        try:
+            applied = await _invoke(
+                live_client,
+                "protect_set_recording_mode",
+                {"camera_id": camera_id, "mode": target},
+            )
+            artifacts.dump("recording_mode_applied", {"target": target, "response": applied})
+
+            after = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+            after_mode = (
+                after.get("recordingSettings", {}).get("mode")
+                if isinstance(after, dict)
+                else None
+            )
+            artifacts.dump("recording_mode_readback", {"after_mode": after_mode, "snapshot": after})
+            assert after_mode == target, (
+                f"Read-back mismatch: set {target!r}, read back {after_mode!r}"
+            )
+        finally:
+            await _invoke(
+                live_client,
+                "protect_set_recording_mode",
+                {"camera_id": camera_id, "mode": original_mode},
+            )
+            artifacts.dump("recording_mode_restored", {"restored_mode": original_mode})
 
 
 # ── Device LED locate/unlocate cycle (only runs in LIVE_TEST_WRITES mode) ─
