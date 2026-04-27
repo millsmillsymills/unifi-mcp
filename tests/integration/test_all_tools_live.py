@@ -109,18 +109,26 @@ NO_ARG_READ_TOOLS = {
     "network_list_routes",
     "network_get_settings",
     # Protect
-    "protect_get_bootstrap",
     "protect_get_nvr",
     "protect_list_cameras",
     "protect_list_chimes",
     "protect_list_lights",
     "protect_list_sensors",
     "protect_list_viewers",
-    "protect_list_events",
     # Site Manager
     "site_manager_list_hosts",
     "site_manager_list_sites",
     "site_manager_list_devices",
+}
+
+# Read tools that exist in the registered set but have no integration-v1
+# endpoint — the legacy /proxy/protect/api/ exposed bootstrap and events,
+# the new /proxy/protect/integration/v1/ does not. Tracked in #130. The
+# strict xfail flips to a hard failure if Ubiquiti ever adds them back,
+# signaling that #130 can close.
+XFAIL_NO_ARG_READ_TOOLS = {
+    "protect_get_bootstrap": "#130 — integration/v1 has no bootstrap endpoint",
+    "protect_list_events": "#130 — integration/v1 has no events endpoint",
 }
 
 # Read tools that take required args; covered via the detail-fetch harness.
@@ -195,6 +203,25 @@ class TestReadTools:
                 artifacts.dump(detail_tool, {"ok": False, "error": f"{type(exc).__name__}: {exc}"})
 
         assert not failures, "Detail read tools failed:\n" + "\n".join(f"  {n}: {e}" for n, e in failures)
+
+    @pytest.mark.parametrize(
+        "tool_name",
+        [
+            pytest.param(name, marks=pytest.mark.xfail(strict=True, reason=reason))
+            for name, reason in XFAIL_NO_ARG_READ_TOOLS.items()
+        ],
+    )
+    async def test_xfail_no_arg_read_tool(self, live_client, artifacts, tool_name):
+        """Tools that should fail today per #130. Strict xfail flips to a hard
+        failure if Ubiquiti adds these endpoints back, signaling #130 can close.
+        """
+        tool_defs = {t.name for t in await live_client.list_tools()}
+        if tool_name not in tool_defs:
+            pytest.skip(f"{tool_name} not registered (Protect API not configured?)")
+        payload = await _invoke(live_client, tool_name)
+        # If we got here, the integration API now exposes this endpoint —
+        # capture the payload so the operator can confirm the new shape.
+        artifacts.dump(tool_name, {"ok": True, "payload": payload})
 
 
 def _unwrap_list(payload: Any) -> list[dict[str, Any]]:
