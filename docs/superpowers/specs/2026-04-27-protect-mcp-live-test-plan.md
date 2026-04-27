@@ -1,72 +1,74 @@
 # Protect MCP Live Test Plan
 
-**Date:** 2026-04-27
+**Date:** 2026-04-27 (rev 2 — refreshed against existing test infrastructure)
 **Branch context:** drafted on `fix-103-protect-integration-path`
-**Hardware under test:** UCK-G2-Plus at `192.168.1.220`, Protect controller running integration v1, with one freshly-adopted camera dedicated to testing
-**Author:** brainstorming pass with the user — destructive testing authorized provided it cannot brick the device
+**Hardware under test:** UCK-G2-Plus at `192.168.1.220`, Protect controller running integration v1, with one freshly-adopted camera dedicated to testing. Destructive testing authorized provided it cannot brick the device.
 
 ## Goal
 
-Exercise every Protect MCP tool (15 total) end-to-end against live hardware, capture findings as GitHub issues, and leave behind a permanent integration test suite that can be re-run to detect regressions.
+Reach end-to-end coverage for every Protect MCP tool (15 total) at the FastMCP tool boundary against live hardware, capture findings as GitHub issues, and leave the existing live-test suites stricter so #130 cannot silently regress.
 
 This spec covers planning. The implementation plan is produced separately by `superpowers:writing-plans`.
 
-## Non-goals
+## Existing infrastructure (extending, not greenfield)
 
-- CI integration of the live tests (would require self-hosted runner + secrets injection).
-- Refactoring `ProtectClient` or any tool layer module — only fixes whose absence would block the test from running.
-- Closing #130 — `bootstrap` and `events` are tested as **negative locks**, not fixed.
+This work extends the live-hardware suite that already exists. Three files are relevant:
+
+- **`tests/integration/conftest.py`** — provides `protect_live_client` (direct `ProtectClient`, env-gated by `UNIFI_PROTECT_API`). Reused as-is.
+- **`tests/integration/test_protect_live.py`** — client-level tests covering `validate_connection`, `get_nvr`, `list_cameras`, `get_snapshot` (with JPEG magic-byte assertion), and `list_events` as `xfail-strict` for #130. Extended with `export_video` coverage.
+- **`tests/integration/test_all_tools_live.py`** — MCP-tool-boundary suite (uses `Client(create_server())`). Already covers all 6 Protect no-arg reads via `NO_ARG_READ_TOOLS` + `protect_get_camera` via `DETAIL_READ_TOOLS`. Has `TestWriteRoundtrips` (Network-only today), `TestDestructive`, `TestModeGatingLive`. Convention: writes gated by `LIVE_TEST_WRITES=1`, destructive ops by `LIVE_TEST_DESTRUCTIVE=1`. Per-session evidence dumped to `tests/integration/artifacts/<timestamp>/`. Extended with Protect write coverage and an xfail-strict set for #130-affected reads.
+
+Conventions inherited from this suite (the new spec MUST follow them, not invent parallel ones):
+
+- Skip-gate env vars: `LIVE_TEST_WRITES=1`, `LIVE_TEST_DESTRUCTIVE=1` (no new `UNIFI_LIVE_TEST` flag).
+- Evidence artifact path: `tests/integration/artifacts/<UTC-timestamp>/<tool_name>.json`.
+- Server constructed via `unifi_mcp.server.create_server()` (real env, real lifespan).
+- Driver: in-memory `fastmcp.Client(server)` for MCP-level tests; direct `ProtectClient` for byte-level / streaming-cap tests.
+
+## Coverage gap analysis (15 Protect tools)
+
+| Tool | Currently covered? | Gap |
+|---|---|---|
+| `protect_get_nvr` | ✅ both files | none |
+| `protect_list_cameras` | ✅ both files | none |
+| `protect_get_camera` | ✅ `test_all_tools_live.DETAIL_READ_TOOLS` | none |
+| `protect_list_chimes` / `_lights` / `_sensors` / `_viewers` | ✅ MCP-level | none |
+| `protect_get_snapshot` | ✅ client-level (JPEG magic bytes) | add MCP-level shape check (`format/data_base64/size_bytes` dict) |
+| `protect_export_video` | ❌ no coverage anywhere | full coverage, both client- and MCP-level |
+| `protect_get_bootstrap` | ⚠ MCP-level: in `NO_ARG_READ_TOOLS` w/o xfail → masks #130 | move to xfail-strict set at MCP boundary |
+| `protect_list_events` | ⚠ client-level xfail-strict (✅) **but** MCP-level in `NO_ARG_READ_TOOLS` w/o xfail (masks #130) | move to xfail-strict set at MCP boundary |
+| `protect_set_recording_mode` | ❌ | round-trip + 1 negative |
+| `protect_set_smart_detection` | ❌ | round-trip + 1 negative |
+| `protect_update_camera` | ❌ (only mentioned in `TestModeGatingLive` as a tool that must hide in readonly) | round-trip + 1 negative |
+| `protect_update_nvr` | ❌ | round-trip + 1 negative — **first** live validation of `PUT /nvrs` (currently `TODO(#130)` at `clients/protect.py:174`) |
+
+Net new work = `export_video` coverage + 4 Protect write round-trips + 4 negative-input tests + xfail-strict reclassification of `protect_get_bootstrap` and `protect_list_events` at the MCP layer.
 
 ## Scope
 
-### In scope — all 15 Protect tools
+### In scope
 
-| Tool | Test type | Notes |
-|---|---|---|
-| `protect_get_nvr` | happy path | precondition class |
-| `protect_list_cameras` | happy path | asserts new camera present |
-| `protect_get_camera` | happy + 1 negative (unknown id) | exercises 404 → `UniFiNotFoundError` mapping |
-| `protect_list_chimes` / `_lights` / `_sensors` / `_viewers` | happy path each | shape only |
-| `protect_get_snapshot` | happy + `max_bytes` cap + unknown id | validates #106 cap path |
-| `protect_export_video` | happy (5s window from now-30s) + `max_bytes` cap + reversed start/end | validates #32/#64 streaming cap |
-| `protect_get_bootstrap` | xfail-strict negative | locks in #130 contract |
-| `protect_list_events` | xfail-strict negative | locks in #130 contract |
-| `protect_set_recording_mode` | round-trip *current → "always" → original*; one invalid mode (`"xyz"`) | restoration via fixture finalizer |
-| `protect_set_smart_detection` | round-trip + one bogus type (`"blueGiraffe"`) | finalizer restores |
-| `protect_update_camera` | round-trip name + `ledSettings.isEnabled`; one malformed payload | finalizer restores |
-| `protect_update_nvr` | round-trip benign setting (e.g., NVR name) with read-back; one malformed payload | **first** live validation of `PUT /nvrs` (currently `TODO(#130)` at `clients/protect.py:174`); finalizer restores |
+- Extend **`test_protect_live.py`** with `export_video` (client-level — exercises streaming `max_bytes` cap; takes a 5-second window from now-30s).
+- Extend **`test_all_tools_live.py`** with:
+  - **Reclassification:** new top-level set `XFAIL_NO_ARG_READ_TOOLS = {"protect_get_bootstrap", "protect_list_events"}` consumed by `TestReadTools.test_every_no_arg_read_tool` so these tools are expected-failure with reason `#130` (matches existing client-level xfail). Locks #130 status at the MCP layer too.
+  - **`TestProtectWriteRoundtrips`** class, gated by `LIVE_TEST_WRITES=1` (existing convention). For each Protect write tool: capture original via the matching read tool → apply mutation → read back → assert mutation took → restore in `finally`. Each test name follows the existing `test_<entity>_<action>` style (e.g., `test_recording_mode_roundtrip`).
+  - **`TestProtectWriteNegatives`** class, also gated by `LIVE_TEST_WRITES=1`. One `pytest.raises(ToolError)` test per write tool with malformed input (invalid recording mode, bogus smart-detect type, malformed `update_camera` payload, malformed `update_nvr` payload).
+  - **`protect_get_snapshot` MCP-shape test** — asserts response dict has `format == "jpeg"`, `size_bytes > 1024`, `data_base64` decodes to bytes starting with JPEG magic (`\xff\xd8\xff`).
 
-### Deferred / out of scope
+### Out of scope
 
-- Concurrency / rate-limit stress.
-- Firmware operations (none exposed by the MCP).
-- Network-level config changes that could lose controller connectivity.
+- CI integration of the live suite (would require self-hosted runner + secrets).
+- Refactoring `ProtectClient` or any tool layer module beyond fixes whose absence would block the test from running.
+- Closing #130 — `bootstrap`/`events` stay locked-in via xfail-strict.
+- Cross-API tests (Network/SiteManager remain untouched).
 
-## Test architecture
+## Test architecture (changes only — existing infra reused as-is)
 
-- **File:** `tests/integration/test_protect_live.py`
-- **Marker:** `@pytest.mark.integration` (already configured in `pyproject.toml`).
-- **Skip gates** (any one missing → whole module skips with a clear reason):
-  - `UNIFI_PROTECT_HOST` and `UNIFI_PROTECT_API` set in env
-  - `UNIFI_LIVE_TEST=1` (explicit opt-in — prevents accidental hits when running `pytest -m integration` against a different controller)
-- **Driver:** FastMCP in-memory `Client(mcp_server)` — same code path production runs in, minus the JSON-RPC envelope. Validates registration, mode gating, and error mapping; not the stdio protocol surface (out of scope this round).
-- **Server mode:** `readwrite` — write tools must register so they can be exercised.
-- **Fixtures:**
-  - Session-scoped: `protect_config`, `mcp_server` (calls `unifi_mcp.server.create_server` exactly as production does), `mcp_client`, `test_camera_id`.
-  - Function-scoped: `restore_camera_state`, `restore_nvr_state` — capture before, restore in finalizer regardless of test outcome.
-- **Evidence capture:** each test writes its full request/response to `tests/integration/.evidence/<test_name>.json`. Path added to `.gitignore`. Becomes the issue-attachment source.
-
-## Test phases
-
-Tests are grouped into classes and executed in this order:
-
-1. **`TestPrecondition`** — `validate_connection`, `protect_get_nvr` returns dict with `id/name/version`, `protect_list_cameras` ≥ 1 entry. First-line catch for #131-class wrong-scope keys. Failures here mark every later test as skipped with the precondition reason rather than producing a cascade of red.
-2. **`TestReads`** — chimes/lights/sensors/viewers + `get_camera` happy + unknown id.
-3. **`TestMedia`** — snapshot (size > 1KB, JPEG magic bytes), export_video (size > 0, MP4 magic bytes), `max_bytes` cap behavior, negative cases.
-4. **`TestKnownBroken`** — `bootstrap` and `list_events` decorated `@pytest.mark.xfail(strict=True, reason="#130")`. They MUST fail today; if they ever pass, xfail-strict flips to a hard failure and we know to close #130.
-5. **`TestWrites`** — for each write tool: capture original → apply change → read back → assert change took → finalizer restores. Plus one `pytest.raises(ToolError)` test per write tool with malformed input.
-
-Reads before writes so we don't mutate state via tools that haven't been verified. Writes last so any drift is contained to the end of the run and finalizers run regardless.
+- **No new files.** Edits to `test_protect_live.py` and `test_all_tools_live.py`.
+- **Restoration via `try/finally`** inside each round-trip test (matches the existing `TestWriteRoundtrips` pattern of capture-then-cleanup; no new fixture machinery needed). On test failure, the finalizer still runs, restoring the captured original.
+- **Camera selection:** `_unwrap_list(await _invoke(client, "protect_list_cameras"))[0]["id"]` — first camera, same convention `DETAIL_READ_TOOLS` already uses. Skip the test cleanly if no cameras.
+- **NVR write target:** benign string field readable via `protect_get_nvr` (e.g., `name`). Capture pre-test, restore in `finally`.
+- **Camera write target for `update_camera`:** combination of a string field and a nested settings field (`name` plus `ledSettings.isEnabled`) — exercises both the simple-key and nested-dict PUT shapes against `cameras/{id}`.
 
 ## Findings → issues taxonomy
 
@@ -85,7 +87,7 @@ Reads before writes so we don't mutate state via tools that haven't been verifie
 **Hardware:** UCK-G2-Plus, Protect <version>, camera model <model>
 **Tool:** `protect_xxx`
 **Mode:** readwrite
-**Repro:** `pytest tests/integration/test_protect_live.py::TestX::test_y -v`
+**Repro:** `LIVE_TEST_WRITES=1 uv run pytest tests/integration/test_all_tools_live.py::TestX::test_y -v`
 
 **Expected:** <one sentence>
 **Observed:** <one sentence>
@@ -97,11 +99,21 @@ Reads before writes so we don't mutate state via tools that haven't been verifie
 
 ## Deliverables
 
-1. `tests/integration/test_protect_live.py` — committed. Closes #43 ("live-hardware end-to-end verification — deferred").
-2. Comments added to #129 / #130 / #131 with current-hardware evidence (whichever apply after the run).
-3. Zero-to-many new GitHub issues — one per novel finding, using the template above.
-4. A short closing summary in chat: tools passed / tools failed / issues filed/updated.
+1. **Extended `tests/integration/test_protect_live.py`** — adds `protect_export_video` client-level test (happy path + reversed-window negative + `max_bytes` cap behavior).
+2. **Extended `tests/integration/test_all_tools_live.py`** — adds `XFAIL_NO_ARG_READ_TOOLS` reclassification, `TestProtectWriteRoundtrips`, `TestProtectWriteNegatives`, and `protect_get_snapshot` MCP-shape test.
+3. **Comments on #129 / #130 / #131** with current-hardware evidence (whichever apply after the run).
+4. **Zero-to-many new GitHub issues** — one per novel finding, using the template above.
+5. **Closing summary in chat:** tools passed / tools failed / issues filed/updated.
 
 ## Open questions
 
-None at brainstorm close. The implementation plan (next step) will resolve fixture details (e.g., precise NVR write payload chosen for benign round-trip).
+None at brainstorm close. The implementation plan resolves the precise NVR write payload chosen for benign round-trip (e.g., `name`) and the snapshot/export `max_bytes` cap values (already configured via `UNIFI_MAX_SNAPSHOT_BYTES` / `UNIFI_MAX_EXPORT_BYTES`).
+
+## What changed in rev 2
+
+- Removed the planned new-from-scratch `test_protect_live.py` — file already exists with 5 tests.
+- Removed invented `UNIFI_LIVE_TEST=1` skip-gate; aligned with existing `LIVE_TEST_WRITES=1` / `LIVE_TEST_DESTRUCTIVE=1`.
+- Removed invented `tests/integration/.evidence/` path; aligned with existing `tests/integration/artifacts/<ts>/`.
+- Removed `TestPrecondition` / `TestReads` / `TestKnownBroken` class scaffolding — equivalents already exist in `test_all_tools_live.py`.
+- Surfaced an actual existing bug: `protect_get_bootstrap` and `protect_list_events` are in `NO_ARG_READ_TOOLS` without xfail at the MCP layer, masking #130.
+- Adjusted "Closes #43" claim — `test_all_tools_live.py` already closes #91; this work doesn't fully close #43 either, just narrows its remaining surface.
