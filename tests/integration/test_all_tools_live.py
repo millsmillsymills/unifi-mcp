@@ -272,11 +272,23 @@ def _redact_data_base64(payload: Any) -> Any:
 
 
 def _unwrap_list(payload: Any) -> list[dict[str, Any]]:
-    """Most UniFi list responses are ``{"data": [...]}``; Protect returns a bare list."""
+    """Extract the list-of-dicts payload from a tool response.
+
+    Three shapes are observed in this server:
+    * Bare ``list[dict]`` — what some Protect tools return raw.
+    * ``{"data": [...]}`` — what most Network tools return.
+    * ``{"result": [...]}`` — FastMCP's structured-content wrapping for tools
+      whose return type is ``list[dict]`` (Protect's list_cameras / list_chimes /
+      etc.). ``_invoke`` returns ``structured_content`` first, so this envelope
+      reaches us instead of the bare list.
+    """
     if isinstance(payload, list):
         return payload
-    if isinstance(payload, dict) and isinstance(payload.get("data"), list):
-        return payload["data"]
+    if isinstance(payload, dict):
+        for key in ("data", "result"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
     return []
 
 
