@@ -35,6 +35,7 @@ from typing import Any
 
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 from unifi_mcp.server import create_server
 
@@ -568,6 +569,63 @@ class TestProtectWriteRoundtrips:
                 {"data": {"name": original_name}},
             )
             artifacts.dump("update_nvr_restored", {"restored_name": original_name})
+
+
+@pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
+class TestProtectWriteNegatives:
+    """Each Protect write tool with malformed input must surface a ToolError
+    (mapped from UniFiError), not a raw httpx exception or a silent success.
+    Mutations attempted here are rejected by the controller, so no restoration
+    is needed.
+    """
+
+    async def test_set_recording_mode_invalid_mode(self, live_client, artifacts):
+        camera_id = await _first_protect_camera_id(live_client)
+        with pytest.raises(ToolError) as exc_info:
+            await _invoke(
+                live_client,
+                "protect_set_recording_mode",
+                {"camera_id": camera_id, "mode": "this-is-not-a-real-mode"},
+            )
+        artifacts.dump(
+            "set_recording_mode_invalid",
+            {"camera_id": camera_id, "error": str(exc_info.value)},
+        )
+
+    async def test_set_smart_detection_bogus_type(self, live_client, artifacts):
+        camera_id = await _first_protect_camera_id(live_client)
+        with pytest.raises(ToolError) as exc_info:
+            await _invoke(
+                live_client,
+                "protect_set_smart_detection",
+                {"camera_id": camera_id, "object_types": ["blueGiraffe"]},
+            )
+        artifacts.dump(
+            "set_smart_detection_bogus",
+            {"camera_id": camera_id, "error": str(exc_info.value)},
+        )
+
+    async def test_update_camera_unknown_field(self, live_client, artifacts):
+        camera_id = await _first_protect_camera_id(live_client)
+        with pytest.raises(ToolError) as exc_info:
+            await _invoke(
+                live_client,
+                "protect_update_camera",
+                {"camera_id": camera_id, "data": {"thisIsNotAField": "garbage"}},
+            )
+        artifacts.dump(
+            "update_camera_unknown_field",
+            {"camera_id": camera_id, "error": str(exc_info.value)},
+        )
+
+    async def test_update_nvr_unknown_field(self, live_client, artifacts):
+        with pytest.raises(ToolError) as exc_info:
+            await _invoke(
+                live_client,
+                "protect_update_nvr",
+                {"data": {"thisIsNotAField": "garbage"}},
+            )
+        artifacts.dump("update_nvr_unknown_field", {"error": str(exc_info.value)})
 
 
 # ── Device LED locate/unlocate cycle (only runs in LIVE_TEST_WRITES mode) ─
