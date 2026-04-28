@@ -12,6 +12,7 @@ Protect / Site Manager.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import os
 from typing import TYPE_CHECKING
@@ -236,8 +237,8 @@ async def cleanup_register():
             fn, args, kwargs = stack.pop()
             try:
                 result = fn(*args, **kwargs)
-                if hasattr(result, "__await__"):
-                    await result  # type: ignore[misc]
+                if inspect.iscoroutine(result):
+                    await result
             except Exception as exc:
                 LOG.warning("cleanup_register: %s(%s) failed: %s", fn.__name__, args, exc)
 
