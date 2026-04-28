@@ -53,3 +53,27 @@ async def test_list_events_returns_shape(network_live_client):
     result = await network_live_client.list_events(limit=1)
     assert "data" in result
     assert isinstance(result["data"], list)
+
+
+async def test_list_devices_basic_returns_list(network_live_client):
+    result = await network_live_client.list_devices_basic()
+    assert "data" in result
+    assert isinstance(result["data"], list)
+
+
+async def test_list_configured_clients_returns_list(network_live_client):
+    result = await network_live_client.list_configured_clients()
+    assert "data" in result
+    assert isinstance(result["data"], list)
+
+
+async def test_list_all_clients_returns_list(network_live_client):
+    result = await network_live_client.list_all_clients()
+    assert "data" in result
+    assert isinstance(result["data"], list)
+
+
+async def test_get_dpi_stats_returns_shape(network_live_client):
+    result = await network_live_client.get_dpi_stats()
+    assert "data" in result
+    assert isinstance(result["data"], list)
