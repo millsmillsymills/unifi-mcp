@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import AsyncIterator
 
 import pytest
 
@@ -113,7 +112,7 @@ async def site_manager_live_client():
 
 
 @pytest.fixture(scope="session")
-async def network_live_client_session() -> AsyncIterator[NetworkClient]:
+async def network_live_client_session():
     """Session-scoped Network client for fixtures that outlive a single test
     (test_vlan_id, default_lan_id, etc.). Tests should keep using the
     function-scoped network_live_client; this fixture exists only for
