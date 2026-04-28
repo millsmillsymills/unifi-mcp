@@ -201,13 +201,17 @@ async def default_lan_id(network_live_client_session: NetworkClient) -> str:
     never target this. Fails the suite if no default LAN is found.
     """
     networks = await network_live_client_session.list_networks()
-    for net in networks.get("data", []):
-        if net.get("purpose") == "corporate" and net.get("is_default") is True:
-            lan_id = net.get("_id")
-            assert isinstance(lan_id, str), "default LAN _id missing or wrong type"
-            LOG.warning("Default LAN _id (off-limits to write tests): %s", lan_id)
-            return lan_id
-    pytest.fail("No corporate is_default network found; refusing to run write tests.")
+    corporates = [n for n in networks.get("data", []) if n.get("purpose") == "corporate"]
+    # Prefer explicit is_default flag; fall back to first no-VLAN corporate (the base LAN).
+    candidate = next((n for n in corporates if n.get("is_default") is True), None)
+    if candidate is None:
+        candidate = next((n for n in corporates if not n.get("vlan")), None)
+    if candidate is None:
+        pytest.fail("No default corporate network found; refusing to run write tests.")
+    lan_id = candidate.get("_id")
+    assert isinstance(lan_id, str), "default LAN _id missing or wrong type"
+    LOG.warning("Default LAN _id (off-limits to write tests): %s", lan_id)
+    return lan_id
 
 
 @pytest.fixture(scope="session")
