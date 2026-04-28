@@ -260,13 +260,13 @@ async def test_vlan_id(
 
     name = f"{mcptest_prefix}vlan-{chosen}"
     try:
-        created = await network_live_client_session.create_network(
-            name=name,
-            purpose="corporate",
-            vlan=chosen,
-            ip_subnet=f"10.99.{chosen}.1/24",
-            dhcp_enabled=False,
-        )
+        created = await network_live_client_session.create_network({
+            "name": name,
+            "purpose": "corporate",
+            "vlan": chosen,
+            "subnet": f"10.99.{chosen}.1/24",
+            "dhcpd_enabled": False,
+        })
     except Exception as exc:
         pytest.skip(f"Failed to create sandbox VLAN: {exc}")
 
