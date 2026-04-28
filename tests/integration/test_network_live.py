@@ -79,23 +79,34 @@ async def test_get_dpi_stats_returns_shape(network_live_client):
     assert isinstance(result["data"], list)
 
 
-async def test_get_client_returns_client_doc(network_live_client):
+async def test_active_clients_lookup_by_mac(network_live_client):
+    """Smoke test for the read pattern that network_get_client uses internally:
+    list_active_clients() then filter by MAC."""
     actives = await network_live_client.list_active_clients()
     if not actives.get("data"):
-        pytest.skip("No active clients; cannot exercise get_client.")
-    mac = actives["data"][0].get("mac")
+        pytest.skip("No active clients to exercise lookup-by-mac pattern.")
+    sample = actives["data"][0]
+    mac = sample.get("mac")
     assert mac, "active client missing mac"
-    result = await network_live_client.get_client(mac)
-    assert "data" in result
-    assert isinstance(result["data"], list)
-    assert any(c.get("mac", "").lower() == mac.lower() for c in result["data"])
+    found = next(
+        (c for c in actives["data"] if c.get("mac", "").lower() == mac.lower()),
+        None,
+    )
+    assert found is not None
+    assert found.get("mac", "").lower() == mac.lower()
 
 
-async def test_get_device_returns_device_doc(network_live_client, test_target_mac):
-    result = await network_live_client.get_device(test_target_mac)
-    assert "data" in result
-    assert isinstance(result["data"], list)
-    assert any(d.get("mac", "").lower() == test_target_mac for d in result["data"])
+async def test_target_device_present_in_list(network_live_client, test_target_mac):
+    """Smoke test for the read pattern that network_get_device uses internally:
+    list_devices() then filter by MAC. Asserts the configured test target is
+    discoverable so that disruptive tests in later tasks won't NEEDS_CONTEXT."""
+    devices = await network_live_client.list_devices()
+    found = next(
+        (d for d in devices.get("data", []) if d.get("mac", "").lower() == test_target_mac),
+        None,
+    )
+    assert found is not None, f"test_target_mac {test_target_mac} not in list_devices"
+    assert found.get("mac", "").lower() == test_target_mac
 
 
 async def test_list_firewall_rules_returns_list(network_live_client):

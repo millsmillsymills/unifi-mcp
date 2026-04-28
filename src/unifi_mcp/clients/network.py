@@ -80,34 +80,6 @@ class NetworkClient(BaseUniFiClient):
         result: dict[str, Any] = await self.get("stat/alluser", params={"type": "all", "conn": "all"})
         return result
 
-    async def get_client(self, mac: str) -> dict[str, Any]:
-        """Get a specific client by MAC address.
-
-        Searches active clients and raises UniFiNotFoundError if not found.
-        Returns a wrapped dict with "data" key containing a list with the
-        matching client.
-        """
-        result = await self.list_active_clients()
-        clients: list[dict[str, Any]] = result.get("data", [])
-        for client in clients:
-            if client.get("mac", "").lower() == mac.lower():
-                return {"data": [client]}
-        raise UniFiNotFoundError(f"Client with MAC {mac} not found among active clients")
-
-    async def get_device(self, mac: str) -> dict[str, Any]:
-        """Get a specific adopted device by MAC address.
-
-        Raises UniFiNotFoundError if the device is not adopted or not found.
-        Returns a wrapped dict with "data" key containing a list with the
-        matching device.
-        """
-        result = await self.list_devices()
-        devices: list[dict[str, Any]] = result.get("data", [])
-        for device in devices:
-            if device.get("mac", "").lower() == mac.lower():
-                return {"data": [device]}
-        raise UniFiNotFoundError(f"Device with MAC {mac} not found")
-
     async def get_dpi_stats(self, dpi_type: str = "by_app") -> dict[str, Any]:
         """Get deep packet inspection statistics."""
         result: dict[str, Any] = await self.get("stat/dpi", params={"type": dpi_type})
