@@ -264,10 +264,12 @@ async def test_vlan_id(
 
     name = f"{mcptest_prefix}vlan-{chosen}"
     try:
+        # vlan_enabled must be True or the controller rejects with VlanUsed
         created = await network_live_client_session.create_network({
             "name": name,
             "purpose": "corporate",
             "vlan": chosen,
+            "vlan_enabled": True,
             "subnet": f"10.99.{chosen}.1/24",
             "dhcpd_enabled": False,
         })
