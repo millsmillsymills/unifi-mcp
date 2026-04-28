@@ -14,8 +14,12 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from unifi_mcp.clients.network import NetworkClient
 from unifi_mcp.clients.protect import ProtectClient
@@ -203,3 +207,79 @@ async def default_lan_id(network_live_client_session: NetworkClient) -> str:
             LOG.warning("Default LAN _id (off-limits to write tests): %s", lan_id)
             return lan_id
     pytest.fail("No corporate is_default network found; refusing to run write tests.")
+
+
+@pytest.fixture(scope="session")
+def mcptest_prefix() -> str:
+    """All test artifacts named {prefix}{domain}-{uuid4-hex[:8]}.
+    Default: 'mcptest-'. Override via UNIFI_MCP_TEST_PREFIX.
+    Session-scoped because session fixtures depend on it.
+    """
+    return os.environ.get("UNIFI_MCP_TEST_PREFIX", "mcptest-").strip()
+
+
+@pytest.fixture
+async def cleanup_register():
+    """Per-test stack-based cleanup. register(callable, *args, **kwargs)
+    pushes a deferred call; finally pops in LIFO order, best-effort runs,
+    logs WARNING on failure. Never raises (would mask the test's real failure).
+    """
+    stack: list[tuple[Callable[..., object], tuple[object, ...], dict[str, object]]] = []
+
+    def register(fn: Callable[..., object], *args: object, **kwargs: object) -> None:
+        stack.append((fn, args, kwargs))
+
+    try:
+        yield register
+    finally:
+        while stack:
+            fn, args, kwargs = stack.pop()
+            try:
+                result = fn(*args, **kwargs)
+                if hasattr(result, "__await__"):
+                    await result  # type: ignore[misc]
+            except Exception as exc:
+                LOG.warning("cleanup_register: %s(%s) failed: %s", fn.__name__, args, exc)
+
+
+@pytest.fixture(scope="session")
+async def test_vlan_id(
+    network_live_client_session,
+    mcptest_prefix: str,
+):
+    """Session-scoped sandbox VLAN for dependent tests (wlan, port-profiles,
+    firewall rules, port-forwards). Created in 90-99 range using lowest
+    unused ID. Skipped (not failed) if creation fails.
+    """
+    existing = await network_live_client_session.list_networks()
+    used_vlans = {n.get("vlan") for n in existing.get("data", []) if n.get("vlan")}
+    chosen = next((v for v in range(90, 100) if v not in used_vlans), None)
+    if chosen is None:
+        pytest.skip("VLAN IDs 90-99 are all in use; cannot create sandbox VLAN.")
+
+    name = f"{mcptest_prefix}vlan-{chosen}"
+    try:
+        created = await network_live_client_session.create_network(
+            name=name,
+            purpose="corporate",
+            vlan=chosen,
+            ip_subnet=f"10.99.{chosen}.1/24",
+            dhcp_enabled=False,
+        )
+    except Exception as exc:
+        pytest.skip(f"Failed to create sandbox VLAN: {exc}")
+
+    vlan_doc = (created.get("data") or [{}])[0]
+    network_id = vlan_doc.get("_id")
+    if not isinstance(network_id, str):
+        pytest.skip(f"Sandbox VLAN response missing _id: {created}")
+
+    LOG.warning("Sandbox VLAN created: id=%s vlan=%d name=%s", network_id, chosen, name)
+    try:
+        yield network_id
+    finally:
+        try:
+            await network_live_client_session.delete_network(network_id)
+            LOG.warning("Sandbox VLAN deleted: %s", network_id)
+        except Exception as exc:
+            LOG.warning("Sandbox VLAN cleanup failed (id=%s): %s", network_id, exc)
