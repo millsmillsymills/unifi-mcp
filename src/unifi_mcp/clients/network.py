@@ -49,10 +49,11 @@ class NetworkClient(BaseUniFiClient):
     async def list_events(self, limit: int = 100) -> dict[str, Any]:
         """List recent events / alarms.
 
-        Uses ``stat/alarm`` — the legacy ``stat/event`` path returns 404 on
-        current UniFi controllers.
+        Uses ``list/alarm``. Both legacy ``stat/event`` and ``stat/alarm`` now
+        return 404 on current UniFi controllers; ``list/alarm`` is the
+        surviving path for site-wide alarm history.
         """
-        result: dict[str, Any] = await self.get("stat/alarm", params={"_limit": limit})
+        result: dict[str, Any] = await self.get("list/alarm", params={"_limit": limit})
         return result
 
     async def list_devices(self) -> dict[str, Any]:

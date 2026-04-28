@@ -81,7 +81,7 @@ class TestStatsClientEndpoints:
 
     @respx.mock
     async def test_list_events_passes_limit(self, network_client):
-        route = respx.get(f"{SITE_PREFIX}/stat/alarm").mock(return_value=httpx.Response(200, json={"data": []}))
+        route = respx.get(f"{SITE_PREFIX}/list/alarm").mock(return_value=httpx.Response(200, json={"data": []}))
         await network_client.list_events(limit=25)
         assert route.calls[0].request.url.params["_limit"] == "25"
 
