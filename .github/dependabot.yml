@@ -1,11 +1,13 @@
 version: 2
 updates:
-  # Python dependencies
-  - package-ecosystem: "pip"
+  # Python dependencies (uv ecosystem updates uv.lock directly)
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
+      cooldown:
+        default-days: 7
     labels:
       - "dependencies"
     commit-message:
@@ -30,6 +32,8 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+      cooldown:
+        default-days: 7
     labels:
       - "ci"
       - "dependencies"

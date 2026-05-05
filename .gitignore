@@ -54,3 +54,7 @@ Thumbs.db
 
 # Hatch
 /.hatch/
+
+# AI/agent review and local config artifacts
+.context/
+.claude/
