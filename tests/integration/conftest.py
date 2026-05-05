@@ -150,8 +150,7 @@ async def protected_macs(network_live_client_session: NetworkClient) -> frozense
     if not raw:
         devices = await network_live_client_session.list_devices()
         rows = [
-            f"  {d.get('mac', '?')}  {d.get('name', '?')}  ({d.get('model', '?')})"
-            for d in devices.get("data", [])
+            f"  {d.get('mac', '?')}  {d.get('name', '?')}  ({d.get('model', '?')})" for d in devices.get("data", [])
         ]
         msg = (
             "UNIFI_MCP_TEST_PROTECTED_MACS is unset. The integration suite refuses\n"
@@ -177,9 +176,7 @@ def test_target_mac(protected_macs: frozenset[str]) -> str:
     if not target:
         pytest.skip("UNIFI_MCP_TEST_TARGET_MAC unset; skipping device-action tests")
     if target in protected_macs:
-        pytest.fail(
-            f"UNIFI_MCP_TEST_TARGET_MAC={target} overlaps protected_macs. Refusing to run."
-        )
+        pytest.fail(f"UNIFI_MCP_TEST_TARGET_MAC={target} overlaps protected_macs. Refusing to run.")
     return target
 
 
@@ -265,14 +262,16 @@ async def test_vlan_id(
     name = f"{mcptest_prefix}vlan-{chosen}"
     try:
         # vlan_enabled must be True or the controller rejects with VlanUsed
-        created = await network_live_client_session.create_network({
-            "name": name,
-            "purpose": "corporate",
-            "vlan": chosen,
-            "vlan_enabled": True,
-            "subnet": f"10.99.{chosen}.1/24",
-            "dhcpd_enabled": False,
-        })
+        created = await network_live_client_session.create_network(
+            {
+                "name": name,
+                "purpose": "corporate",
+                "vlan": chosen,
+                "vlan_enabled": True,
+                "subnet": f"10.99.{chosen}.1/24",
+                "dhcpd_enabled": False,
+            }
+        )
     except Exception as exc:
         pytest.skip(f"Failed to create sandbox VLAN: {exc}")
 

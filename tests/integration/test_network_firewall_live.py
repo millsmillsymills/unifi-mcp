@@ -73,11 +73,13 @@ async def test_firewall_group_crud_roundtrip(
     suffix = uuid.uuid4().hex[:8]
     name = f"{mcptest_prefix}fw-grp-{suffix}"
 
-    created = await network_live_client.create_firewall_group({
-        "name": name,
-        "group_type": "address-group",
-        "group_members": ["192.0.2.10", "192.0.2.11"],
-    })
+    created = await network_live_client.create_firewall_group(
+        {
+            "name": name,
+            "group_type": "address-group",
+            "group_members": ["192.0.2.10", "192.0.2.11"],
+        }
+    )
     group_id = (created.get("data") or [{}])[0].get("_id")
     assert isinstance(group_id, str), f"create_firewall_group missing _id: {created}"
     cleanup_register(network_live_client.delete_firewall_group, group_id)
@@ -88,8 +90,8 @@ async def test_firewall_group_crud_roundtrip(
     assert set(found.get("group_members") or []) >= {"192.0.2.10", "192.0.2.11"}
 
     await network_live_client.update_firewall_group(
-        group_id, {"name": name, "group_type": "address-group",
-                   "group_members": ["192.0.2.10", "192.0.2.11", "192.0.2.12"]}
+        group_id,
+        {"name": name, "group_type": "address-group", "group_members": ["192.0.2.10", "192.0.2.11", "192.0.2.12"]},
     )
 
     read2 = await network_live_client.get_firewall_group(group_id)

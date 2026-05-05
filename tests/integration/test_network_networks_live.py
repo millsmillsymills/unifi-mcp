@@ -33,14 +33,16 @@ async def test_network_crud_roundtrip(
         pytest.skip("VLAN IDs 80-89 fully in use; cannot run CRUD test.")
 
     # CREATE — vlan_enabled must be True or the controller rejects with VlanUsed
-    created = await network_live_client.create_network({
-        "name": name,
-        "purpose": "corporate",
-        "vlan": chosen_vlan,
-        "vlan_enabled": True,
-        "subnet": f"10.80.{chosen_vlan}.1/24",
-        "dhcpd_enabled": False,
-    })
+    created = await network_live_client.create_network(
+        {
+            "name": name,
+            "purpose": "corporate",
+            "vlan": chosen_vlan,
+            "vlan_enabled": True,
+            "subnet": f"10.80.{chosen_vlan}.1/24",
+            "dhcpd_enabled": False,
+        }
+    )
     network_id = (created.get("data") or [{}])[0].get("_id")
     assert isinstance(network_id, str), f"create_network missing _id: {created}"
     assert network_id != default_lan_id, "Refusing to test against default LAN."

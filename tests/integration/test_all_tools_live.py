@@ -247,15 +247,11 @@ class TestReadTools:
 
         assert isinstance(payload, dict), f"Snapshot payload must be dict, got {type(payload).__name__}"
         assert payload.get("format") == "jpeg", f"Expected format='jpeg', got {payload.get('format')!r}"
-        assert payload.get("size_bytes", 0) > 1024, (
-            f"Snapshot suspiciously small: {payload.get('size_bytes')} bytes"
-        )
+        assert payload.get("size_bytes", 0) > 1024, f"Snapshot suspiciously small: {payload.get('size_bytes')} bytes"
         data_b64 = payload.get("data_base64") or ""
         assert data_b64, "Missing or empty data_base64 field"
         decoded = base64.b64decode(data_b64)
-        assert decoded.startswith(b"\xff\xd8\xff"), (
-            f"Decoded bytes are not a JPEG (first 4 bytes: {decoded[:4]!r})"
-        )
+        assert decoded.startswith(b"\xff\xd8\xff"), f"Decoded bytes are not a JPEG (first 4 bytes: {decoded[:4]!r})"
         assert len(decoded) == payload["size_bytes"], (
             f"size_bytes={payload['size_bytes']} disagrees with decoded length {len(decoded)}"
         )
@@ -377,11 +373,7 @@ class TestProtectWriteRoundtrips:
         camera_id = await _first_protect_camera_id(live_client)
 
         before = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
-        original_mode = (
-            before.get("recordingSettings", {}).get("mode")
-            if isinstance(before, dict)
-            else None
-        )
+        original_mode = before.get("recordingSettings", {}).get("mode") if isinstance(before, dict) else None
         artifacts.dump(
             "recording_mode_before",
             {"camera_id": camera_id, "original_mode": original_mode, "snapshot": before},
@@ -400,15 +392,9 @@ class TestProtectWriteRoundtrips:
             artifacts.dump("recording_mode_applied", {"target": target, "response": applied})
 
             after = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
-            after_mode = (
-                after.get("recordingSettings", {}).get("mode")
-                if isinstance(after, dict)
-                else None
-            )
+            after_mode = after.get("recordingSettings", {}).get("mode") if isinstance(after, dict) else None
             artifacts.dump("recording_mode_readback", {"after_mode": after_mode, "snapshot": after})
-            assert after_mode == target, (
-                f"Read-back mismatch: set {target!r}, read back {after_mode!r}"
-            )
+            assert after_mode == target, f"Read-back mismatch: set {target!r}, read back {after_mode!r}"
         finally:
             await _invoke(
                 live_client,
@@ -425,9 +411,7 @@ class TestProtectWriteRoundtrips:
 
         before = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
         original = (
-            list(before.get("smartDetectSettings", {}).get("objectTypes", []))
-            if isinstance(before, dict)
-            else None
+            list(before.get("smartDetectSettings", {}).get("objectTypes", [])) if isinstance(before, dict) else None
         )
         artifacts.dump(
             "smart_detection_before",
@@ -448,14 +432,10 @@ class TestProtectWriteRoundtrips:
 
             after = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
             after_types = (
-                list(after.get("smartDetectSettings", {}).get("objectTypes", []))
-                if isinstance(after, dict)
-                else None
+                list(after.get("smartDetectSettings", {}).get("objectTypes", [])) if isinstance(after, dict) else None
             )
             artifacts.dump("smart_detection_readback", {"after_types": after_types, "snapshot": after})
-            assert after_types == target, (
-                f"Read-back mismatch: set {target!r}, read back {after_types!r}"
-            )
+            assert after_types == target, f"Read-back mismatch: set {target!r}, read back {after_types!r}"
         finally:
             await _invoke(
                 live_client,
@@ -483,8 +463,7 @@ class TestProtectWriteRoundtrips:
         )
         if original_name is None or original_led is None:
             pytest.skip(
-                f"Camera missing name or ledSettings.isEnabled "
-                f"(got name={original_name!r}, led={original_led!r})"
+                f"Camera missing name or ledSettings.isEnabled (got name={original_name!r}, led={original_led!r})"
             )
 
         target_name = f"{original_name} [mcp-test]"
@@ -506,19 +485,13 @@ class TestProtectWriteRoundtrips:
 
             after = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
             after_name = after.get("name") if isinstance(after, dict) else None
-            after_led = (
-                after.get("ledSettings", {}).get("isEnabled") if isinstance(after, dict) else None
-            )
+            after_led = after.get("ledSettings", {}).get("isEnabled") if isinstance(after, dict) else None
             artifacts.dump(
                 "update_camera_readback",
                 {"after_name": after_name, "after_led": after_led, "snapshot": after},
             )
-            assert after_name == target_name, (
-                f"name read-back mismatch: set {target_name!r}, read back {after_name!r}"
-            )
-            assert after_led == target_led, (
-                f"led read-back mismatch: set {target_led!r}, read back {after_led!r}"
-            )
+            assert after_name == target_name, f"name read-back mismatch: set {target_name!r}, read back {after_name!r}"
+            assert after_led == target_led, f"led read-back mismatch: set {target_led!r}, read back {after_led!r}"
         finally:
             await _invoke(
                 live_client,
