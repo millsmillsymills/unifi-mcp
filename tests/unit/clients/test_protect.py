@@ -12,7 +12,7 @@ import respx
 from unifi_mcp.clients.protect import ProtectClient
 
 BASE_URL = "https://10.0.0.1:443"
-API_PREFIX = f"{BASE_URL}/proxy/protect/api/"
+API_PREFIX = f"{BASE_URL}/proxy/protect/integration/v1/"
 
 FIXTURES = json.loads(
     (Path(__file__).resolve().parent.parent.parent / "fixtures" / "protect_responses.json").read_text()
@@ -166,7 +166,7 @@ class TestSetRecordingMode:
 class TestGetNvr:
     @respx.mock
     async def test_get_nvr_calls_correct_endpoint(self, client):
-        route = respx.get(f"{API_PREFIX}nvr").mock(return_value=httpx.Response(200, json=FIXTURES["nvr"]))
+        route = respx.get(f"{API_PREFIX}nvrs").mock(return_value=httpx.Response(200, json=FIXTURES["nvr"]))
         result = await client.get_nvr()
         assert route.called
         assert result == FIXTURES["nvr"]
@@ -175,13 +175,13 @@ class TestGetNvr:
 class TestValidateConnection:
     @respx.mock
     async def test_validate_returns_true_on_success(self, client):
-        respx.get(f"{API_PREFIX}nvr").mock(return_value=httpx.Response(200, json=FIXTURES["nvr"]))
+        respx.get(f"{API_PREFIX}nvrs").mock(return_value=httpx.Response(200, json=FIXTURES["nvr"]))
         result = await client.validate_connection()
         assert result is True
 
     @respx.mock
     async def test_validate_returns_false_on_failure(self, client):
-        respx.get(f"{API_PREFIX}nvr").mock(side_effect=httpx.ConnectError("Connection refused"))
+        respx.get(f"{API_PREFIX}nvrs").mock(side_effect=httpx.ConnectError("Connection refused"))
         result = await client.validate_connection()
         assert result is False
 
@@ -193,7 +193,7 @@ class TestValidateConnection:
         """
         from unifi_mcp.errors import UniFiConnectionError
 
-        respx.get(f"{API_PREFIX}nvr").mock(side_effect=httpx.ConnectError("refused"))
+        respx.get(f"{API_PREFIX}nvrs").mock(side_effect=httpx.ConnectError("refused"))
         assert await client.validate_connection() is False
         assert isinstance(client._last_validation_error, UniFiConnectionError)
 
@@ -203,12 +203,12 @@ class TestValidateConnection:
         stashed exception so stale errors don't leak into later WARN logs.
         """
         # First call fails and stashes the exception.
-        respx.get(f"{API_PREFIX}nvr").mock(side_effect=httpx.ConnectError("refused"))
+        respx.get(f"{API_PREFIX}nvrs").mock(side_effect=httpx.ConnectError("refused"))
         await client.validate_connection()
         assert client._last_validation_error is not None
 
         # Reset and simulate success.
         respx.reset()
-        respx.get(f"{API_PREFIX}nvr").mock(return_value=httpx.Response(200, json=FIXTURES["nvr"]))
+        respx.get(f"{API_PREFIX}nvrs").mock(return_value=httpx.Response(200, json=FIXTURES["nvr"]))
         assert await client.validate_connection() is True
         assert client._last_validation_error is None

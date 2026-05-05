@@ -14,16 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 class ProtectClient(BaseUniFiClient):
-    """Client for the UniFi Protect API on a local controller.
+    """Client for the UniFi Protect integration API on a local controller.
 
-    Uses the Protect endpoint exposed through the controller's reverse proxy.
-    The exact path prefix is an implementation detail of ``_path_prefix`` and
-    may change across UniFi Protect major versions.
-
-    KNOWN ISSUE (#103): the current ``_path_prefix`` only accepts session
-    (cookie) auth, not ``X-API-Key``. Against modern UniFi OS 7.x installs
-    every call 401s and ``validate_connection`` returns False, which causes
-    the server lifespan to deregister all Protect tools at startup.
+    Uses ``/proxy/protect/integration/v1/`` (X-API-Key compatible). The
+    legacy ``/proxy/protect/api/`` path only accepts session-cookie auth.
+    Note: ``get_bootstrap`` and ``list_events`` have no integration-v1
+    equivalent; they 404 with ``Entity 'endpoint' not found`` (see #130).
     """
 
     def __init__(
@@ -35,7 +31,7 @@ class ProtectClient(BaseUniFiClient):
         timeout: int = 30,
         max_retries: int = 3,
     ) -> None:
-        self._path_prefix = "/proxy/protect/api/"
+        self._path_prefix = "/proxy/protect/integration/v1/"
         super().__init__(
             base_url=base_url,
             api_key=api_key,
@@ -98,8 +94,12 @@ class ProtectClient(BaseUniFiClient):
         return result
 
     async def get_nvr(self) -> dict[str, Any]:
-        """Get NVR system information."""
-        result: dict[str, Any] = await self.get("nvr")
+        """Get NVR system information.
+
+        The integration API exposes the NVR at ``nvrs`` (plural) but returns
+        a single object — there is one NVR per controller.
+        """
+        result: dict[str, Any] = await self.get("nvrs")
         return result
 
     async def list_chimes(self) -> list[dict[str, Any]]:
@@ -171,7 +171,8 @@ class ProtectClient(BaseUniFiClient):
 
     async def update_nvr(self, data: dict[str, Any]) -> dict[str, Any]:
         """Update NVR settings."""
-        result: dict[str, Any] = await self.put("nvr", json=data)
+        # TODO(#130): verify PUT /nvrs (vs /nvrs/{id}) on live readwrite hardware.
+        result: dict[str, Any] = await self.put("nvrs", json=data)
         return result
 
     # -- Media methods ------------------------------------------------------
@@ -223,9 +224,6 @@ class ProtectClient(BaseUniFiClient):
         Returns False on any UniFi or HTTP error. The caught exception is
         stored on ``self._last_validation_error`` so the lifespan can
         surface the failure class in its WARN log.
-
-        On current ``main``, #103 causes this to return False against any
-        live UniFi OS 7.x install (HTTP 401 from ``/proxy/protect/api/``).
         """
         try:
             await self.get_nvr()

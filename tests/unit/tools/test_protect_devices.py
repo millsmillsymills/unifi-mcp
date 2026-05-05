@@ -11,7 +11,7 @@ from unifi_mcp.clients.protect import ProtectClient
 from unifi_mcp.tools.protect.devices import register_protect_device_tools
 
 BASE_URL = "https://10.0.0.1:443"
-PROTECT_PREFIX = f"{BASE_URL}/proxy/protect/api"
+PROTECT_PREFIX = f"{BASE_URL}/proxy/protect/integration/v1"
 
 TOOL_NAMES = {
     "protect_list_chimes",

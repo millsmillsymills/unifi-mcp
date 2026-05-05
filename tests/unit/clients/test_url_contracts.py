@@ -13,16 +13,13 @@ integration-API documentation at the time of writing:
 * Protect:      /proxy/protect/integration/v1/   (X-API-Key compatible)
 * Site Manager: /v1/  (base host https://api.ui.com)
 
-The Protect test is marked ``xfail(strict=True)`` while #103 is open: it
-proves the bug exists today, and the moment #103 ships a fix the marker
-forces the test to flip to fail-on-unexpected-pass so the marker gets
-removed.
+Note the asymmetry: Network uses plural ``integrations`` while Protect
+uses singular ``integration``. Both are real Ubiquiti paths.
 """
 
 from __future__ import annotations
 
 import httpx
-import pytest
 import respx
 
 from unifi_mcp.clients.network import NetworkClient
@@ -72,20 +69,12 @@ class TestSiteManagerURLContract:
 
 
 class TestProtectURLContract:
-    # Verified HTTP 200 against UCK-G2-Plus running Protect 7.0.104. The
+    # Verified HTTP 200 against UCK-G2-Plus running Protect 7.0.107. The
     # X-API-Key scheme that the rest of the codebase uses is only accepted
     # under this prefix; the legacy /proxy/protect/api/ path requires the
     # session-cookie auth flow.
     EXPECTED_PREFIX = "/proxy/protect/integration/v1/"
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "#103 — ProtectClient._path_prefix is still '/proxy/protect/api/' "
-            "which only accepts cookie auth. Flip this xfail to a plain test "
-            "the moment #103 lands the switch to the integration path."
-        ),
-    )
     @respx.mock
     async def test_protect_client_uses_published_integration_prefix(self):
         base = "https://10.9.9.9:8443"

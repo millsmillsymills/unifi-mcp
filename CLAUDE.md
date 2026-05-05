@@ -53,9 +53,9 @@ src/unifi_mcp/
 └── tools/               # MCP tool definitions
     ├── network/         # 24 read + 35 write tools (59 total)
     ├── protect/         # 11 read + 4 write tools (15 total, includes 2 media read tools)
-    │                    # NOTE: blocked by #103 — _path_prefix is wrong. Against
-    │                    # real UniFi OS 7.x hardware, validate_connection fails
-    │                    # and all 15 tools are deregistered at startup.
+    │                    # NOTE: 2 of 11 read tools (protect_get_bootstrap,
+    │                    # protect_list_events) always return 404 against the
+    │                    # integration API. Tracked in #130.
     └── site_manager/    # 3 read-only tools
 ```
 

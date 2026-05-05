@@ -24,6 +24,7 @@ so a diff between runs is easy.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import uuid
@@ -34,6 +35,7 @@ from typing import Any
 
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 from unifi_mcp.server import create_server
 
@@ -109,18 +111,26 @@ NO_ARG_READ_TOOLS = {
     "network_list_routes",
     "network_get_settings",
     # Protect
-    "protect_get_bootstrap",
     "protect_get_nvr",
     "protect_list_cameras",
     "protect_list_chimes",
     "protect_list_lights",
     "protect_list_sensors",
     "protect_list_viewers",
-    "protect_list_events",
     # Site Manager
     "site_manager_list_hosts",
     "site_manager_list_sites",
     "site_manager_list_devices",
+}
+
+# Read tools that exist in the registered set but have no integration-v1
+# endpoint — the legacy /proxy/protect/api/ exposed bootstrap and events,
+# the new /proxy/protect/integration/v1/ does not. Tracked in #130. The
+# strict xfail flips to a hard failure if Ubiquiti ever adds them back,
+# signaling that #130 can close.
+XFAIL_NO_ARG_READ_TOOLS = {
+    "protect_get_bootstrap": "#130 — integration/v1 has no bootstrap endpoint",
+    "protect_list_events": "#130 — integration/v1 has no events endpoint",
 }
 
 # Read tools that take required args; covered via the detail-fetch harness.
@@ -196,14 +206,102 @@ class TestReadTools:
 
         assert not failures, "Detail read tools failed:\n" + "\n".join(f"  {n}: {e}" for n, e in failures)
 
+    @pytest.mark.parametrize(
+        "tool_name",
+        [
+            pytest.param(name, marks=pytest.mark.xfail(strict=True, reason=reason))
+            for name, reason in XFAIL_NO_ARG_READ_TOOLS.items()
+        ],
+    )
+    async def test_xfail_no_arg_read_tool(self, live_client, artifacts, tool_name):
+        """Tools that should fail today per #130. Strict xfail flips to a hard
+        failure if Ubiquiti adds these endpoints back, signaling #130 can close.
+        """
+        tool_defs = {t.name for t in await live_client.list_tools()}
+        if tool_name not in tool_defs:
+            pytest.skip(f"{tool_name} not registered (Protect API not configured?)")
+        payload = await _invoke(live_client, tool_name)
+        # If we got here, the integration API now exposes this endpoint —
+        # capture the payload so the operator can confirm the new shape.
+        artifacts.dump(tool_name, {"ok": True, "payload": payload})
+
+    async def test_protect_get_snapshot_shape(self, live_client, artifacts):
+        """Snapshot tool returns the documented {format, data_base64, size_bytes}
+        shape and the decoded bytes are a real JPEG.
+        """
+        tool_defs = {t.name for t in await live_client.list_tools()}
+        if "protect_get_snapshot" not in tool_defs or "protect_list_cameras" not in tool_defs:
+            pytest.skip("Protect tools not registered")
+
+        cameras = _unwrap_list(await _invoke(live_client, "protect_list_cameras"))
+        if not cameras:
+            pytest.skip("No cameras adopted on the NVR")
+        camera_id = cameras[0].get("id")
+        assert camera_id, f"First camera entry missing id: {cameras[0]!r}"
+
+        payload = await _invoke(live_client, "protect_get_snapshot", {"camera_id": camera_id})
+        artifacts.dump(
+            "protect_get_snapshot",
+            {"ok": True, "camera_id": camera_id, "payload": _redact_data_base64(payload)},
+        )
+
+        assert isinstance(payload, dict), f"Snapshot payload must be dict, got {type(payload).__name__}"
+        assert payload.get("format") == "jpeg", f"Expected format='jpeg', got {payload.get('format')!r}"
+        assert payload.get("size_bytes", 0) > 1024, f"Snapshot suspiciously small: {payload.get('size_bytes')} bytes"
+        data_b64 = payload.get("data_base64") or ""
+        assert data_b64, "Missing or empty data_base64 field"
+        decoded = base64.b64decode(data_b64)
+        assert decoded.startswith(b"\xff\xd8\xff"), f"Decoded bytes are not a JPEG (first 4 bytes: {decoded[:4]!r})"
+        assert len(decoded) == payload["size_bytes"], (
+            f"size_bytes={payload['size_bytes']} disagrees with decoded length {len(decoded)}"
+        )
+
+
+def _redact_data_base64(payload: Any) -> Any:
+    """Replace base64 image/video data with a size summary in artifact dumps.
+
+    Snapshot/export payloads carry the entire encoded media inline. Without
+    redaction, every artifact run would write multi-megabyte JSON files.
+    """
+    if isinstance(payload, dict) and "data_base64" in payload:
+        return {**payload, "data_base64": f"<{len(payload['data_base64'])} chars redacted>"}
+    return payload
+
 
 def _unwrap_list(payload: Any) -> list[dict[str, Any]]:
-    """Most UniFi list responses are ``{"data": [...]}``; Protect returns a bare list."""
+    """Extract the list-of-dicts payload from a tool response.
+
+    Three shapes are observed in this server:
+    * Bare ``list[dict]`` — what some Protect tools return raw.
+    * ``{"data": [...]}`` — what most Network tools return.
+    * ``{"result": [...]}`` — FastMCP's structured-content wrapping for tools
+      whose return type is ``list[dict]`` (Protect's list_cameras / list_chimes /
+      etc.). ``_invoke`` returns ``structured_content`` first, so this envelope
+      reaches us instead of the bare list.
+    """
     if isinstance(payload, list):
         return payload
-    if isinstance(payload, dict) and isinstance(payload.get("data"), list):
-        return payload["data"]
+    if isinstance(payload, dict):
+        for key in ("data", "result"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
     return []
+
+
+async def _first_protect_camera_id(client: Client) -> str:
+    """Return the id of the first adopted camera, or pytest.skip if none.
+
+    Used by every Protect write test to pick a target. Skips cleanly
+    rather than failing when no camera is adopted (e.g., NVR exists but
+    operator hasn't added a camera yet).
+    """
+    cameras = _unwrap_list(await _invoke(client, "protect_list_cameras"))
+    if not cameras:
+        pytest.skip("No cameras adopted on the NVR")
+    camera_id = cameras[0].get("id")
+    assert camera_id, f"First camera entry missing id: {cameras[0]!r}"
+    return camera_id
 
 
 # ── Write-tool audit (opt-in via LIVE_TEST_WRITES=1) ───────────────────────
@@ -258,6 +356,249 @@ class TestWriteRoundtrips:
         pf_id = items[0]["_id"]
         deleted = await _invoke(live_client, "network_delete_port_forward", {"port_forward_id": pf_id})
         artifacts.dump(f"delete_port_forward-{suffix}", {"ok": True, "payload": deleted})
+
+
+@pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
+class TestProtectWriteRoundtrips:
+    """Curated capture → mutate → read-back → restore roundtrips for the
+    four Protect write tools. Each test runs against the first adopted
+    camera (or the NVR for update_nvr) and restores the original value in
+    `finally` even on assertion failure.
+    """
+
+    async def test_recording_mode_roundtrip(self, live_client, artifacts):
+        """Capture current recordingSettings.mode, set 'always', read back,
+        then restore. The legal modes are always | motion | never | schedule.
+        """
+        camera_id = await _first_protect_camera_id(live_client)
+
+        before = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+        original_mode = before.get("recordingSettings", {}).get("mode") if isinstance(before, dict) else None
+        artifacts.dump(
+            "recording_mode_before",
+            {"camera_id": camera_id, "original_mode": original_mode, "snapshot": before},
+        )
+        if not original_mode:
+            pytest.skip(f"Could not read recordingSettings.mode from camera (got {before!r})")
+
+        target = "always" if original_mode != "always" else "motion"
+
+        try:
+            applied = await _invoke(
+                live_client,
+                "protect_set_recording_mode",
+                {"camera_id": camera_id, "mode": target},
+            )
+            artifacts.dump("recording_mode_applied", {"target": target, "response": applied})
+
+            after = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+            after_mode = after.get("recordingSettings", {}).get("mode") if isinstance(after, dict) else None
+            artifacts.dump("recording_mode_readback", {"after_mode": after_mode, "snapshot": after})
+            assert after_mode == target, f"Read-back mismatch: set {target!r}, read back {after_mode!r}"
+        finally:
+            await _invoke(
+                live_client,
+                "protect_set_recording_mode",
+                {"camera_id": camera_id, "mode": original_mode},
+            )
+            artifacts.dump("recording_mode_restored", {"restored_mode": original_mode})
+
+    async def test_smart_detection_roundtrip(self, live_client, artifacts):
+        """Capture current smartDetectSettings.objectTypes, set ['person'],
+        read back, then restore.
+        """
+        camera_id = await _first_protect_camera_id(live_client)
+
+        before = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+        original = (
+            list(before.get("smartDetectSettings", {}).get("objectTypes", [])) if isinstance(before, dict) else None
+        )
+        artifacts.dump(
+            "smart_detection_before",
+            {"camera_id": camera_id, "original": original, "snapshot": before},
+        )
+        if original is None:
+            pytest.skip(f"Could not read smartDetectSettings from camera (got {before!r})")
+
+        target = ["person"]
+
+        try:
+            applied = await _invoke(
+                live_client,
+                "protect_set_smart_detection",
+                {"camera_id": camera_id, "object_types": target},
+            )
+            artifacts.dump("smart_detection_applied", {"target": target, "response": applied})
+
+            after = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+            after_types = (
+                list(after.get("smartDetectSettings", {}).get("objectTypes", [])) if isinstance(after, dict) else None
+            )
+            artifacts.dump("smart_detection_readback", {"after_types": after_types, "snapshot": after})
+            assert after_types == target, f"Read-back mismatch: set {target!r}, read back {after_types!r}"
+        finally:
+            await _invoke(
+                live_client,
+                "protect_set_smart_detection",
+                {"camera_id": camera_id, "object_types": original},
+            )
+            artifacts.dump("smart_detection_restored", {"restored": original})
+
+    async def test_update_camera_roundtrip(self, live_client, artifacts):
+        """Round-trip a string field (name) and a nested settings field
+        (ledSettings.isEnabled) via protect_update_camera. Exercises both
+        the simple-key and nested-dict shapes of PUT cameras/{id} on
+        integration v1.
+        """
+        camera_id = await _first_protect_camera_id(live_client)
+
+        before = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+        if not isinstance(before, dict):
+            pytest.skip(f"Camera response is not a dict: {before!r}")
+        original_name = before.get("name")
+        original_led = before.get("ledSettings", {}).get("isEnabled")
+        artifacts.dump(
+            "update_camera_before",
+            {"camera_id": camera_id, "name": original_name, "led": original_led, "snapshot": before},
+        )
+        if original_name is None or original_led is None:
+            pytest.skip(
+                f"Camera missing name or ledSettings.isEnabled (got name={original_name!r}, led={original_led!r})"
+            )
+
+        target_name = f"{original_name} [mcp-test]"
+        target_led = not original_led
+
+        try:
+            applied = await _invoke(
+                live_client,
+                "protect_update_camera",
+                {
+                    "camera_id": camera_id,
+                    "data": {"name": target_name, "ledSettings": {"isEnabled": target_led}},
+                },
+            )
+            artifacts.dump(
+                "update_camera_applied",
+                {"target_name": target_name, "target_led": target_led, "response": applied},
+            )
+
+            after = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+            after_name = after.get("name") if isinstance(after, dict) else None
+            after_led = after.get("ledSettings", {}).get("isEnabled") if isinstance(after, dict) else None
+            artifacts.dump(
+                "update_camera_readback",
+                {"after_name": after_name, "after_led": after_led, "snapshot": after},
+            )
+            assert after_name == target_name, f"name read-back mismatch: set {target_name!r}, read back {after_name!r}"
+            assert after_led == target_led, f"led read-back mismatch: set {target_led!r}, read back {after_led!r}"
+        finally:
+            await _invoke(
+                live_client,
+                "protect_update_camera",
+                {
+                    "camera_id": camera_id,
+                    "data": {"name": original_name, "ledSettings": {"isEnabled": original_led}},
+                },
+            )
+            artifacts.dump(
+                "update_camera_restored",
+                {"restored_name": original_name, "restored_led": original_led},
+            )
+
+    async def test_update_nvr_roundtrip(self, live_client, artifacts):
+        """Round-trip the NVR name via protect_update_nvr. First live-hardware
+        validation of PUT /nvrs on integration v1 — see TODO(#130) in
+        clients/protect.py.
+        """
+        before = await _invoke(live_client, "protect_get_nvr")
+        if not isinstance(before, dict):
+            pytest.skip(f"NVR response is not a dict: {before!r}")
+        original_name = before.get("name")
+        artifacts.dump("update_nvr_before", {"name": original_name, "snapshot": before})
+        if not original_name:
+            pytest.skip(f"NVR missing name field (got {before!r})")
+
+        target_name = f"{original_name} [mcp-test]"
+
+        try:
+            applied = await _invoke(
+                live_client,
+                "protect_update_nvr",
+                {"data": {"name": target_name}},
+            )
+            artifacts.dump("update_nvr_applied", {"target_name": target_name, "response": applied})
+
+            after = await _invoke(live_client, "protect_get_nvr")
+            after_name = after.get("name") if isinstance(after, dict) else None
+            artifacts.dump("update_nvr_readback", {"after_name": after_name, "snapshot": after})
+            assert after_name == target_name, (
+                f"NVR name read-back mismatch: set {target_name!r}, read back {after_name!r}"
+            )
+        finally:
+            await _invoke(
+                live_client,
+                "protect_update_nvr",
+                {"data": {"name": original_name}},
+            )
+            artifacts.dump("update_nvr_restored", {"restored_name": original_name})
+
+
+@pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
+class TestProtectWriteNegatives:
+    """Each Protect write tool with malformed input must surface a ToolError
+    (mapped from UniFiError), not a raw httpx exception or a silent success.
+    Mutations attempted here are rejected by the controller, so no restoration
+    is needed.
+    """
+
+    async def test_set_recording_mode_invalid_mode(self, live_client, artifacts):
+        camera_id = await _first_protect_camera_id(live_client)
+        with pytest.raises(ToolError) as exc_info:
+            await _invoke(
+                live_client,
+                "protect_set_recording_mode",
+                {"camera_id": camera_id, "mode": "this-is-not-a-real-mode"},
+            )
+        artifacts.dump(
+            "set_recording_mode_invalid",
+            {"camera_id": camera_id, "error": str(exc_info.value)},
+        )
+
+    async def test_set_smart_detection_bogus_type(self, live_client, artifacts):
+        camera_id = await _first_protect_camera_id(live_client)
+        with pytest.raises(ToolError) as exc_info:
+            await _invoke(
+                live_client,
+                "protect_set_smart_detection",
+                {"camera_id": camera_id, "object_types": ["blueGiraffe"]},
+            )
+        artifacts.dump(
+            "set_smart_detection_bogus",
+            {"camera_id": camera_id, "error": str(exc_info.value)},
+        )
+
+    async def test_update_camera_unknown_field(self, live_client, artifacts):
+        camera_id = await _first_protect_camera_id(live_client)
+        with pytest.raises(ToolError) as exc_info:
+            await _invoke(
+                live_client,
+                "protect_update_camera",
+                {"camera_id": camera_id, "data": {"thisIsNotAField": "garbage"}},
+            )
+        artifacts.dump(
+            "update_camera_unknown_field",
+            {"camera_id": camera_id, "error": str(exc_info.value)},
+        )
+
+    async def test_update_nvr_unknown_field(self, live_client, artifacts):
+        with pytest.raises(ToolError) as exc_info:
+            await _invoke(
+                live_client,
+                "protect_update_nvr",
+                {"data": {"thisIsNotAField": "garbage"}},
+            )
+        artifacts.dump("update_nvr_unknown_field", {"error": str(exc_info.value)})
 
 
 # ── Device LED locate/unlocate cycle (only runs in LIVE_TEST_WRITES mode) ─

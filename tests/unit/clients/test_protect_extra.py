@@ -9,7 +9,7 @@ import respx
 from unifi_mcp.clients.protect import ProtectClient
 
 BASE_URL = "https://10.0.0.1:443"
-API_PREFIX = f"{BASE_URL}/proxy/protect/api/"
+API_PREFIX = f"{BASE_URL}/proxy/protect/integration/v1/"
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ class TestWriteMethods:
 
     @respx.mock
     async def test_update_nvr_puts_body(self, client):
-        route = respx.put(f"{API_PREFIX}nvr").mock(return_value=httpx.Response(200, json={}))
+        route = respx.put(f"{API_PREFIX}nvrs").mock(return_value=httpx.Response(200, json={}))
         await client.update_nvr({"name": "renamed"})
         assert b"renamed" in route.calls[0].request.content
 

@@ -7,7 +7,12 @@ Run manually:
 
 from __future__ import annotations
 
+import time
+
+import httpx
 import pytest
+
+from unifi_mcp.errors import UniFiError
 
 pytestmark = pytest.mark.integration
 
@@ -39,6 +44,55 @@ async def test_get_snapshot_returns_jpeg(protect_live_client):
     assert len(snapshot) > 1024, "Snapshot suspiciously small"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "#130 — the integration API at /proxy/protect/integration/v1/ does not "
+        "expose an events endpoint (returns 404 NOT_FOUND). Flip this xfail to "
+        "a plain test when #130 ships either the removal or a WebSocket-based "
+        "replacement. Note: silently skips when UNIFI_PROTECT_API is unset; the "
+        "strict marker only fires on live manual runs, not in CI."
+    ),
+)
 async def test_list_events_returns_list(protect_live_client):
     events = await protect_live_client.list_events(limit=1)
     assert isinstance(events, list)
+
+
+async def test_export_video_returns_data(protect_live_client):
+    """Export a 5-second window from ~30s ago. Asserts non-empty bytes; size
+    sanity check guards against the controller returning an empty/0-byte
+    response on a brand-new camera with no recordings yet (treat that as a
+    skip, not a fail — the test is about the export endpoint, not retention).
+    """
+    cameras = await protect_live_client.list_cameras()
+    if not cameras:
+        pytest.skip("No cameras connected to the NVR")
+    camera_id = cameras[0].get("id")
+    assert camera_id, "First camera entry missing id"
+
+    end_ms = int(time.time() * 1000) - 5_000
+    start_ms = end_ms - 5_000
+
+    data = await protect_live_client.export_video(camera_id, start=start_ms, end=end_ms)
+    assert isinstance(data, bytes), f"Expected bytes, got {type(data).__name__}"
+    if len(data) == 0:
+        pytest.skip("Export returned 0 bytes — likely no recording yet for the new camera")
+    assert len(data) > 1024, f"Export suspiciously small: {len(data)} bytes"
+
+
+async def test_export_video_reversed_window_raises(protect_live_client):
+    """A reversed time window (start > end) should fail at the API rather than
+    silently returning an empty/garbage clip. Accept either a UniFiError
+    (mapped 4xx) or an httpx.HTTPError (raw timeout/transport) — the test is
+    that the failure surfaces, not its precise class.
+    """
+    cameras = await protect_live_client.list_cameras()
+    if not cameras:
+        pytest.skip("No cameras connected to the NVR")
+    camera_id = cameras[0].get("id")
+    assert camera_id, "First camera entry missing id"
+
+    now_ms = int(time.time() * 1000)
+    with pytest.raises((UniFiError, httpx.HTTPError)):
+        await protect_live_client.export_video(camera_id, start=now_ms, end=now_ms - 60_000)
