@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/logo.png" alt="unifi-mcp logo" width="200" />
+</p>
+
 # unifi-mcp
 
 Production-grade Python MCP server for UniFi Site Manager, Network, and Protect APIs.
@@ -84,3 +88,11 @@ uv run pre-commit install
 ## License
 
 Apache-2.0 — see [LICENSE](LICENSE).
+
+## Trademarks
+
+UniFi, UbiOS, and Ubiquiti are trademarks of Ubiquiti Inc. This project is an
+independent, third-party MCP server and is not affiliated with, endorsed by, or
+sponsored by Ubiquiti Inc. The repo logo (`docs/assets/logo.png`) is a stylized
+8-bit derivative of Ubiquiti's UniFi access-point artwork, used here for
+identification only.
