@@ -99,3 +99,14 @@ if config.protect_enabled:
 - **Release**: Triggered by `v*` tags. Builds with `uv build` (hatchling backend), publishes to TestPyPI then PyPI via trusted publishing
 - **Security**: Weekly Bandit scans + dependency review on PRs
 - **Dependabot**: Weekly updates for Python deps and GitHub Actions
+
+## Canonical MCP standards
+
+Authoritative source: `~/Desktop/Projects/consistency-check/docs/standards/`. This repo is graded against `mcp.md` + the language-specific file (`python.md` for Python repos, `go.md` for Go) + `mcp-protocol.md`.
+
+Run the audit:
+
+```bash
+cd ~/Desktop/Projects/consistency-check
+uv run consistency-check audit --repo $(basename "$PWD")
+```
