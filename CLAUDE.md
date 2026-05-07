@@ -110,3 +110,17 @@ Run the audit:
 cd ~/Desktop/Projects/consistency-check
 uv run consistency-check audit --repo $(basename "$PWD")
 ```
+
+## Agent skills
+
+### Issue tracker
+
+GitHub issues at `millsmillsymills/unifi-mcp` via `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default canonical roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) plus `bug`/`enhancement` category labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.
