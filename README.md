@@ -15,7 +15,7 @@ Production-grade Python MCP server for UniFi Site Manager, Network, and Protect 
 - **84 MCP tools** covering UniFi Network (66), Protect (15), and Site Manager (3) APIs, all under the `unifi_*` namespace
 - **Read/write mode separation** — write tools invisible in readonly mode
 - **Graceful per-API degradation** — only registers tools for configured APIs
-- **Typed, linted, tested** — strict `ty`, `ruff`, `pytest` with CI across Python 3.11-3.13
+- **Typed, linted, tested** — strict `ty`, `ruff`, `pytest` with CI on Python 3.13
 
 ## Quick Start
 
@@ -34,6 +34,85 @@ cp .env.example .env
 
 # Run
 unifi-mcp
+```
+
+## MCP client setup
+
+Drop the snippets below into your MCP client config and replace the env-var
+values with your own UniFi API keys.
+
+### Claude Desktop
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
+(macOS) or `%AppData%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "unifi": {
+      "command": "uvx",
+      "args": ["unifi-mcp"],
+      "env": {
+        "UNIFI_NETWORK_HOST": "192.168.1.1",
+        "UNIFI_NETWORK_API": "<network-key>",
+        "UNIFI_PROTECT_HOST": "192.168.1.220",
+        "UNIFI_PROTECT_API": "<protect-key>",
+        "UNIFI_SITE_MANAGER_API": "<site-manager-key>"
+      }
+    }
+  }
+}
+```
+
+### Claude Code
+
+Add as a project-scoped MCP server:
+
+```bash
+claude mcp add unifi --command "uvx unifi-mcp" \
+  --env UNIFI_NETWORK_HOST=192.168.1.1 \
+  --env UNIFI_NETWORK_API=<network-key> \
+  --env UNIFI_PROTECT_API=<protect-key> \
+  --env UNIFI_SITE_MANAGER_API=<site-manager-key>
+```
+
+### Cursor
+
+Add to `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "unifi": {
+      "command": "uvx",
+      "args": ["unifi-mcp"],
+      "env": {
+        "UNIFI_NETWORK_HOST": "192.168.1.1",
+        "UNIFI_NETWORK_API": "<network-key>"
+      }
+    }
+  }
+}
+```
+
+### Continue.dev
+
+Add to `~/.continue/config.json`:
+
+```json
+{
+  "mcpServers": [
+    {
+      "name": "unifi",
+      "command": "uvx",
+      "args": ["unifi-mcp"],
+      "env": {
+        "UNIFI_NETWORK_HOST": "192.168.1.1",
+        "UNIFI_NETWORK_API": "<network-key>"
+      }
+    }
+  ]
+}
 ```
 
 ## Configuration

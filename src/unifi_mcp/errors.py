@@ -69,7 +69,7 @@ class UniFiDeviceAlreadyAdoptedError(UniFiError):
     """
 
 
-def _status_tag(error: BaseException) -> str:
+def _classify_error_tag(error: BaseException) -> str:
     """Prefix ToolError messages with ``[HTTP <status>] `` when a code is known.
 
     Agents typically branch on status to decide whether to retry, re-auth,
@@ -107,7 +107,7 @@ def handle_client_error(error: BaseException) -> NoReturn:
     # asyncio.CancelledError, KeyboardInterrupt, SystemExit, GeneratorExit.
     if not isinstance(error, Exception):
         raise error
-    tag = _status_tag(error)
+    tag = _classify_error_tag(error)
     if isinstance(error, UniFiAuthError):
         raise ToolError(f"{tag}Authentication failed: {error}. Check your API key.") from error
     if isinstance(error, UniFiBadRequestError):

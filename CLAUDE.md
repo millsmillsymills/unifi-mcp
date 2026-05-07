@@ -61,7 +61,7 @@ src/unifi_mcp/
 
 ## Conventions
 
-- **Python >=3.11**, strict `ty` type checks, ruff for lint+format
+- **Python >=3.13**, strict `ty` type checks, ruff for lint+format
 - **Line length**: 120 characters
 - **Tool naming**: `unifi_{api}_{verb}_{entity}` (e.g., `unifi_network_list_devices`, `unifi_protect_get_snapshot`). Every tool starts with `unifi_` per PROTO-002.
 - **Write tools**: Tagged with `{"write"}`, annotated with `readOnlyHint=False`. Disabled in readonly mode via `mcp.disable(tags={"write"})`
@@ -95,7 +95,7 @@ if config.protect_enabled:
 
 ## CI/CD
 
-- **CI**: Runs on push to main and PRs. Lint (ruff) + typecheck (ty) on Python 3.13; test (pytest) across Python 3.11-3.13
+- **CI**: Runs on push to main and PRs. Lint (ruff), typecheck (ty), and test (pytest) all on Python 3.13
 - **Release**: Triggered by `v*` tags. Builds with `uv build` (hatchling backend), publishes to TestPyPI then PyPI via trusted publishing
 - **Security**: Weekly Bandit scans + dependency review on PRs
 - **Dependabot**: Weekly updates for Python deps and GitHub Actions
