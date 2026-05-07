@@ -81,7 +81,7 @@ jobs:
 
       - name: Run tests
         run: >
-          uv run pytest tests/unit/
+          uv run pytest tests/unit/ tests/property/
           --cov=unifi_mcp
           --cov-report=term-missing
           --cov-report=xml:coverage.xml

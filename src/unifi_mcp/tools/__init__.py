@@ -42,8 +42,9 @@ def _register_for_each_api(mcp: FastMCP, config: UniFiConfig) -> None:
 def register_read_tools(mcp: FastMCP, config: UniFiConfig) -> None:
     """Register every tool, then hide write-tagged tools.
 
-    Idempotent: callers that need writes back should follow up with
-    :func:`register_write_tools`. Implements the read half of PROTO-005.
+    Call once at startup. Callers that need writes back should follow up
+    with :func:`register_write_tools`. Implements the read half of
+    PROTO-005.
     """
     _register_for_each_api(mcp, config)
     mcp.disable(tags={"write"})
