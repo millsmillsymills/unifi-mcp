@@ -47,6 +47,19 @@ class TestReadonlyHidesEveryWriteTool:
         leaking = [t.name for t in tools if "write" in set(t.tags)]
         assert leaking == [], f"Readonly mode is leaking write tools: {leaking}"
 
+    async def test_every_tool_carries_the_unifi_namespace(self):
+        """PROTO-002: every registered tool must start with ``unifi_``."""
+        cfg = UniFiConfig(
+            _env_file=None,
+            unifi_mode=UniFiMode.READWRITE,
+            unifi_network_api="net",
+            unifi_protect_api="prot",
+            unifi_site_manager_api="sm",
+        )
+        server = create_server(cfg)
+        bad = [t.name for t in await server.list_tools() if not t.name.startswith("unifi_")]
+        assert bad == [], f"Tools without unifi_ namespace prefix: {bad}"
+
     async def test_every_registered_write_tool_is_restorable_in_readwrite(self):
         """The inverse: the readwrite set minus the readonly set equals
         exactly the tools tagged ``write``. Proves the gate neither hides

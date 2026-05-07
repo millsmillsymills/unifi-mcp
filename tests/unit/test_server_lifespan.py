@@ -393,7 +393,7 @@ class TestServerLifespan:
                 # While yielded, protect tools should be disabled.
                 tool_names = {t.name for t in await server.list_tools()}
                 assert not any(n.startswith("unifi_protect_") for n in tool_names), (
-                    f"Expected protect_* tools disabled, still present: "
+                    f"Expected unifi_protect_* tools disabled, still present: "
                     f"{sorted(n for n in tool_names if n.startswith('unifi_protect_'))}"
                 )
                 # Reachable APIs' tools stay registered.

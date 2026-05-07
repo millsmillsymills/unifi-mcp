@@ -37,7 +37,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `.gitignore` carries a literal `*.pyc` entry alongside the existing
   `*.py[cod]` glob (#158).
 
-## [0.1.0] - Initial release
+## [0.1.0] - 2026-04-16
+
+### Added
 
 - 84 MCP tools across UniFi Network, Protect, and Site Manager.
 - Read-only / read-write mode separation, gated by `UNIFI_MODE`.
