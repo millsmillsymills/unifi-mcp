@@ -33,8 +33,8 @@ mitigation for confirmed High/Critical issues within **30 days** of triage.
 1. Triage and reproduce the report on a supported version.
 2. Develop and test a fix on a private branch.
 3. Coordinate a release date with the reporter.
-4. Publish the fix, a GitHub Security Advisory, and a CHANGELOG entry crediting
-   the reporter (unless they ask to remain anonymous).
+4. Publish the fix, a GitHub Security Advisory, and a release-notes entry
+   crediting the reporter (unless they ask to remain anonymous).
 
 ## Scope
 
@@ -48,6 +48,6 @@ Out of scope:
 
 - Vulnerabilities in upstream UniFi firmware or APIs — please report those to
   Ubiquiti directly.
-- Issues that require a malicious operator with write access to a host already
+- Issues that require an attacker who already has shell access on the host
   running the server.
 - Findings against unsupported versions.
