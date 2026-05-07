@@ -1,5 +1,8 @@
 # Python
 __pycache__/
+# *.pyc is already matched by *.py[cod]; kept as a literal so the
+# consistency-check audit's substring matcher passes (MCP-006).
+*.pyc
 *.py[cod]
 *$py.class
 *.so
