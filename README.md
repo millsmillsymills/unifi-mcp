@@ -15,7 +15,7 @@ Production-grade Python MCP server for UniFi Site Manager, Network, and Protect 
 - **77 MCP tools** covering UniFi Network (59), Protect (15), and Site Manager (3) APIs
 - **Read/write mode separation** — write tools invisible in readonly mode
 - **Graceful per-API degradation** — only registers tools for configured APIs
-- **Typed, linted, tested** — strict mypy, ruff, pytest with CI across Python 3.11-3.13
+- **Typed, linted, tested** — strict `ty`, `ruff`, `pytest` with CI across Python 3.11-3.13
 
 ## Quick Start
 
@@ -58,7 +58,7 @@ uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
 
 # Type check
-uv run mypy src/unifi_mcp/
+uv run ty check src/unifi_mcp/
 
 # Test
 uv run pytest tests/unit/ -v

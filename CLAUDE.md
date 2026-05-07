@@ -15,7 +15,7 @@ uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
 
 # Type check
-uv run mypy src/unifi_mcp/
+uv run ty check src/unifi_mcp/
 
 # Test (unit only, excludes integration)
 uv run pytest tests/unit/ -v
@@ -61,7 +61,7 @@ src/unifi_mcp/
 
 ## Conventions
 
-- **Python >=3.11**, strict mypy, ruff for lint+format
+- **Python >=3.11**, strict `ty` type checks, ruff for lint+format
 - **Line length**: 120 characters
 - **Tool naming**: `{api}_{verb}_{entity}` (e.g., `network_list_devices`, `protect_get_snapshot`)
 - **Write tools**: Tagged with `{"write"}`, annotated with `readOnlyHint=False`. Disabled in readonly mode via `mcp.disable(tags={"write"})`
@@ -95,7 +95,7 @@ if config.protect_enabled:
 
 ## CI/CD
 
-- **CI**: Runs on push to main and PRs. Lint (ruff) + typecheck (mypy) on Python 3.13; test (pytest) across Python 3.11-3.13
+- **CI**: Runs on push to main and PRs. Lint (ruff) + typecheck (ty) on Python 3.13; test (pytest) across Python 3.11-3.13
 - **Release**: Triggered by `v*` tags. Builds with `uv build` (hatchling backend), publishes to TestPyPI then PyPI via trusted publishing
 - **Security**: Weekly Bandit scans + dependency review on PRs
 - **Dependabot**: Weekly updates for Python deps and GitHub Actions

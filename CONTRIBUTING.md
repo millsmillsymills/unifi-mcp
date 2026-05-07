@@ -27,7 +27,7 @@ All checks must pass locally before you push:
 ```bash
 uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
-uv run mypy src/unifi_mcp/
+uv run ty check src/unifi_mcp/
 uv run pytest tests/unit/ -v
 ```
 
@@ -39,7 +39,7 @@ uv run bandit -r src/unifi_mcp/ -c pyproject.toml
 
 ## Coding Standards
 
-- **Python >=3.11**, strict `mypy`, `ruff` for lint and format.
+- **Python >=3.11**, strict `ty` type checks, `ruff` for lint and format.
 - **Line length**: 120 characters.
 - **No print statements** — use the `logging` module (enforced by ruff T20).
 - **Clients** use `httpx.AsyncClient` with `tenacity`-based retry. API
