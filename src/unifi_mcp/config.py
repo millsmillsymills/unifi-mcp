@@ -79,8 +79,12 @@ class UniFiConfig(BaseSettings):
         return self
 
     @property
-    def is_readwrite(self) -> bool:
-        """Whether server is in read-write mode."""
+    def writes_enabled(self) -> bool:
+        """Whether write tools are enabled.
+
+        True only when ``UNIFI_MODE=readwrite`` is set explicitly. The default
+        ``readonly`` mode leaves the server in a safe, mutation-free posture.
+        """
         return self.unifi_mode == UniFiMode.READWRITE
 
     @property

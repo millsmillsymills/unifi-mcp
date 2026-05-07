@@ -21,6 +21,9 @@ def register_device_tools(mcp: FastMCP) -> None:
 
         Args:
             mac: MAC address of the device (e.g., "aa:bb:cc:dd:ee:ff").
+
+        Returns:
+            The upstream API response.
         """
         try:
             context = get_server_context(ctx)
@@ -41,10 +44,13 @@ def register_device_tools(mcp: FastMCP) -> None:
 
         Args:
             mac: MAC address of the device to restart.
+
+        Returns:
+            The upstream API response.
         """
         try:
             context = get_server_context(ctx)
-            if not context.config.is_readwrite:
+            if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot restart device in read-only mode")
             return await context.clients["network"].restart_device(mac)
         except Exception as e:
@@ -56,10 +62,13 @@ def register_device_tools(mcp: FastMCP) -> None:
 
         Args:
             mac: MAC address of the device to adopt.
+
+        Returns:
+            The upstream API response.
         """
         try:
             context = get_server_context(ctx)
-            if not context.config.is_readwrite:
+            if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot adopt device in read-only mode")
             return await context.clients["network"].adopt_device(mac)
         except Exception as e:
@@ -71,10 +80,13 @@ def register_device_tools(mcp: FastMCP) -> None:
 
         Args:
             mac: MAC address of the device.
+
+        Returns:
+            The upstream API response.
         """
         try:
             context = get_server_context(ctx)
-            if not context.config.is_readwrite:
+            if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot locate device in read-only mode")
             return await context.clients["network"].locate_device(mac)
         except Exception as e:
@@ -86,10 +98,13 @@ def register_device_tools(mcp: FastMCP) -> None:
 
         Args:
             mac: MAC address of the device.
+
+        Returns:
+            The upstream API response.
         """
         try:
             context = get_server_context(ctx)
-            if not context.config.is_readwrite:
+            if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot unlocate device in read-only mode")
             return await context.clients["network"].unlocate_device(mac)
         except Exception as e:
@@ -101,10 +116,13 @@ def register_device_tools(mcp: FastMCP) -> None:
 
         Args:
             mac: MAC address of the device.
+
+        Returns:
+            The upstream API response.
         """
         try:
             context = get_server_context(ctx)
-            if not context.config.is_readwrite:
+            if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot provision device in read-only mode")
             return await context.clients["network"].provision_device(mac)
         except Exception as e:
@@ -120,10 +138,13 @@ def register_device_tools(mcp: FastMCP) -> None:
 
         Args:
             mac: MAC address of the adopted device.
+
+        Returns:
+            The upstream API response.
         """
         try:
             context = get_server_context(ctx)
-            if not context.config.is_readwrite:
+            if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot forget device in read-only mode")
             return await context.clients["network"].forget_device(mac)
         except Exception as e:

@@ -21,6 +21,9 @@ def register_client_tools(mcp: FastMCP) -> None:
 
         Args:
             mac: MAC address of the client.
+
+        Returns:
+            The upstream API response.
         """
         try:
             context = get_server_context(ctx)
@@ -41,10 +44,13 @@ def register_client_tools(mcp: FastMCP) -> None:
 
         Args:
             mac: MAC address of the client to block.
+
+        Returns:
+            The upstream API response.
         """
         try:
             context = get_server_context(ctx)
-            if not context.config.is_readwrite:
+            if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot block client in read-only mode")
             return await context.clients["network"].block_client(mac)
         except Exception as e:
@@ -56,10 +62,13 @@ def register_client_tools(mcp: FastMCP) -> None:
 
         Args:
             mac: MAC address of the client to unblock.
+
+        Returns:
+            The upstream API response.
         """
         try:
             context = get_server_context(ctx)
-            if not context.config.is_readwrite:
+            if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot unblock client in read-only mode")
             return await context.clients["network"].unblock_client(mac)
         except Exception as e:
@@ -71,10 +80,13 @@ def register_client_tools(mcp: FastMCP) -> None:
 
         Args:
             mac: MAC address of the client to disconnect.
+
+        Returns:
+            The upstream API response.
         """
         try:
             context = get_server_context(ctx)
-            if not context.config.is_readwrite:
+            if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot kick client in read-only mode")
             return await context.clients["network"].kick_client(mac)
         except Exception as e:
@@ -87,10 +99,13 @@ def register_client_tools(mcp: FastMCP) -> None:
         Args:
             mac: MAC address of the guest client.
             minutes: Duration of authorization in minutes (default: 60).
+
+        Returns:
+            The upstream API response.
         """
         try:
             context = get_server_context(ctx)
-            if not context.config.is_readwrite:
+            if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot authorize guest in read-only mode")
             return await context.clients["network"].authorize_guest(mac, minutes=minutes)
         except Exception as e:

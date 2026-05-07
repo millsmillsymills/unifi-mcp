@@ -214,7 +214,7 @@ def create_server(config: UniFiConfig | None = None) -> FastMCP:
     register_all_tools(server, config)
 
     # Apply mode gating — hide write tools in readonly mode
-    if not config.is_readwrite:
+    if not config.writes_enabled:
         server.disable(tags={"write"})
         logger.info("Read-only mode: write tools disabled")
     else:

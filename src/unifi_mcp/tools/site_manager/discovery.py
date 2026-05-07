@@ -15,7 +15,16 @@ def register_site_manager_tools(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"site_manager"})
     async def site_manager_list_hosts(ctx: Context) -> dict[str, Any]:
-        """List all hosts (controllers) registered in UniFi Site Manager."""
+        """List all hosts (controllers) registered in UniFi Site Manager.
+
+        Args:
+            ctx: FastMCP request context — supplied by the framework.
+
+        Returns:
+            The Site Manager API response shaped as ``{"data": [...], "httpStatusCode": 200}``.
+            Each entry in ``data`` is a host record with at least ``id``, ``hostName``,
+            ``isBlocked``, ``reportedState``, and ``hardwareId``.
+        """
         try:
             context = get_server_context(ctx)
             return await context.clients["site_manager"].list_hosts()
@@ -24,7 +33,16 @@ def register_site_manager_tools(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"site_manager"})
     async def site_manager_list_sites(ctx: Context) -> dict[str, Any]:
-        """List all sites across all hosts in UniFi Site Manager."""
+        """List all sites across all hosts in UniFi Site Manager.
+
+        Args:
+            ctx: FastMCP request context — supplied by the framework.
+
+        Returns:
+            The Site Manager API response shaped as ``{"data": [...], "httpStatusCode": 200}``.
+            Each entry in ``data`` is a site record with ``id``, ``hostId``, ``meta``
+            (display name, description, timezone), and ``statistics``.
+        """
         try:
             context = get_server_context(ctx)
             return await context.clients["site_manager"].list_sites()
@@ -33,7 +51,19 @@ def register_site_manager_tools(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"site_manager"})
     async def site_manager_list_devices(ctx: Context, host_id: str | None = None) -> dict[str, Any]:
-        """List all devices in UniFi Site Manager, optionally filtered by host ID."""
+        """List all devices in UniFi Site Manager, optionally filtered by host ID.
+
+        Args:
+            ctx: FastMCP request context — supplied by the framework.
+            host_id: Optional host ID. When set, the response is filtered to devices
+                belonging to that host; when ``None``, devices across every host are
+                returned.
+
+        Returns:
+            The Site Manager API response shaped as ``{"data": [...], "httpStatusCode": 200}``.
+            Each entry in ``data`` is a device record with ``id``, ``hostId``, ``mac``,
+            ``model``, ``firmwareVersion``, and ``state``.
+        """
         try:
             context = get_server_context(ctx)
             return await context.clients["site_manager"].list_devices(host_id=host_id)

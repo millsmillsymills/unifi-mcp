@@ -26,14 +26,18 @@ def register_event_tools(mcp: FastMCP) -> None:
     ) -> list[dict[str, Any]]:
         """List Protect events with rich filtering.
 
+        Returns:
+            The upstream API response (a list of event records).
+
         Args:
-            start: Start time as ISO 8601 timestamp (optional).
-            end: End time as ISO 8601 timestamp (optional).
+            start: ISO 8601 start time (optional).
+            end: ISO 8601 end time (optional).
             camera_ids: Filter by camera IDs (optional).
-            types: Filter by event types — "motion", "ring", "smartDetect" (optional).
-            smart_detect_types: Filter by smart detection types — "person", "vehicle", "animal" (optional).
-            limit: Maximum number of events to return (default: 30).
-            offset: Offset for pagination (default: 0).
+            types: Event types — "motion", "ring", "smartDetect" (optional).
+            smart_detect_types: Smart-detect types — "person", "vehicle",
+                "animal" (optional).
+            limit: Maximum events to return (default 30).
+            offset: Pagination offset (default 0).
         """
         try:
             context = get_server_context(ctx)
