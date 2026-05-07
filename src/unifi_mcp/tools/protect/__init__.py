@@ -1,6 +1,6 @@
 """Protect API tools.
 
-`protect_get_bootstrap` and `protect_list_events` will return HTTP 404
+`unifi_protect_get_bootstrap` and `unifi_protect_list_events` will return HTTP 404
 against the integration API — those endpoints don't exist on
 `/proxy/protect/integration/v1/`. Tracked in #130.
 """

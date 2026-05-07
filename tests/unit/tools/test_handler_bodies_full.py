@@ -63,130 +63,142 @@ async def _call(server: FastMCP, tool_name: str, ctx: AsyncMock, **kwargs: Any) 
 # The client returns the sentinel {} — we just care the handler body runs.
 NETWORK_HAPPY_PATHS = [
     # stats
-    (register_stats_tools, "network_list_devices", "list_devices", {}, None),
-    (register_stats_tools, "network_list_devices_basic", "list_devices_basic", {}, None),
-    (register_stats_tools, "network_list_active_clients", "list_active_clients", {}, None),
-    (register_stats_tools, "network_list_configured_clients", "list_configured_clients", {}, None),
-    (register_stats_tools, "network_list_all_clients", "list_all_clients", {}, None),
-    (register_stats_tools, "network_get_dpi_stats", "get_dpi_stats", {"dpi_type": "by_cat"}, {"dpi_type": "by_cat"}),
-    (register_stats_tools, "network_get_sysinfo", "get_sysinfo", {}, None),
+    (register_stats_tools, "unifi_network_list_devices", "list_devices", {}, None),
+    (register_stats_tools, "unifi_network_list_devices_basic", "list_devices_basic", {}, None),
+    (register_stats_tools, "unifi_network_list_active_clients", "list_active_clients", {}, None),
+    (register_stats_tools, "unifi_network_list_configured_clients", "list_configured_clients", {}, None),
+    (register_stats_tools, "unifi_network_list_all_clients", "list_all_clients", {}, None),
+    (
+        register_stats_tools,
+        "unifi_network_get_dpi_stats",
+        "get_dpi_stats",
+        {"dpi_type": "by_cat"},
+        {"dpi_type": "by_cat"},
+    ),
+    (register_stats_tools, "unifi_network_get_sysinfo", "get_sysinfo", {}, None),
     # devices
-    (register_device_tools, "network_adopt_device", "adopt_device", {"mac": "aa"}, None),
-    (register_device_tools, "network_locate_device", "locate_device", {"mac": "aa"}, None),
-    (register_device_tools, "network_unlocate_device", "unlocate_device", {"mac": "aa"}, None),
-    (register_device_tools, "network_provision_device", "provision_device", {"mac": "aa"}, None),
+    (register_device_tools, "unifi_network_adopt_device", "adopt_device", {"mac": "aa"}, None),
+    (register_device_tools, "unifi_network_locate_device", "locate_device", {"mac": "aa"}, None),
+    (register_device_tools, "unifi_network_unlocate_device", "unlocate_device", {"mac": "aa"}, None),
+    (register_device_tools, "unifi_network_provision_device", "provision_device", {"mac": "aa"}, None),
     # clients
-    (register_client_tools, "network_unblock_client", "unblock_client", {"mac": "aa"}, None),
-    (register_client_tools, "network_kick_client", "kick_client", {"mac": "aa"}, None),
+    (register_client_tools, "unifi_network_unblock_client", "unblock_client", {"mac": "aa"}, None),
+    (register_client_tools, "unifi_network_kick_client", "kick_client", {"mac": "aa"}, None),
     # wlan
-    (register_wlan_tools, "network_list_wlans", "list_wlans", {}, None),
-    (register_wlan_tools, "network_get_wlan", "get_wlan", {"wlan_id": "w-1"}, None),
-    (register_wlan_tools, "network_update_wlan", "update_wlan", {"wlan_id": "w-1", "data": {}}, None),
+    (register_wlan_tools, "unifi_network_list_wlans", "list_wlans", {}, None),
+    (register_wlan_tools, "unifi_network_get_wlan", "get_wlan", {"wlan_id": "w-1"}, None),
+    (register_wlan_tools, "unifi_network_update_wlan", "update_wlan", {"wlan_id": "w-1", "data": {}}, None),
     # firewall reads
-    (register_firewall_tools, "network_list_firewall_rules", "list_firewall_rules", {}, None),
-    (register_firewall_tools, "network_get_firewall_rule", "get_firewall_rule", {"rule_id": "r-1"}, None),
-    (register_firewall_tools, "network_list_firewall_groups", "list_firewall_groups", {}, None),
-    (register_firewall_tools, "network_get_firewall_group", "get_firewall_group", {"group_id": "g-1"}, None),
+    (register_firewall_tools, "unifi_network_list_firewall_rules", "list_firewall_rules", {}, None),
+    (register_firewall_tools, "unifi_network_get_firewall_rule", "get_firewall_rule", {"rule_id": "r-1"}, None),
+    (register_firewall_tools, "unifi_network_list_firewall_groups", "list_firewall_groups", {}, None),
+    (register_firewall_tools, "unifi_network_get_firewall_group", "get_firewall_group", {"group_id": "g-1"}, None),
     # firewall writes
     (
         register_firewall_tools,
-        "network_create_firewall_rule",
+        "unifi_network_create_firewall_rule",
         "create_firewall_rule",
         {"name": "r", "ruleset": "WAN_IN"},
         None,
     ),
     (
         register_firewall_tools,
-        "network_update_firewall_rule",
+        "unifi_network_update_firewall_rule",
         "update_firewall_rule",
         {"rule_id": "r-1", "data": {}},
         None,
     ),
-    (register_firewall_tools, "network_delete_firewall_rule", "delete_firewall_rule", {"rule_id": "r-1"}, None),
+    (register_firewall_tools, "unifi_network_delete_firewall_rule", "delete_firewall_rule", {"rule_id": "r-1"}, None),
     (
         register_firewall_tools,
-        "network_create_firewall_group",
+        "unifi_network_create_firewall_group",
         "create_firewall_group",
         {"name": "g", "group_type": "address-group", "group_members": []},
         None,
     ),
     (
         register_firewall_tools,
-        "network_update_firewall_group",
+        "unifi_network_update_firewall_group",
         "update_firewall_group",
         {"group_id": "g-1", "data": {}},
         None,
     ),
-    (register_firewall_tools, "network_delete_firewall_group", "delete_firewall_group", {"group_id": "g-1"}, None),
+    (
+        register_firewall_tools,
+        "unifi_network_delete_firewall_group",
+        "delete_firewall_group",
+        {"group_id": "g-1"},
+        None,
+    ),
     # networks
-    (register_network_config_tools, "network_list_networks", "list_networks", {}, None),
-    (register_network_config_tools, "network_get_network", "get_network", {"network_id": "n-1"}, None),
+    (register_network_config_tools, "unifi_network_list_networks", "list_networks", {}, None),
+    (register_network_config_tools, "unifi_network_get_network", "get_network", {"network_id": "n-1"}, None),
     (
         register_network_config_tools,
-        "network_create_network",
+        "unifi_network_create_network",
         "create_network",
         {"name": "n", "purpose": "corporate"},
         None,
     ),
     (
         register_network_config_tools,
-        "network_update_network",
+        "unifi_network_update_network",
         "update_network",
         {"network_id": "n-1", "data": {}},
         None,
     ),
-    (register_network_config_tools, "network_delete_network", "delete_network", {"network_id": "n-1"}, None),
+    (register_network_config_tools, "unifi_network_delete_network", "delete_network", {"network_id": "n-1"}, None),
     # port forward
-    (register_port_forward_tools, "network_list_port_forwards", "list_port_forwards", {}, None),
+    (register_port_forward_tools, "unifi_network_list_port_forwards", "list_port_forwards", {}, None),
     (
         register_port_forward_tools,
-        "network_get_port_forward",
+        "unifi_network_get_port_forward",
         "get_port_forward",
         {"port_forward_id": "pf-1"},
         None,
     ),
     (
         register_port_forward_tools,
-        "network_create_port_forward",
+        "unifi_network_create_port_forward",
         "create_port_forward",
         {"name": "pf", "dst_port": "22", "fwd": "10.0.0.1", "fwd_port": "22"},
         None,
     ),
     (
         register_port_forward_tools,
-        "network_update_port_forward",
+        "unifi_network_update_port_forward",
         "update_port_forward",
         {"port_forward_id": "pf-1", "data": {}},
         None,
     ),
     (
         register_port_forward_tools,
-        "network_delete_port_forward",
+        "unifi_network_delete_port_forward",
         "delete_port_forward",
         {"port_forward_id": "pf-1"},
         None,
     ),
     # routing
-    (register_routing_tools, "network_list_routes", "list_routes", {}, None),
-    (register_routing_tools, "network_get_route", "get_route", {"route_id": "r-1"}, None),
+    (register_routing_tools, "unifi_network_list_routes", "list_routes", {}, None),
+    (register_routing_tools, "unifi_network_get_route", "get_route", {"route_id": "r-1"}, None),
     (
         register_routing_tools,
-        "network_create_route",
+        "unifi_network_create_route",
         "create_route",
         {"name": "r", "network": "10.0.0.0/24", "gateway_ip": "10.0.0.1"},
         None,
     ),
-    (register_routing_tools, "network_update_route", "update_route", {"route_id": "r-1", "data": {}}, None),
-    (register_routing_tools, "network_delete_route", "delete_route", {"route_id": "r-1"}, None),
+    (register_routing_tools, "unifi_network_update_route", "update_route", {"route_id": "r-1", "data": {}}, None),
+    (register_routing_tools, "unifi_network_delete_route", "delete_route", {"route_id": "r-1"}, None),
     # system
-    (register_system_tools, "network_get_settings", "get_settings", {}, None),
-    (register_system_tools, "network_update_settings", "update_settings", {"data": {}}, None),
-    (register_system_tools, "network_run_speedtest", "run_speedtest", {}, None),
-    (register_system_tools, "network_create_backup", "create_backup", {}, None),
-    (register_system_tools, "network_power_cycle_port", "power_cycle_port", {"mac": "aa", "port_idx": 3}, None),
-    (register_system_tools, "network_unauthorize_guest", "unauthorize_guest", {"mac": "aa"}, None),
-    (register_system_tools, "network_archive_events", "archive_events", {}, None),
-    (register_system_tools, "network_reset_dpi", "reset_dpi", {}, None),
+    (register_system_tools, "unifi_network_get_settings", "get_settings", {}, None),
+    (register_system_tools, "unifi_network_update_settings", "update_settings", {"data": {}}, None),
+    (register_system_tools, "unifi_network_run_speedtest", "run_speedtest", {}, None),
+    (register_system_tools, "unifi_network_create_backup", "create_backup", {}, None),
+    (register_system_tools, "unifi_network_power_cycle_port", "power_cycle_port", {"mac": "aa", "port_idx": 3}, None),
+    (register_system_tools, "unifi_network_unauthorize_guest", "unauthorize_guest", {"mac": "aa"}, None),
+    (register_system_tools, "unifi_network_archive_events", "archive_events", {}, None),
+    (register_system_tools, "unifi_network_reset_dpi", "reset_dpi", {}, None),
 ]
 
 
@@ -212,18 +224,18 @@ async def test_network_tool_happy_path(register_fn, tool_name, client_method, to
 
 
 PROTECT_HAPPY_PATHS = [
-    (register_camera_tools, "protect_get_camera", "get_camera", {"camera_id": "cam-1"}),
-    (register_camera_tools, "protect_update_camera", "update_camera", {"camera_id": "cam-1", "data": {}}),
+    (register_camera_tools, "unifi_protect_get_camera", "get_camera", {"camera_id": "cam-1"}),
+    (register_camera_tools, "unifi_protect_update_camera", "update_camera", {"camera_id": "cam-1", "data": {}}),
     (
         register_camera_tools,
-        "protect_set_smart_detection",
+        "unifi_protect_set_smart_detection",
         "set_smart_detection",
         {"camera_id": "cam-1", "object_types": ["person"]},
     ),
-    (register_protect_device_tools, "protect_list_lights", "list_lights", {}),
-    (register_protect_device_tools, "protect_list_sensors", "list_sensors", {}),
-    (register_protect_device_tools, "protect_list_viewers", "list_viewers", {}),
-    (register_nvr_tools, "protect_get_bootstrap", "get_bootstrap", {}),
+    (register_protect_device_tools, "unifi_protect_list_lights", "list_lights", {}),
+    (register_protect_device_tools, "unifi_protect_list_sensors", "list_sensors", {}),
+    (register_protect_device_tools, "unifi_protect_list_viewers", "list_viewers", {}),
+    (register_nvr_tools, "unifi_protect_get_bootstrap", "get_bootstrap", {}),
 ]
 
 
@@ -244,9 +256,9 @@ async def test_protect_tool_happy_path(register_fn, tool_name, client_method, to
 
 
 SITE_MANAGER_HAPPY_PATHS = [
-    ("site_manager_list_hosts", "list_hosts", {}),
-    ("site_manager_list_sites", "list_sites", {}),
-    ("site_manager_list_devices", "list_devices", {"host_id": "h-1"}),
+    ("unifi_site_manager_list_hosts", "list_hosts", {}),
+    ("unifi_site_manager_list_sites", "list_sites", {}),
+    ("unifi_site_manager_list_devices", "list_devices", {"host_id": "h-1"}),
 ]
 
 
@@ -270,9 +282,9 @@ async def test_site_manager_tool_happy_path(tool_name, client_method, tool_kwarg
 @pytest.mark.parametrize(
     ("register_fn", "tool_name", "client_method", "client_key"),
     [
-        (register_stats_tools, "network_get_health", "get_health", "network"),
-        (register_nvr_tools, "protect_get_nvr", "get_nvr", "protect"),
-        (register_site_manager_tools, "site_manager_list_hosts", "list_hosts", "site_manager"),
+        (register_stats_tools, "unifi_network_get_health", "get_health", "network"),
+        (register_nvr_tools, "unifi_protect_get_nvr", "get_nvr", "protect"),
+        (register_site_manager_tools, "unifi_site_manager_list_hosts", "list_hosts", "site_manager"),
     ],
 )
 async def test_client_error_maps_to_tool_error(register_fn, tool_name, client_method, client_key):

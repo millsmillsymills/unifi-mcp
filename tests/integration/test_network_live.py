@@ -80,7 +80,7 @@ async def test_get_dpi_stats_returns_shape(network_live_client):
 
 
 async def test_active_clients_lookup_by_mac(network_live_client):
-    """Smoke test for the read pattern that network_get_client uses internally:
+    """Smoke test for the read pattern that unifi_network_get_client uses internally:
     list_active_clients() then filter by MAC."""
     actives = await network_live_client.list_active_clients()
     if not actives.get("data"):
@@ -97,7 +97,7 @@ async def test_active_clients_lookup_by_mac(network_live_client):
 
 
 async def test_target_device_present_in_list(network_live_client, test_target_mac):
-    """Smoke test for the read pattern that network_get_device uses internally:
+    """Smoke test for the read pattern that unifi_network_get_device uses internally:
     list_devices() then filter by MAC. Asserts the configured test target is
     discoverable so that disruptive tests in later tasks won't NEEDS_CONTEXT."""
     devices = await network_live_client.list_devices()

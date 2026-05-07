@@ -14,7 +14,7 @@ def register_nvr_tools(mcp: FastMCP) -> None:
     """Register NVR tools."""
 
     @mcp.tool(tags={"protect"})
-    async def protect_get_bootstrap(ctx: Context) -> dict[str, Any]:
+    async def unifi_protect_get_bootstrap(ctx: Context) -> dict[str, Any]:
         """Get the full Protect bootstrap data (NVR, cameras, users, groups).
 
         Args:
@@ -30,7 +30,7 @@ def register_nvr_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"protect"})
-    async def protect_get_nvr(ctx: Context) -> dict[str, Any]:
+    async def unifi_protect_get_nvr(ctx: Context) -> dict[str, Any]:
         """Get NVR (Network Video Recorder) status and configuration.
 
         Args:
@@ -46,7 +46,7 @@ def register_nvr_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "protect"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def protect_update_nvr(ctx: Context, data: JsonObject) -> dict[str, Any]:
+    async def unifi_protect_update_nvr(ctx: Context, data: JsonObject) -> dict[str, Any]:
         """Update NVR settings. Pass only fields to change.
 
         Args:

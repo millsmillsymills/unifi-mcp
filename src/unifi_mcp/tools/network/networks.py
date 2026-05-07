@@ -14,7 +14,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
     """Register network config tools."""
 
     @mcp.tool(tags={"network"})
-    async def network_list_networks(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_list_networks(ctx: Context) -> dict[str, Any]:
         """List all network (VLAN/subnet) configurations.
 
         Args:
@@ -30,7 +30,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_get_network(ctx: Context, network_id: str) -> dict[str, Any]:
+    async def unifi_network_get_network(ctx: Context, network_id: str) -> dict[str, Any]:
         """Get a specific network configuration by ID.
 
         Args:
@@ -46,7 +46,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_create_network(
+    async def unifi_network_create_network(
         ctx: Context,
         name: str,
         purpose: str = "corporate",
@@ -80,7 +80,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_update_network(ctx: Context, network_id: str, data: JsonObject) -> dict[str, Any]:
+    async def unifi_network_update_network(ctx: Context, network_id: str, data: JsonObject) -> dict[str, Any]:
         """Update an existing network configuration. Pass only fields to change.
 
         Args:
@@ -99,7 +99,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_delete_network(ctx: Context, network_id: str) -> dict[str, Any]:
+    async def unifi_network_delete_network(ctx: Context, network_id: str) -> dict[str, Any]:
         """Delete a network configuration.
 
         Args:

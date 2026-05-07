@@ -392,13 +392,13 @@ class TestServerLifespan:
                 await gen.__anext__()
                 # While yielded, protect tools should be disabled.
                 tool_names = {t.name for t in await server.list_tools()}
-                assert not any(n.startswith("protect_") for n in tool_names), (
+                assert not any(n.startswith("unifi_protect_") for n in tool_names), (
                     f"Expected protect_* tools disabled, still present: "
-                    f"{sorted(n for n in tool_names if n.startswith('protect_'))}"
+                    f"{sorted(n for n in tool_names if n.startswith('unifi_protect_'))}"
                 )
                 # Reachable APIs' tools stay registered.
-                assert any(n.startswith("network_") for n in tool_names)
-                assert any(n.startswith("site_manager_") for n in tool_names)
+                assert any(n.startswith("unifi_network_") for n in tool_names)
+                assert any(n.startswith("unifi_site_manager_") for n in tool_names)
                 with pytest.raises(StopAsyncIteration):
                     await gen.__anext__()
 
@@ -543,10 +543,10 @@ class TestServerLifespan:
                 await gen.__anext__()
                 tool_names = {t.name for t in await server.list_tools()}
                 # Network disabled:
-                assert not any(n.startswith("network_") for n in tool_names)
+                assert not any(n.startswith("unifi_network_") for n in tool_names)
                 # Protect and Site Manager still visible:
-                assert any(n.startswith("protect_") for n in tool_names)
-                assert any(n.startswith("site_manager_") for n in tool_names)
+                assert any(n.startswith("unifi_protect_") for n in tool_names)
+                assert any(n.startswith("unifi_site_manager_") for n in tool_names)
                 with pytest.raises(StopAsyncIteration):
                     await gen.__anext__()
 

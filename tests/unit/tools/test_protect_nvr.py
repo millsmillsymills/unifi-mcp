@@ -15,8 +15,8 @@ from unifi_mcp.tools.protect.nvr import register_nvr_tools
 BASE_URL = "https://10.0.0.1:443"
 PROTECT_PREFIX = f"{BASE_URL}/proxy/protect/integration/v1"
 
-READ_TOOL_NAMES = {"protect_get_bootstrap", "protect_get_nvr"}
-WRITE_TOOL_NAMES = {"protect_update_nvr"}
+READ_TOOL_NAMES = {"unifi_protect_get_bootstrap", "unifi_protect_get_nvr"}
+WRITE_TOOL_NAMES = {"unifi_protect_update_nvr"}
 
 
 @pytest.fixture
@@ -51,9 +51,9 @@ class TestNvrModeGating:
     async def test_readonly_hides_update_nvr(self):
         server = create_server(_full_config(UniFiMode.READONLY))
         names = {t.name for t in await server.list_tools()}
-        assert "protect_update_nvr" not in names
-        assert "protect_get_nvr" in names
-        assert "protect_get_bootstrap" in names
+        assert "unifi_protect_update_nvr" not in names
+        assert "unifi_protect_get_nvr" in names
+        assert "unifi_protect_get_bootstrap" in names
 
 
 class TestNvrClientEndpoints:

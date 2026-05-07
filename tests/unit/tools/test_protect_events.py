@@ -29,7 +29,7 @@ def mcp_with_events() -> FastMCP:
 class TestEventRegistration:
     async def test_tool_registered(self, mcp_with_events):
         tools = await mcp_with_events.list_tools()
-        assert {t.name for t in tools} == {"protect_list_events"}
+        assert {t.name for t in tools} == {"unifi_protect_list_events"}
 
     async def test_tool_is_read_only(self, mcp_with_events):
         tools = await mcp_with_events.list_tools()

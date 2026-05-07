@@ -49,7 +49,7 @@ uv run bandit -r src/unifi_mcp/ -c pyproject.toml
 
 ## Tool Naming and Registration
 
-- Tool names follow `{api}_{verb}_{entity}` (e.g., `network_list_devices`, `protect_get_snapshot`).
+- Tool names follow `{api}_{verb}_{entity}` (e.g., `unifi_network_list_devices`, `unifi_protect_get_snapshot`).
 - Write tools must be tagged `tags={"write"}` and annotated `readOnlyHint=False`.
 - Write tools must also check `config.writes_enabled` inside the function body (defense-in-depth).
 - Destructive tools (delete, block, adopt, etc.) should also carry `destructiveHint: True`.

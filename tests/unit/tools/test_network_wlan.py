@@ -15,8 +15,8 @@ from unifi_mcp.tools.network.wlan import register_wlan_tools
 BASE_URL = "https://10.0.0.1:443"
 SITE_PREFIX = f"{BASE_URL}/proxy/network/api/s/default"
 
-READ_TOOL_NAMES = {"network_list_wlans", "network_get_wlan"}
-WRITE_TOOL_NAMES = {"network_create_wlan", "network_update_wlan", "network_delete_wlan"}
+READ_TOOL_NAMES = {"unifi_network_list_wlans", "unifi_network_get_wlan"}
+WRITE_TOOL_NAMES = {"unifi_network_create_wlan", "unifi_network_update_wlan", "unifi_network_delete_wlan"}
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ class TestWlanToolRegistration:
     async def test_delete_wlan_marked_destructive(self, mcp_with_wlan):
         # Deleting a WLAN drops every client on that SSID — must flag destructive.
         tools = await mcp_with_wlan.list_tools()
-        tool = next(t for t in tools if t.name == "network_delete_wlan")
+        tool = next(t for t in tools if t.name == "unifi_network_delete_wlan")
         assert tool.annotations.destructiveHint is True
 
 

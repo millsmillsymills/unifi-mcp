@@ -14,7 +14,7 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
     """Register port forward tools."""
 
     @mcp.tool(tags={"network"})
-    async def network_list_port_forwards(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_list_port_forwards(ctx: Context) -> dict[str, Any]:
         """List all port forwarding rules.
 
         Args:
@@ -30,7 +30,7 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_get_port_forward(ctx: Context, port_forward_id: str) -> dict[str, Any]:
+    async def unifi_network_get_port_forward(ctx: Context, port_forward_id: str) -> dict[str, Any]:
         """Get a specific port forwarding rule by ID.
 
         Args:
@@ -46,7 +46,7 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_create_port_forward(
+    async def unifi_network_create_port_forward(
         ctx: Context,
         name: str,
         dst_port: str,
@@ -85,7 +85,7 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_update_port_forward(ctx: Context, port_forward_id: str, data: JsonObject) -> dict[str, Any]:
+    async def unifi_network_update_port_forward(ctx: Context, port_forward_id: str, data: JsonObject) -> dict[str, Any]:
         """Update an existing port forwarding rule. Pass only fields to change.
 
         Args:
@@ -104,7 +104,7 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_delete_port_forward(ctx: Context, port_forward_id: str) -> dict[str, Any]:
+    async def unifi_network_delete_port_forward(ctx: Context, port_forward_id: str) -> dict[str, Any]:
         """Delete a port forwarding rule.
 
         Args:

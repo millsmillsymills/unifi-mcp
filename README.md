@@ -69,7 +69,7 @@ uv run pre-commit install
 
 ## Known Issues
 
-- **`protect_get_bootstrap` and `protect_list_events` always return 404** —
+- **`unifi_protect_get_bootstrap` and `unifi_protect_list_events` always return 404** —
   [#130](https://github.com/millsmillsymills/unifi-mcp/issues/130). The
   Protect integration API at v1 does not expose `bootstrap` or `events`
   REST endpoints (verified against Protect 7.0.107). The tools are

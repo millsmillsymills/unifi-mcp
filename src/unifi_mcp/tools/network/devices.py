@@ -16,7 +16,7 @@ def register_device_tools(mcp: FastMCP) -> None:
     # ── Read tools ──────────────────────────────────────────────────────
 
     @mcp.tool(tags={"network"})
-    async def network_get_device(ctx: Context, mac: str) -> dict[str, Any]:
+    async def unifi_network_get_device(ctx: Context, mac: str) -> dict[str, Any]:
         """Get detailed info for a specific network device by MAC address.
 
         Args:
@@ -39,7 +39,7 @@ def register_device_tools(mcp: FastMCP) -> None:
     # ── Write tools ─────────────────────────────────────────────────────
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_restart_device(ctx: Context, mac: str) -> dict[str, Any]:
+    async def unifi_network_restart_device(ctx: Context, mac: str) -> dict[str, Any]:
         """Restart an adopted network device.
 
         Args:
@@ -57,7 +57,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_adopt_device(ctx: Context, mac: str) -> dict[str, Any]:
+    async def unifi_network_adopt_device(ctx: Context, mac: str) -> dict[str, Any]:
         """Adopt a new device into the network.
 
         Args:
@@ -75,7 +75,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_locate_device(ctx: Context, mac: str) -> dict[str, Any]:
+    async def unifi_network_locate_device(ctx: Context, mac: str) -> dict[str, Any]:
         """Enable the locate LED on a device (makes it blink for identification).
 
         Args:
@@ -93,7 +93,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_unlocate_device(ctx: Context, mac: str) -> dict[str, Any]:
+    async def unifi_network_unlocate_device(ctx: Context, mac: str) -> dict[str, Any]:
         """Disable the locate LED on a device (stop blinking).
 
         Args:
@@ -111,7 +111,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_provision_device(ctx: Context, mac: str) -> dict[str, Any]:
+    async def unifi_network_provision_device(ctx: Context, mac: str) -> dict[str, Any]:
         """Force re-provision a device (push current configuration).
 
         Args:
@@ -129,7 +129,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_forget_device(ctx: Context, mac: str) -> dict[str, Any]:
+    async def unifi_network_forget_device(ctx: Context, mac: str) -> dict[str, Any]:
         """Forget (unadopt) a previously-adopted device.
 
         The device reverts to the unadopted state and can be re-adopted later.

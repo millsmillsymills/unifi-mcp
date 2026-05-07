@@ -14,10 +14,10 @@ BASE_URL = "https://10.0.0.1:443"
 PROTECT_PREFIX = f"{BASE_URL}/proxy/protect/integration/v1"
 
 TOOL_NAMES = {
-    "protect_list_chimes",
-    "protect_list_lights",
-    "protect_list_sensors",
-    "protect_list_viewers",
+    "unifi_protect_list_chimes",
+    "unifi_protect_list_lights",
+    "unifi_protect_list_sensors",
+    "unifi_protect_list_viewers",
 }
 
 

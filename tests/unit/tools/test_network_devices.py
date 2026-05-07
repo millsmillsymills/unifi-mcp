@@ -16,14 +16,14 @@ BASE_URL = "https://10.0.0.1:443"
 SITE_PREFIX = f"{BASE_URL}/proxy/network/api/s/default"
 
 WRITE_TOOL_NAMES = {
-    "network_restart_device",
-    "network_adopt_device",
-    "network_locate_device",
-    "network_unlocate_device",
-    "network_provision_device",
-    "network_forget_device",
+    "unifi_network_restart_device",
+    "unifi_network_adopt_device",
+    "unifi_network_locate_device",
+    "unifi_network_unlocate_device",
+    "unifi_network_provision_device",
+    "unifi_network_forget_device",
 }
-READ_TOOL_NAMES = {"network_get_device"}
+READ_TOOL_NAMES = {"unifi_network_get_device"}
 
 
 @pytest.fixture
@@ -66,13 +66,13 @@ class TestDeviceToolRegistration:
         ("name", "destructive"),
         [
             # Reboot is a service disruption (see #49).
-            ("network_restart_device", True),
+            ("unifi_network_restart_device", True),
             # Adopt pushes configuration to a new device — destructive-by-intent.
-            ("network_adopt_device", True),
+            ("unifi_network_adopt_device", True),
             # Locate/unlocate/provision are effectively benign.
-            ("network_locate_device", False),
-            ("network_unlocate_device", False),
-            ("network_provision_device", False),
+            ("unifi_network_locate_device", False),
+            ("unifi_network_unlocate_device", False),
+            ("unifi_network_provision_device", False),
         ],
     )
     async def test_destructive_hints_match_intent(self, mcp_with_devices, name, destructive):
@@ -89,7 +89,7 @@ class TestDeviceModeGating:
         for write_tool in WRITE_TOOL_NAMES:
             assert write_tool not in names
         # Read tool remains visible.
-        assert "network_get_device" in names
+        assert "unifi_network_get_device" in names
 
     async def test_readwrite_exposes_all_device_write_tools(self):
         server = create_server(_full_config(UniFiMode.READWRITE))
@@ -132,11 +132,11 @@ class TestForgetDevice:
     async def test_forget_device_registered(self, mcp_with_devices):
         tools = await mcp_with_devices.list_tools()
         names = {t.name for t in tools}
-        assert "network_forget_device" in names
+        assert "unifi_network_forget_device" in names
 
     async def test_forget_device_marked_destructive(self, mcp_with_devices):
         tools = await mcp_with_devices.list_tools()
-        tool = next(t for t in tools if t.name == "network_forget_device")
+        tool = next(t for t in tools if t.name == "unifi_network_forget_device")
         assert tool.annotations.destructiveHint is True
         assert "write" in tool.tags
 

@@ -13,8 +13,8 @@ from unifi_mcp.tools.network.networks import register_network_config_tools
 BASE_URL = "https://10.0.0.1:443"
 SITE_PREFIX = f"{BASE_URL}/proxy/network/api/s/default"
 
-READ_TOOL_NAMES = {"network_list_networks", "network_get_network"}
-WRITE_TOOL_NAMES = {"network_create_network", "network_update_network", "network_delete_network"}
+READ_TOOL_NAMES = {"unifi_network_list_networks", "unifi_network_get_network"}
+WRITE_TOOL_NAMES = {"unifi_network_create_network", "unifi_network_update_network", "unifi_network_delete_network"}
 
 
 @pytest.fixture
@@ -36,7 +36,7 @@ class TestNetworkConfigRegistration:
 
     async def test_delete_network_marked_destructive(self, mcp_with_networks):
         tools = await mcp_with_networks.list_tools()
-        tool = next(t for t in tools if t.name == "network_delete_network")
+        tool = next(t for t in tools if t.name == "unifi_network_delete_network")
         assert tool.annotations.destructiveHint is True
 
 

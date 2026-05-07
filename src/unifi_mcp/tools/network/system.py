@@ -14,7 +14,7 @@ def register_system_tools(mcp: FastMCP) -> None:
     """Register system and command tools."""
 
     @mcp.tool(tags={"network"})
-    async def network_get_settings(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_get_settings(ctx: Context) -> dict[str, Any]:
         """Get controller settings.
 
         Args:
@@ -30,7 +30,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_update_settings(ctx: Context, data: JsonObject) -> dict[str, Any]:
+    async def unifi_network_update_settings(ctx: Context, data: JsonObject) -> dict[str, Any]:
         """Update controller settings. Pass only fields to change.
 
         Args:
@@ -48,7 +48,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_run_speedtest(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_run_speedtest(ctx: Context) -> dict[str, Any]:
         """Run a speed test on the controller's WAN connection.
 
         Args:
@@ -66,7 +66,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_create_backup(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_create_backup(ctx: Context) -> dict[str, Any]:
         """Create a backup of the controller configuration.
 
         Args:
@@ -84,7 +84,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_upgrade_device(ctx: Context, mac: str) -> dict[str, Any]:
+    async def unifi_network_upgrade_device(ctx: Context, mac: str) -> dict[str, Any]:
         """Upgrade a device to the latest firmware.
 
         Args:
@@ -102,7 +102,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_power_cycle_port(ctx: Context, mac: str, port_idx: int) -> dict[str, Any]:
+    async def unifi_network_power_cycle_port(ctx: Context, mac: str, port_idx: int) -> dict[str, Any]:
         """Power cycle a PoE port on a switch.
 
         Args:
@@ -121,7 +121,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_unauthorize_guest(ctx: Context, mac: str) -> dict[str, Any]:
+    async def unifi_network_unauthorize_guest(ctx: Context, mac: str) -> dict[str, Any]:
         """Revoke guest authorization for a client.
 
         Args:
@@ -139,7 +139,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_archive_events(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_archive_events(ctx: Context) -> dict[str, Any]:
         """Archive all alarms and events.
 
         Args:
@@ -157,7 +157,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_reset_dpi(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_reset_dpi(ctx: Context) -> dict[str, Any]:
         """Reset all DPI (Deep Packet Inspection) counters.
 
         Args:

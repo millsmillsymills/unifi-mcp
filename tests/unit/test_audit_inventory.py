@@ -109,9 +109,9 @@ class TestDegradationMatrix:
     @pytest.mark.parametrize(
         ("env_key", "expected_prefix"),
         [
-            ("UNIFI_NETWORK_API", "network_"),
-            ("UNIFI_PROTECT_API", "protect_"),
-            ("UNIFI_SITE_MANAGER_API", "site_manager_"),
+            ("UNIFI_NETWORK_API", "unifi_network_"),
+            ("UNIFI_PROTECT_API", "unifi_protect_"),
+            ("UNIFI_SITE_MANAGER_API", "unifi_site_manager_"),
         ],
     )
     async def test_single_api_exposes_only_its_namespace(self, monkeypatch, tmp_path, env_key, expected_prefix):
@@ -132,7 +132,7 @@ class TestDegradationMatrix:
             async with aclosing(gen):
                 await gen.__anext__()
                 names = {t.name for t in await server.list_tools()}
-                other_prefixes = {"network_", "protect_", "site_manager_"} - {expected_prefix}
+                other_prefixes = {"unifi_network_", "unifi_protect_", "unifi_site_manager_"} - {expected_prefix}
                 leaks = [n for n in names if any(n.startswith(p) for p in other_prefixes)]
                 assert not leaks, f"{env_key}-only config leaks foreign tools: {leaks}"
                 assert any(n.startswith(expected_prefix) for n in names)
@@ -164,9 +164,9 @@ class TestBadAuthDisablesAnyAPI:
     @pytest.mark.parametrize(
         ("failing_api", "prefix"),
         [
-            ("network", "network_"),
-            ("protect", "protect_"),
-            ("site_manager", "site_manager_"),
+            ("network", "unifi_network_"),
+            ("protect", "unifi_protect_"),
+            ("site_manager", "unifi_site_manager_"),
         ],
     )
     async def test_failing_api_tools_disabled(self, monkeypatch, failing_api, prefix):
@@ -193,7 +193,7 @@ class TestBadAuthDisablesAnyAPI:
                     f"Failing {failing_api} API still exposes tools: {sorted(n for n in names if n.startswith(prefix))}"
                 )
                 # Sanity: the two healthy APIs' tools remain visible.
-                other_prefixes = {"network_", "protect_", "site_manager_"} - {prefix}
+                other_prefixes = {"unifi_network_", "unifi_protect_", "unifi_site_manager_"} - {prefix}
                 for other in other_prefixes:
                     assert any(n.startswith(other) for n in names), f"Healthy API '{other}' unexpectedly hidden"
                 with pytest.raises(StopAsyncIteration):

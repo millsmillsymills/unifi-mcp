@@ -16,7 +16,7 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
     # ── Read tools ──────────────────────────────────────────────────────
 
     @mcp.tool(tags={"network"})
-    async def network_list_port_profiles(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_list_port_profiles(ctx: Context) -> dict[str, Any]:
         """List all switch port profiles (VLAN, PoE, storm-control configs).
 
         Args:
@@ -32,7 +32,7 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_get_port_profile(ctx: Context, profile_id: str) -> dict[str, Any]:
+    async def unifi_network_get_port_profile(ctx: Context, profile_id: str) -> dict[str, Any]:
         """Get a specific switch port profile by id.
 
         Args:
@@ -50,7 +50,7 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
     # ── Write tools ─────────────────────────────────────────────────────
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_create_port_profile(ctx: Context, data: JsonObject) -> dict[str, Any]:
+    async def unifi_network_create_port_profile(ctx: Context, data: JsonObject) -> dict[str, Any]:
         """Create a switch port profile.
 
         The controller requires at least ``name``, ``poe_mode`` (e.g. ``auto``),
@@ -72,7 +72,7 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_update_port_profile(ctx: Context, profile_id: str, data: JsonObject) -> dict[str, Any]:
+    async def unifi_network_update_port_profile(ctx: Context, profile_id: str, data: JsonObject) -> dict[str, Any]:
         """Update a switch port profile. Pass only fields to change.
 
         Args:
@@ -91,7 +91,7 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_delete_port_profile(ctx: Context, profile_id: str) -> dict[str, Any]:
+    async def unifi_network_delete_port_profile(ctx: Context, profile_id: str) -> dict[str, Any]:
         """Delete a switch port profile.
 
         Every switch port currently bound to this profile falls back to the
@@ -113,7 +113,9 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_assign_port_profile(ctx: Context, mac: str, port_idx: int, profile_id: str) -> dict[str, Any]:
+    async def unifi_network_assign_port_profile(
+        ctx: Context, mac: str, port_idx: int, profile_id: str
+    ) -> dict[str, Any]:
         """Assign a port profile to a specific switch port.
 
         Args:

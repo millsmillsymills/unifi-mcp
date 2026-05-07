@@ -14,7 +14,7 @@ def register_routing_tools(mcp: FastMCP) -> None:
     """Register routing tools."""
 
     @mcp.tool(tags={"network"})
-    async def network_list_routes(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_list_routes(ctx: Context) -> dict[str, Any]:
         """List all static routes.
 
         Args:
@@ -30,7 +30,7 @@ def register_routing_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_get_route(ctx: Context, route_id: str) -> dict[str, Any]:
+    async def unifi_network_get_route(ctx: Context, route_id: str) -> dict[str, Any]:
         """Get a specific static route by ID.
 
         Args:
@@ -46,7 +46,7 @@ def register_routing_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_create_route(
+    async def unifi_network_create_route(
         ctx: Context,
         name: str,
         network: str,
@@ -87,7 +87,7 @@ def register_routing_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_update_route(ctx: Context, route_id: str, data: JsonObject) -> dict[str, Any]:
+    async def unifi_network_update_route(ctx: Context, route_id: str, data: JsonObject) -> dict[str, Any]:
         """Update an existing static route. Pass only fields to change.
 
         Args:
@@ -106,7 +106,7 @@ def register_routing_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_delete_route(ctx: Context, route_id: str) -> dict[str, Any]:
+    async def unifi_network_delete_route(ctx: Context, route_id: str) -> dict[str, Any]:
         """Delete a static route.
 
         Args:

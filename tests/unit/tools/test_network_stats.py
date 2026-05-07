@@ -32,21 +32,21 @@ class TestStatsToolRegistration:
         tools = await mcp_with_stats.list_tools()
         names = {t.name for t in tools}
         assert names == {
-            "network_get_health",
-            "network_list_events",
-            "network_list_devices",
-            "network_list_devices_basic",
-            "network_list_active_clients",
-            "network_list_configured_clients",
-            "network_list_all_clients",
-            "network_get_dpi_stats",
-            "network_get_sysinfo",
+            "unifi_network_get_health",
+            "unifi_network_list_events",
+            "unifi_network_list_devices",
+            "unifi_network_list_devices_basic",
+            "unifi_network_list_active_clients",
+            "unifi_network_list_configured_clients",
+            "unifi_network_list_all_clients",
+            "unifi_network_get_dpi_stats",
+            "unifi_network_get_sysinfo",
         }
 
     async def test_stats_tools_have_network_tag(self, mcp_with_stats):
         tools = await mcp_with_stats.list_tools()
         for tool in tools:
-            if tool.name.startswith("network_"):
+            if tool.name.startswith("unifi_network_"):
                 assert "network" in tool.tags
 
     async def test_stats_tools_not_tagged_write(self, mcp_with_stats):

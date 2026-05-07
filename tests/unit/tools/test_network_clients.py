@@ -15,12 +15,12 @@ from unifi_mcp.tools.network.clients import register_client_tools
 BASE_URL = "https://10.0.0.1:443"
 SITE_PREFIX = f"{BASE_URL}/proxy/network/api/s/default"
 
-READ_TOOL_NAMES = {"network_get_client"}
+READ_TOOL_NAMES = {"unifi_network_get_client"}
 WRITE_TOOL_NAMES = {
-    "network_block_client",
-    "network_unblock_client",
-    "network_kick_client",
-    "network_authorize_guest",
+    "unifi_network_block_client",
+    "unifi_network_unblock_client",
+    "unifi_network_kick_client",
+    "unifi_network_authorize_guest",
 }
 
 
@@ -62,7 +62,7 @@ class TestClientToolRegistration:
     async def test_block_client_marked_destructive(self, mcp_with_clients):
         # Blocking a client is a real disruption — should carry destructiveHint.
         tools = await mcp_with_clients.list_tools()
-        tool = next(t for t in tools if t.name == "network_block_client")
+        tool = next(t for t in tools if t.name == "unifi_network_block_client")
         assert tool.annotations.destructiveHint is True
 
 
@@ -72,7 +72,7 @@ class TestClientModeGating:
         names = {t.name for t in await server.list_tools()}
         for w in WRITE_TOOL_NAMES:
             assert w not in names
-        assert "network_get_client" in names
+        assert "unifi_network_get_client" in names
 
     async def test_readwrite_exposes_client_write_tools(self):
         server = create_server(_full_config(UniFiMode.READWRITE))

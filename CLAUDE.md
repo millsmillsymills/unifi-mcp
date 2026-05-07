@@ -53,8 +53,8 @@ src/unifi_mcp/
 └── tools/               # MCP tool definitions
     ├── network/         # 24 read + 35 write tools (59 total)
     ├── protect/         # 11 read + 4 write tools (15 total, includes 2 media read tools)
-    │                    # NOTE: 2 of 11 read tools (protect_get_bootstrap,
-    │                    # protect_list_events) always return 404 against the
+    │                    # NOTE: 2 of 11 read tools (unifi_protect_get_bootstrap,
+    │                    # unifi_protect_list_events) always return 404 against the
     │                    # integration API. Tracked in #130.
     └── site_manager/    # 3 read-only tools
 ```
@@ -63,7 +63,7 @@ src/unifi_mcp/
 
 - **Python >=3.11**, strict `ty` type checks, ruff for lint+format
 - **Line length**: 120 characters
-- **Tool naming**: `{api}_{verb}_{entity}` (e.g., `network_list_devices`, `protect_get_snapshot`)
+- **Tool naming**: `{api}_{verb}_{entity}` (e.g., `unifi_network_list_devices`, `unifi_protect_get_snapshot`)
 - **Write tools**: Tagged with `{"write"}`, annotated with `readOnlyHint=False`. Disabled in readonly mode via `mcp.disable(tags={"write"})`
 - **Defense-in-depth**: Write tools also check `config.writes_enabled` at runtime
 - **Clients**: Use `httpx.AsyncClient` with `tenacity` retry (3 attempts, exponential backoff). API responses flow through as `dict[str, Any]` — there is no Pydantic validation layer between clients and tools.
@@ -77,7 +77,7 @@ src/unifi_mcp/
 ```python
 # Tools tagged with {"write"} are disabled in readonly mode
 @mcp.tool(tags={"write"}, annotations={"readOnlyHint": False})
-async def network_create_wlan(...): ...
+async def unifi_network_create_wlan(...): ...
 
 # In server lifespan:
 if not config.writes_enabled:

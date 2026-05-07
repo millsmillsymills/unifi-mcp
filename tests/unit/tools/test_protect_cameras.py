@@ -15,8 +15,12 @@ from unifi_mcp.tools.protect.cameras import register_camera_tools
 BASE_URL = "https://10.0.0.1:443"
 PROTECT_PREFIX = f"{BASE_URL}/proxy/protect/integration/v1"
 
-READ_TOOL_NAMES = {"protect_list_cameras", "protect_get_camera"}
-WRITE_TOOL_NAMES = {"protect_update_camera", "protect_set_recording_mode", "protect_set_smart_detection"}
+READ_TOOL_NAMES = {"unifi_protect_list_cameras", "unifi_protect_get_camera"}
+WRITE_TOOL_NAMES = {
+    "unifi_protect_update_camera",
+    "unifi_protect_set_recording_mode",
+    "unifi_protect_set_smart_detection",
+}
 
 
 @pytest.fixture

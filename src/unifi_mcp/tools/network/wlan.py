@@ -16,7 +16,7 @@ def register_wlan_tools(mcp: FastMCP) -> None:
     # ── Read tools ──────────────────────────────────────────────────────
 
     @mcp.tool(tags={"network"})
-    async def network_list_wlans(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_list_wlans(ctx: Context) -> dict[str, Any]:
         """List all WLAN (Wi-Fi network) configurations.
 
         Args:
@@ -32,7 +32,7 @@ def register_wlan_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_get_wlan(ctx: Context, wlan_id: str) -> dict[str, Any]:
+    async def unifi_network_get_wlan(ctx: Context, wlan_id: str) -> dict[str, Any]:
         """Get a specific WLAN configuration by ID.
 
         Args:
@@ -50,7 +50,7 @@ def register_wlan_tools(mcp: FastMCP) -> None:
     # ── Write tools ─────────────────────────────────────────────────────
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_create_wlan(
+    async def unifi_network_create_wlan(
         ctx: Context,
         name: str,
         security: str = "wpapsk",
@@ -86,7 +86,7 @@ def register_wlan_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_update_wlan(ctx: Context, wlan_id: str, data: JsonObject) -> dict[str, Any]:
+    async def unifi_network_update_wlan(ctx: Context, wlan_id: str, data: JsonObject) -> dict[str, Any]:
         """Update an existing WLAN configuration. Pass only fields to change.
 
         Args:
@@ -105,7 +105,7 @@ def register_wlan_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_delete_wlan(ctx: Context, wlan_id: str) -> dict[str, Any]:
+    async def unifi_network_delete_wlan(ctx: Context, wlan_id: str) -> dict[str, Any]:
         """Delete a WLAN configuration.
 
         Args:

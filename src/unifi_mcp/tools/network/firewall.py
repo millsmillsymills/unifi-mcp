@@ -16,7 +16,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
     # ── Read tools ──────────────────────────────────────────────────────
 
     @mcp.tool(tags={"network"})
-    async def network_list_firewall_rules(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_list_firewall_rules(ctx: Context) -> dict[str, Any]:
         """List all firewall rules.
 
         Args:
@@ -32,7 +32,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_get_firewall_rule(ctx: Context, rule_id: str) -> dict[str, Any]:
+    async def unifi_network_get_firewall_rule(ctx: Context, rule_id: str) -> dict[str, Any]:
         """Get a specific firewall rule by ID.
 
         Args:
@@ -48,7 +48,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_list_firewall_groups(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_list_firewall_groups(ctx: Context) -> dict[str, Any]:
         """List all firewall groups (address groups, port groups).
 
         Args:
@@ -64,7 +64,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_get_firewall_group(ctx: Context, group_id: str) -> dict[str, Any]:
+    async def unifi_network_get_firewall_group(ctx: Context, group_id: str) -> dict[str, Any]:
         """Get a specific firewall group by ID.
 
         Args:
@@ -82,7 +82,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
     # ── Write tools ─────────────────────────────────────────────────────
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_create_firewall_rule(
+    async def unifi_network_create_firewall_rule(
         ctx: Context,
         name: str,
         ruleset: str,
@@ -140,7 +140,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_update_firewall_rule(ctx: Context, rule_id: str, data: JsonObject) -> dict[str, Any]:
+    async def unifi_network_update_firewall_rule(ctx: Context, rule_id: str, data: JsonObject) -> dict[str, Any]:
         """Update an existing firewall rule. Pass only fields to change.
 
         Args:
@@ -159,7 +159,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_delete_firewall_rule(ctx: Context, rule_id: str) -> dict[str, Any]:
+    async def unifi_network_delete_firewall_rule(ctx: Context, rule_id: str) -> dict[str, Any]:
         """Delete a firewall rule.
 
         Args:
@@ -177,7 +177,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_create_firewall_group(
+    async def unifi_network_create_firewall_group(
         ctx: Context,
         name: str,
         group_type: str,
@@ -207,7 +207,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_update_firewall_group(ctx: Context, group_id: str, data: JsonObject) -> dict[str, Any]:
+    async def unifi_network_update_firewall_group(ctx: Context, group_id: str, data: JsonObject) -> dict[str, Any]:
         """Update an existing firewall group. Pass only fields to change.
 
         Args:
@@ -226,7 +226,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_delete_firewall_group(ctx: Context, group_id: str) -> dict[str, Any]:
+    async def unifi_network_delete_firewall_group(ctx: Context, group_id: str) -> dict[str, Any]:
         """Delete a firewall group.
 
         Args:

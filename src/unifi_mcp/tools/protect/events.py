@@ -14,7 +14,7 @@ def register_event_tools(mcp: FastMCP) -> None:
     """Register Protect event tools."""
 
     @mcp.tool(tags={"protect"})
-    async def protect_list_events(
+    async def unifi_protect_list_events(
         ctx: Context,
         start: str | None = None,
         end: str | None = None,

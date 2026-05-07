@@ -14,7 +14,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
     """Register Protect camera tools."""
 
     @mcp.tool(tags={"protect"})
-    async def protect_list_cameras(ctx: Context) -> list[dict[str, Any]]:
+    async def unifi_protect_list_cameras(ctx: Context) -> list[dict[str, Any]]:
         """List all cameras managed by UniFi Protect.
 
         Args:
@@ -30,7 +30,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"protect"})
-    async def protect_get_camera(ctx: Context, camera_id: str) -> dict[str, Any]:
+    async def unifi_protect_get_camera(ctx: Context, camera_id: str) -> dict[str, Any]:
         """Get detailed info for a specific camera.
 
         Args:
@@ -46,7 +46,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "protect"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def protect_update_camera(ctx: Context, camera_id: str, data: JsonObject) -> dict[str, Any]:
+    async def unifi_protect_update_camera(ctx: Context, camera_id: str, data: JsonObject) -> dict[str, Any]:
         """Update camera settings. Pass only fields to change.
 
         Args:
@@ -65,7 +65,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "protect"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def protect_set_recording_mode(
+    async def unifi_protect_set_recording_mode(
         ctx: Context,
         camera_id: str,
         mode: str,
@@ -94,7 +94,9 @@ def register_camera_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "protect"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def protect_set_smart_detection(ctx: Context, camera_id: str, object_types: list[str]) -> dict[str, Any]:
+    async def unifi_protect_set_smart_detection(
+        ctx: Context, camera_id: str, object_types: list[str]
+    ) -> dict[str, Any]:
         """Configure smart detection object types for a camera.
 
         Args:

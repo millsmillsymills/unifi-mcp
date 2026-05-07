@@ -16,7 +16,7 @@ def register_client_tools(mcp: FastMCP) -> None:
     # ── Read tools ──────────────────────────────────────────────────────
 
     @mcp.tool(tags={"network"})
-    async def network_get_client(ctx: Context, mac: str) -> dict[str, Any]:
+    async def unifi_network_get_client(ctx: Context, mac: str) -> dict[str, Any]:
         """Get detailed info for a specific client by MAC address.
 
         Args:
@@ -39,7 +39,7 @@ def register_client_tools(mcp: FastMCP) -> None:
     # ── Write tools ─────────────────────────────────────────────────────
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def network_block_client(ctx: Context, mac: str) -> dict[str, Any]:
+    async def unifi_network_block_client(ctx: Context, mac: str) -> dict[str, Any]:
         """Block a client from connecting to the network.
 
         Args:
@@ -57,7 +57,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_unblock_client(ctx: Context, mac: str) -> dict[str, Any]:
+    async def unifi_network_unblock_client(ctx: Context, mac: str) -> dict[str, Any]:
         """Unblock a previously blocked client.
 
         Args:
@@ -75,7 +75,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_kick_client(ctx: Context, mac: str) -> dict[str, Any]:
+    async def unifi_network_kick_client(ctx: Context, mac: str) -> dict[str, Any]:
         """Disconnect a client from the network (they may reconnect).
 
         Args:
@@ -93,7 +93,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def network_authorize_guest(ctx: Context, mac: str, minutes: int = 60) -> dict[str, Any]:
+    async def unifi_network_authorize_guest(ctx: Context, mac: str, minutes: int = 60) -> dict[str, Any]:
         """Authorize a guest client for a specified duration.
 
         Args:

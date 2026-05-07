@@ -43,7 +43,7 @@ def mcp_with_media() -> FastMCP:
 class TestMediaRegistration:
     async def test_all_tools_registered(self, mcp_with_media):
         tools = await mcp_with_media.list_tools()
-        assert {t.name for t in tools} == {"protect_get_snapshot", "protect_export_video"}
+        assert {t.name for t in tools} == {"unifi_protect_get_snapshot", "unifi_protect_export_video"}
 
     async def test_media_tools_are_read_only(self, mcp_with_media):
         # Snapshots and exports are reads of existing recording data — no write tag.
@@ -96,7 +96,7 @@ class TestMediaClientEndpoints:
 
 
 class TestExportVideoToolLayerCap:
-    """End-to-end handler test for protect_export_video respecting the configured cap.
+    """End-to-end handler test for unifi_protect_export_video respecting the configured cap.
 
     The respx test above (``test_export_video_respects_max_bytes``) hits the client
     method directly. This one drives the actual MCP tool handler — proving that
@@ -123,7 +123,7 @@ class TestExportVideoToolLayerCap:
         ctx = AsyncMock()
         ctx.lifespan_context = _FakeLifespan(config=config, clients={"protect": client})
 
-        tool = await server.get_tool("protect_export_video")
+        tool = await server.get_tool("unifi_protect_export_video")
 
         with respx.mock:
             respx.get(f"{PROTECT_PREFIX}/cameras/cam-1/video/export").mock(
@@ -134,7 +134,7 @@ class TestExportVideoToolLayerCap:
 
 
 class TestGetSnapshotToolLayerCap:
-    """End-to-end handler test for protect_get_snapshot respecting the configured cap.
+    """End-to-end handler test for unifi_protect_get_snapshot respecting the configured cap.
 
     Mirrors ``TestExportVideoToolLayerCap`` for the snapshot path: the tool must
     forward ``unifi_max_snapshot_bytes`` from the lifespan context to
@@ -159,7 +159,7 @@ class TestGetSnapshotToolLayerCap:
         ctx = AsyncMock()
         ctx.lifespan_context = _FakeLifespan(config=config, clients={"protect": client})
 
-        tool = await server.get_tool("protect_get_snapshot")
+        tool = await server.get_tool("unifi_protect_get_snapshot")
 
         with respx.mock:
             respx.get(f"{PROTECT_PREFIX}/cameras/cam-1/snapshot").mock(
@@ -188,7 +188,7 @@ class TestGetSnapshotToolLayerCap:
         ctx = AsyncMock()
         ctx.lifespan_context = _FakeLifespan(config=config, clients={"protect": client})
 
-        tool = await server.get_tool("protect_get_snapshot")
+        tool = await server.get_tool("unifi_protect_get_snapshot")
         jpeg = b"\xff\xd8\xff\xe0fake-jpeg"
 
         with respx.mock:
