@@ -25,6 +25,10 @@ def register_media_tools(mcp: FastMCP) -> None:
         Args:
             camera_id: The camera ID.
             timestamp: Unix timestamp in milliseconds for a historical snapshot (optional, omit for live).
+
+        Returns:
+            ``{"format": "jpeg", "data_base64": str, "size_bytes": int}``. ``data_base64``
+            is the JPEG bytes encoded with standard base64; decode before writing to disk.
         """
         try:
             context = get_server_context(ctx)
@@ -51,6 +55,10 @@ def register_media_tools(mcp: FastMCP) -> None:
             camera_id: The camera ID.
             start: Start timestamp in Unix milliseconds.
             end: End timestamp in Unix milliseconds.
+
+        Returns:
+            ``{"format": "mp4", "data_base64": str, "size_bytes": int}``. ``data_base64``
+            is the MP4 bytes encoded with standard base64; decode before writing to disk.
         """
         try:
             context = get_server_context(ctx)

@@ -65,7 +65,7 @@ src/unifi_mcp/
 - **Line length**: 120 characters
 - **Tool naming**: `{api}_{verb}_{entity}` (e.g., `network_list_devices`, `protect_get_snapshot`)
 - **Write tools**: Tagged with `{"write"}`, annotated with `readOnlyHint=False`. Disabled in readonly mode via `mcp.disable(tags={"write"})`
-- **Defense-in-depth**: Write tools also check `config.is_readwrite` at runtime
+- **Defense-in-depth**: Write tools also check `config.writes_enabled` at runtime
 - **Clients**: Use `httpx.AsyncClient` with `tenacity` retry (3 attempts, exponential backoff). API responses flow through as `dict[str, Any]` — there is no Pydantic validation layer between clients and tools.
 - **Error mapping**: API errors -> typed exceptions -> `ToolError` with agent-readable messages
 - **Tests**: Use `respx` for HTTP mocking, `pytest-asyncio` for async tests

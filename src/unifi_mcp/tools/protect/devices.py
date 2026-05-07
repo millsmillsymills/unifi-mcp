@@ -15,7 +15,14 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"protect"})
     async def protect_list_chimes(ctx: Context) -> list[dict[str, Any]]:
-        """List all Protect chime devices."""
+        """List all Protect chime devices.
+
+        Args:
+            ctx: FastMCP request context.
+
+        Returns:
+            The upstream API response.
+        """
         try:
             context = get_server_context(ctx)
             return await context.clients["protect"].list_chimes()
@@ -24,7 +31,14 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"protect"})
     async def protect_list_lights(ctx: Context) -> list[dict[str, Any]]:
-        """List all Protect smart light devices."""
+        """List all Protect smart light devices.
+
+        Args:
+            ctx: FastMCP request context.
+
+        Returns:
+            The upstream API response.
+        """
         try:
             context = get_server_context(ctx)
             return await context.clients["protect"].list_lights()
@@ -33,7 +47,14 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"protect"})
     async def protect_list_sensors(ctx: Context) -> list[dict[str, Any]]:
-        """List all Protect sensor devices."""
+        """List all Protect sensor devices.
+
+        Args:
+            ctx: FastMCP request context.
+
+        Returns:
+            The upstream API response.
+        """
         try:
             context = get_server_context(ctx)
             return await context.clients["protect"].list_sensors()
@@ -42,7 +63,14 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
 
     @mcp.tool(tags={"protect"})
     async def protect_list_viewers(ctx: Context) -> list[dict[str, Any]]:
-        """List all Protect viewport devices."""
+        """List all Protect viewport devices.
+
+        Args:
+            ctx: FastMCP request context.
+
+        Returns:
+            The upstream API response.
+        """
         try:
             context = get_server_context(ctx)
             return await context.clients["protect"].list_viewers()

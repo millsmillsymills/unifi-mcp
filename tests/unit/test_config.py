@@ -31,14 +31,14 @@ class TestUniFiMode:
             unifi_mode=UniFiMode.READWRITE,
         )
         assert config.unifi_mode == UniFiMode.READWRITE
-        assert config.is_readwrite is True
+        assert config.writes_enabled is True
 
     def test_readonly_mode_property(self):
         config = UniFiConfig(
             _env_file=None,
             unifi_mode=UniFiMode.READONLY,
         )
-        assert config.is_readwrite is False
+        assert config.writes_enabled is False
 
     def test_invalid_mode_raises_validation_error(self):
         with pytest.raises(ValidationError):
