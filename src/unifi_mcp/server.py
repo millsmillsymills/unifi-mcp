@@ -208,14 +208,13 @@ def create_server(config: UniFiConfig | None = None) -> FastMCP:
         lifespan=server_lifespan,
     )
 
-    # Register tools for configured APIs
+    # Register tools for configured APIs. register_all_tools handles the
+    # read/write split internally; the explicit log here is for operators.
     from unifi_mcp.tools import register_all_tools
 
     register_all_tools(server, config)
 
-    # Apply mode gating — hide write tools in readonly mode
     if not config.writes_enabled:
-        server.disable(tags={"write"})
         logger.info("Read-only mode: write tools disabled")
     else:
         logger.info("Read-write mode: all tools enabled")

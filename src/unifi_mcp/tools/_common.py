@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from fastmcp import Context
 
     from unifi_mcp.server import ServerContext
 
-JsonObject: TypeAlias = dict[str, Any]
+type JsonObject = dict[str, Any]
 
 
 def get_server_context(ctx: Context) -> ServerContext:

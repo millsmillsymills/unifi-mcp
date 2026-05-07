@@ -6,6 +6,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-07
+
+### Changed
+
+- **Breaking — minimum supported Python is now 3.13.** Drops 3.11 and 3.12.
+  Update your runtime before installing 0.3.0. CI matrix and the
+  `Programming Language` classifiers were trimmed to 3.13 only (#171).
+
+### Added
+
+- `tests/property/` with hypothesis-driven tests for the error-classifier
+  helper (#161, #174).
+- `register_read_tools` / `register_write_tools` helpers in
+  `unifi_mcp.tools` so the read and write surfaces are registered through
+  named entry points (#168).
+- README "MCP client setup" section with copy-pasteable Claude Desktop,
+  Claude Code, Cursor, and Continue.dev configs (#160).
+
+### Changed
+
+- Rename `unifi_mcp.errors._status_tag` to `_classify_error_tag` so the
+  error-mapping helper matches the standard's pattern (#170).
+- Use PEP 695 `type` syntax for `JsonObject` now that the floor is 3.13.
+- The "Returns: The upstream API response." docstring is no longer
+  generated as a fallback for new tools — write a tool-specific
+  Returns description instead.
+
 ## [0.2.0] - 2026-05-06
 
 ### Changed
