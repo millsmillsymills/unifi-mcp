@@ -80,7 +80,7 @@ src/unifi_mcp/
 async def network_create_wlan(...): ...
 
 # In server lifespan:
-if not config.is_readwrite:
+if not config.writes_enabled:
     mcp.disable(tags={"write"})
 ```
 

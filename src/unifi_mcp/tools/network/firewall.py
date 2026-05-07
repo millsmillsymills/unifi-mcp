@@ -112,8 +112,12 @@ def register_firewall_tools(mcp: FastMCP) -> None:
 
         Note:
             Modern controllers reject scalar-only calls with HTTP 400
-            ``api.err.FirewallRuleFieldsRequired`` (#90); pass a full
-            payload via ``data``.
+            ``api.err.FirewallRuleFieldsRequired`` (#90). The legacy
+            ``rest/firewallrule`` endpoint also expects ``rule_index``,
+            ``logging``, the ``state_new`` / ``state_established`` /
+            ``state_invalid`` / ``state_related`` flags, ``icmp_typename``,
+            ``ipsec``, ``src_firewallgroup_ids``, and
+            ``dst_firewallgroup_ids``; pass them via ``data``.
         """
         try:
             context = get_server_context(ctx)

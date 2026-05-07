@@ -82,9 +82,8 @@ class UniFiConfig(BaseSettings):
     def writes_enabled(self) -> bool:
         """Whether write tools are enabled.
 
-        Acts as the env-flag write-gate (PROTO-006): write tools only run when
-        ``UNIFI_MODE=readwrite`` is set explicitly. The default ``readonly``
-        leaves the server in a safe, mutation-free posture.
+        True only when ``UNIFI_MODE=readwrite`` is set explicitly. The default
+        ``readonly`` mode leaves the server in a safe, mutation-free posture.
         """
         return self.unifi_mode == UniFiMode.READWRITE
 

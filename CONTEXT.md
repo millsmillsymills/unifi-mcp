@@ -14,7 +14,7 @@ Each entry: bold term + dash + definition. Avoid synonyms that drift from the te
 
 Example:
 - **MCP tool** — A FastMCP-decorated async function exposed to MCP clients. See `src/unifi_mcp/tools/`.
-- **Write tool** — A tool tagged with `{"write"}`, gated behind `is_readwrite` mode and `readOnlyHint=False`.
+- **Write tool** — A tool tagged with `{"write"}`, gated behind `config.writes_enabled` (true when `UNIFI_MODE=readwrite`) and `readOnlyHint=False`.
 -->
 
 ## Core concepts
