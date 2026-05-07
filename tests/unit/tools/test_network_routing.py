@@ -14,11 +14,11 @@ BASE_URL = "https://10.0.0.1:443"
 SITE_PREFIX = f"{BASE_URL}/proxy/network/api/s/default"
 
 ALL_TOOLS = {
-    "network_list_routes",
-    "network_get_route",
-    "network_create_route",
-    "network_update_route",
-    "network_delete_route",
+    "unifi_network_list_routes",
+    "unifi_network_get_route",
+    "unifi_network_create_route",
+    "unifi_network_update_route",
+    "unifi_network_delete_route",
 }
 
 
@@ -41,7 +41,7 @@ class TestRoutingRegistration:
 
     async def test_delete_marked_destructive(self, mcp_with_routing):
         tools = await mcp_with_routing.list_tools()
-        tool = next(t for t in tools if t.name == "network_delete_route")
+        tool = next(t for t in tools if t.name == "unifi_network_delete_route")
         assert tool.annotations.destructiveHint is True
 
 

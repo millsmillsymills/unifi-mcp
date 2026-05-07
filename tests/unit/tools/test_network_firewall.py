@@ -14,18 +14,18 @@ BASE_URL = "https://10.0.0.1:443"
 SITE_PREFIX = f"{BASE_URL}/proxy/network/api/s/default"
 
 READ_TOOL_NAMES = {
-    "network_list_firewall_rules",
-    "network_get_firewall_rule",
-    "network_list_firewall_groups",
-    "network_get_firewall_group",
+    "unifi_network_list_firewall_rules",
+    "unifi_network_get_firewall_rule",
+    "unifi_network_list_firewall_groups",
+    "unifi_network_get_firewall_group",
 }
 WRITE_TOOL_NAMES = {
-    "network_create_firewall_rule",
-    "network_update_firewall_rule",
-    "network_delete_firewall_rule",
-    "network_create_firewall_group",
-    "network_update_firewall_group",
-    "network_delete_firewall_group",
+    "unifi_network_create_firewall_rule",
+    "unifi_network_update_firewall_rule",
+    "unifi_network_delete_firewall_rule",
+    "unifi_network_create_firewall_group",
+    "unifi_network_update_firewall_group",
+    "unifi_network_delete_firewall_group",
 }
 
 
@@ -48,7 +48,7 @@ class TestFirewallRegistration:
 
     @pytest.mark.parametrize(
         "destructive_tool",
-        ["network_delete_firewall_rule", "network_delete_firewall_group"],
+        ["unifi_network_delete_firewall_rule", "unifi_network_delete_firewall_group"],
     )
     async def test_delete_tools_marked_destructive(self, mcp_with_firewall, destructive_tool):
         tools = await mcp_with_firewall.list_tools()
@@ -109,7 +109,7 @@ class TestFirewallClientEndpoints:
 
 
 class TestFirewallCreateDataEscapeHatch:
-    """#90: network_create_firewall_rule must accept a full-payload ``data``
+    """#90: unifi_network_create_firewall_rule must accept a full-payload ``data``
     kwarg for fields the scalar args don't expose.
     """
 
@@ -147,7 +147,7 @@ class TestFirewallCreateDataEscapeHatch:
         ctx = AsyncMock()
         ctx.lifespan_context = _FakeLifespan(config=config, clients={"network": client})
 
-        tool = await server.get_tool("network_create_firewall_rule")
+        tool = await server.get_tool("unifi_network_create_firewall_rule")
         full_payload = {
             "name": "from-data",
             "ruleset": "LAN_IN",
@@ -208,7 +208,7 @@ class TestFirewallCreateDataEscapeHatch:
         ctx = AsyncMock()
         ctx.lifespan_context = _FakeLifespan(config=config, clients={"network": client})
 
-        tool = await server.get_tool("network_create_firewall_rule")
+        tool = await server.get_tool("unifi_network_create_firewall_rule")
         await tool.fn(
             ctx,
             name="from-scalars",

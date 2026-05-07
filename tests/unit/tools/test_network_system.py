@@ -13,16 +13,16 @@ from unifi_mcp.tools.network.system import register_system_tools
 BASE_URL = "https://10.0.0.1:443"
 SITE_PREFIX = f"{BASE_URL}/proxy/network/api/s/default"
 
-READ_TOOL_NAMES = {"network_get_settings"}
+READ_TOOL_NAMES = {"unifi_network_get_settings"}
 WRITE_TOOL_NAMES = {
-    "network_update_settings",
-    "network_run_speedtest",
-    "network_create_backup",
-    "network_upgrade_device",
-    "network_power_cycle_port",
-    "network_unauthorize_guest",
-    "network_archive_events",
-    "network_reset_dpi",
+    "unifi_network_update_settings",
+    "unifi_network_run_speedtest",
+    "unifi_network_create_backup",
+    "unifi_network_upgrade_device",
+    "unifi_network_power_cycle_port",
+    "unifi_network_unauthorize_guest",
+    "unifi_network_archive_events",
+    "unifi_network_reset_dpi",
 }
 
 
@@ -47,11 +47,11 @@ class TestSystemToolRegistration:
         "tool_name",
         [
             # Destructive per #49/#50.
-            "network_upgrade_device",
-            "network_power_cycle_port",
+            "unifi_network_upgrade_device",
+            "unifi_network_power_cycle_port",
             # Archive-events + reset-dpi both discard state.
-            "network_archive_events",
-            "network_reset_dpi",
+            "unifi_network_archive_events",
+            "unifi_network_reset_dpi",
         ],
     )
     async def test_destructive_writes_flagged(self, mcp_with_system, tool_name):

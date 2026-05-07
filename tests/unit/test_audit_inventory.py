@@ -47,6 +47,19 @@ class TestReadonlyHidesEveryWriteTool:
         leaking = [t.name for t in tools if "write" in set(t.tags)]
         assert leaking == [], f"Readonly mode is leaking write tools: {leaking}"
 
+    async def test_every_tool_carries_the_unifi_namespace(self):
+        """PROTO-002: every registered tool must start with ``unifi_``."""
+        cfg = UniFiConfig(
+            _env_file=None,
+            unifi_mode=UniFiMode.READWRITE,
+            unifi_network_api="net",
+            unifi_protect_api="prot",
+            unifi_site_manager_api="sm",
+        )
+        server = create_server(cfg)
+        bad = [t.name for t in await server.list_tools() if not t.name.startswith("unifi_")]
+        assert bad == [], f"Tools without unifi_ namespace prefix: {bad}"
+
     async def test_every_registered_write_tool_is_restorable_in_readwrite(self):
         """The inverse: the readwrite set minus the readonly set equals
         exactly the tools tagged ``write``. Proves the gate neither hides
@@ -109,9 +122,9 @@ class TestDegradationMatrix:
     @pytest.mark.parametrize(
         ("env_key", "expected_prefix"),
         [
-            ("UNIFI_NETWORK_API", "network_"),
-            ("UNIFI_PROTECT_API", "protect_"),
-            ("UNIFI_SITE_MANAGER_API", "site_manager_"),
+            ("UNIFI_NETWORK_API", "unifi_network_"),
+            ("UNIFI_PROTECT_API", "unifi_protect_"),
+            ("UNIFI_SITE_MANAGER_API", "unifi_site_manager_"),
         ],
     )
     async def test_single_api_exposes_only_its_namespace(self, monkeypatch, tmp_path, env_key, expected_prefix):
@@ -132,7 +145,7 @@ class TestDegradationMatrix:
             async with aclosing(gen):
                 await gen.__anext__()
                 names = {t.name for t in await server.list_tools()}
-                other_prefixes = {"network_", "protect_", "site_manager_"} - {expected_prefix}
+                other_prefixes = {"unifi_network_", "unifi_protect_", "unifi_site_manager_"} - {expected_prefix}
                 leaks = [n for n in names if any(n.startswith(p) for p in other_prefixes)]
                 assert not leaks, f"{env_key}-only config leaks foreign tools: {leaks}"
                 assert any(n.startswith(expected_prefix) for n in names)
@@ -164,9 +177,9 @@ class TestBadAuthDisablesAnyAPI:
     @pytest.mark.parametrize(
         ("failing_api", "prefix"),
         [
-            ("network", "network_"),
-            ("protect", "protect_"),
-            ("site_manager", "site_manager_"),
+            ("network", "unifi_network_"),
+            ("protect", "unifi_protect_"),
+            ("site_manager", "unifi_site_manager_"),
         ],
     )
     async def test_failing_api_tools_disabled(self, monkeypatch, failing_api, prefix):
@@ -193,7 +206,7 @@ class TestBadAuthDisablesAnyAPI:
                     f"Failing {failing_api} API still exposes tools: {sorted(n for n in names if n.startswith(prefix))}"
                 )
                 # Sanity: the two healthy APIs' tools remain visible.
-                other_prefixes = {"network_", "protect_", "site_manager_"} - {prefix}
+                other_prefixes = {"unifi_network_", "unifi_protect_", "unifi_site_manager_"} - {prefix}
                 for other in other_prefixes:
                     assert any(n.startswith(other) for n in names), f"Healthy API '{other}' unexpectedly hidden"
                 with pytest.raises(StopAsyncIteration):

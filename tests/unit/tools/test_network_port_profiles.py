@@ -21,12 +21,12 @@ from unifi_mcp.tools.network.port_profiles import register_port_profile_tools
 BASE_URL = "https://10.0.0.1:443"
 SITE_PREFIX = f"{BASE_URL}/proxy/network/api/s/default"
 
-READ_TOOL_NAMES = {"network_list_port_profiles", "network_get_port_profile"}
+READ_TOOL_NAMES = {"unifi_network_list_port_profiles", "unifi_network_get_port_profile"}
 WRITE_TOOL_NAMES = {
-    "network_create_port_profile",
-    "network_update_port_profile",
-    "network_delete_port_profile",
-    "network_assign_port_profile",
+    "unifi_network_create_port_profile",
+    "unifi_network_update_port_profile",
+    "unifi_network_delete_port_profile",
+    "unifi_network_assign_port_profile",
 }
 
 
@@ -79,7 +79,7 @@ class TestPortProfileRegistration:
 
     @pytest.mark.parametrize(
         "destructive_tool",
-        ["network_delete_port_profile", "network_assign_port_profile"],
+        ["unifi_network_delete_port_profile", "unifi_network_assign_port_profile"],
     )
     async def test_destructive_flagged(self, mcp_with_profiles, destructive_tool):
         tools = await mcp_with_profiles.list_tools()
@@ -93,7 +93,7 @@ class TestPortProfileModeGating:
         names = {t.name for t in await server.list_tools()}
         for w in WRITE_TOOL_NAMES:
             assert w not in names
-        assert "network_list_port_profiles" in names
+        assert "unifi_network_list_port_profiles" in names
 
     async def test_readwrite_exposes_write_tools(self):
         server = create_server(_config(UniFiMode.READWRITE))
@@ -213,7 +213,7 @@ class TestAssignHandlerPlumbing:
         register_port_profile_tools(server)
         client = AsyncMock()
         ctx = _ctx(_config(UniFiMode.READONLY), network=client)
-        tool = await server.get_tool("network_assign_port_profile")
+        tool = await server.get_tool("unifi_network_assign_port_profile")
         with pytest.raises(ToolError, match="read-only mode"):
             await tool.fn(ctx, mac="aa", port_idx=1, profile_id="p-1")
         client.assign_port_profile.assert_not_awaited()
@@ -224,7 +224,7 @@ class TestAssignHandlerPlumbing:
         client = AsyncMock()
         client.assign_port_profile.return_value = {"ok": True}
         ctx = _ctx(_config(UniFiMode.READWRITE), network=client)
-        tool = await server.get_tool("network_assign_port_profile")
+        tool = await server.get_tool("unifi_network_assign_port_profile")
         result = await tool.fn(ctx, mac="aa", port_idx=7, profile_id="p-7")
         assert result == {"ok": True}
         client.assign_port_profile.assert_awaited_once_with("aa", 7, "p-7")

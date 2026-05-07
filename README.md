@@ -12,7 +12,7 @@ Production-grade Python MCP server for UniFi Site Manager, Network, and Protect 
 
 ## Features
 
-- **77 MCP tools** covering UniFi Network (59), Protect (15), and Site Manager (3) APIs
+- **84 MCP tools** covering UniFi Network (66), Protect (15), and Site Manager (3) APIs, all under the `unifi_*` namespace
 - **Read/write mode separation** — write tools invisible in readonly mode
 - **Graceful per-API degradation** — only registers tools for configured APIs
 - **Typed, linted, tested** — strict `ty`, `ruff`, `pytest` with CI across Python 3.11-3.13
@@ -69,7 +69,7 @@ uv run pre-commit install
 
 ## Known Issues
 
-- **`protect_get_bootstrap` and `protect_list_events` always return 404** —
+- **`unifi_protect_get_bootstrap` and `unifi_protect_list_events` always return 404** —
   [#130](https://github.com/millsmillsymills/unifi-mcp/issues/130). The
   Protect integration API at v1 does not expose `bootstrap` or `events`
   REST endpoints (verified against Protect 7.0.107). The tools are
@@ -82,8 +82,8 @@ uv run pre-commit install
   Protect NVR is on a different IP than your Network controller (common
   with UCK-G2-Plus + UDM/UCG setups), set `UNIFI_PROTECT_HOST` in `.env`.
   The default silently inherits `UNIFI_NETWORK_HOST`, which produces a
-  startup WARN (`protect tools disabled`) and no `protect_*` entries in
-  the tool list.
+  startup WARN (`protect tools disabled`) and no `unifi_protect_*` entries
+  in the tool list.
 
 ## License
 

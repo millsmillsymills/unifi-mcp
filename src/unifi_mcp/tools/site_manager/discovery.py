@@ -14,7 +14,7 @@ def register_site_manager_tools(mcp: FastMCP) -> None:
     """Register all Site Manager tools on the given FastMCP server."""
 
     @mcp.tool(tags={"site_manager"})
-    async def site_manager_list_hosts(ctx: Context) -> dict[str, Any]:
+    async def unifi_site_manager_list_hosts(ctx: Context) -> dict[str, Any]:
         """List all hosts (controllers) registered in UniFi Site Manager.
 
         Args:
@@ -32,7 +32,7 @@ def register_site_manager_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"site_manager"})
-    async def site_manager_list_sites(ctx: Context) -> dict[str, Any]:
+    async def unifi_site_manager_list_sites(ctx: Context) -> dict[str, Any]:
         """List all sites across all hosts in UniFi Site Manager.
 
         Args:
@@ -50,7 +50,7 @@ def register_site_manager_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"site_manager"})
-    async def site_manager_list_devices(ctx: Context, host_id: str | None = None) -> dict[str, Any]:
+    async def unifi_site_manager_list_devices(ctx: Context, host_id: str | None = None) -> dict[str, Any]:
         """List all devices in UniFi Site Manager, optionally filtered by host ID.
 
         Args:

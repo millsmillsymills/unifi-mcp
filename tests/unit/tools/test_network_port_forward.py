@@ -14,11 +14,11 @@ BASE_URL = "https://10.0.0.1:443"
 SITE_PREFIX = f"{BASE_URL}/proxy/network/api/s/default"
 
 ALL_TOOLS = {
-    "network_list_port_forwards",
-    "network_get_port_forward",
-    "network_create_port_forward",
-    "network_update_port_forward",
-    "network_delete_port_forward",
+    "unifi_network_list_port_forwards",
+    "unifi_network_get_port_forward",
+    "unifi_network_create_port_forward",
+    "unifi_network_update_port_forward",
+    "unifi_network_delete_port_forward",
 }
 
 
@@ -41,7 +41,7 @@ class TestPortForwardRegistration:
 
     async def test_delete_marked_destructive(self, mcp_with_pf):
         tools = await mcp_with_pf.list_tools()
-        tool = next(t for t in tools if t.name == "network_delete_port_forward")
+        tool = next(t for t in tools if t.name == "unifi_network_delete_port_forward")
         assert tool.annotations.destructiveHint is True
 
 

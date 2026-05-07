@@ -86,7 +86,7 @@ class TestNetworkStatsHandlers:
         client = AsyncMock()
         client.get_health.return_value = {"data": "ok"}
         ctx = _fake_ctx(_readonly_config(), network=client)
-        result = await _call(server, "network_get_health", ctx)
+        result = await _call(server, "unifi_network_get_health", ctx)
         assert result == {"data": "ok"}
         client.get_health.assert_awaited_once()
 
@@ -94,7 +94,7 @@ class TestNetworkStatsHandlers:
         client = AsyncMock()
         client.list_events.return_value = {"data": []}
         ctx = _fake_ctx(_readonly_config(), network=client)
-        await _call(server, "network_list_events", ctx, limit=7)
+        await _call(server, "unifi_network_list_events", ctx, limit=7)
         client.list_events.assert_awaited_once_with(limit=7)
 
     async def test_error_maps_to_tool_error(self, server):
@@ -102,7 +102,7 @@ class TestNetworkStatsHandlers:
         client.get_health.side_effect = UniFiAuthError("bad", status_code=401)
         ctx = _fake_ctx(_readonly_config(), network=client)
         with pytest.raises(ToolError, match="Authentication failed"):
-            await _call(server, "network_get_health", ctx)
+            await _call(server, "unifi_network_get_health", ctx)
 
 
 # ── Network devices: covers readonly gate + not-found raise path ───────────
@@ -119,7 +119,7 @@ class TestNetworkDeviceHandlers:
         client = AsyncMock()
         client.list_devices.return_value = {"data": [{"mac": "AA:BB", "name": "ap-1"}]}
         ctx = _fake_ctx(_readonly_config(), network=client)
-        result = await _call(server, "network_get_device", ctx, mac="aa:bb")
+        result = await _call(server, "unifi_network_get_device", ctx, mac="aa:bb")
         assert result["name"] == "ap-1"
 
     async def test_get_device_raises_not_found(self, server):
@@ -127,20 +127,20 @@ class TestNetworkDeviceHandlers:
         client.list_devices.return_value = {"data": []}
         ctx = _fake_ctx(_readonly_config(), network=client)
         with pytest.raises(ToolError, match="Resource not found"):
-            await _call(server, "network_get_device", ctx, mac="aa:bb")
+            await _call(server, "unifi_network_get_device", ctx, mac="aa:bb")
 
     async def test_readonly_blocks_restart(self, server):
         client = AsyncMock()
         ctx = _fake_ctx(_readonly_config(), network=client)
         with pytest.raises(ToolError, match="read-only mode"):
-            await _call(server, "network_restart_device", ctx, mac="aa:bb")
+            await _call(server, "unifi_network_restart_device", ctx, mac="aa:bb")
         client.restart_device.assert_not_awaited()
 
     async def test_readwrite_allows_restart(self, server):
         client = AsyncMock()
         client.restart_device.return_value = {"meta": {"rc": "ok"}}
         ctx = _fake_ctx(_readwrite_config(), network=client)
-        result = await _call(server, "network_restart_device", ctx, mac="aa:bb")
+        result = await _call(server, "unifi_network_restart_device", ctx, mac="aa:bb")
         assert result == {"meta": {"rc": "ok"}}
 
 
@@ -158,7 +158,7 @@ class TestNetworkClientHandlers:
         client = AsyncMock()
         client.list_active_clients.return_value = {"data": [{"mac": "AA", "hostname": "host"}]}
         ctx = _fake_ctx(_readonly_config(), network=client)
-        result = await _call(server, "network_get_client", ctx, mac="aa")
+        result = await _call(server, "unifi_network_get_client", ctx, mac="aa")
         assert result["hostname"] == "host"
 
     async def test_get_client_not_found(self, server):
@@ -166,19 +166,19 @@ class TestNetworkClientHandlers:
         client.list_active_clients.return_value = {"data": []}
         ctx = _fake_ctx(_readonly_config(), network=client)
         with pytest.raises(ToolError, match="Resource not found"):
-            await _call(server, "network_get_client", ctx, mac="aa")
+            await _call(server, "unifi_network_get_client", ctx, mac="aa")
 
     async def test_block_client_readonly_blocked(self, server):
         client = AsyncMock()
         ctx = _fake_ctx(_readonly_config(), network=client)
         with pytest.raises(ToolError, match="read-only mode"):
-            await _call(server, "network_block_client", ctx, mac="aa")
+            await _call(server, "unifi_network_block_client", ctx, mac="aa")
 
     async def test_authorize_guest_passes_minutes(self, server):
         client = AsyncMock()
         client.authorize_guest.return_value = {}
         ctx = _fake_ctx(_readwrite_config(), network=client)
-        await _call(server, "network_authorize_guest", ctx, mac="aa", minutes=45)
+        await _call(server, "unifi_network_authorize_guest", ctx, mac="aa", minutes=45)
         client.authorize_guest.assert_awaited_once_with("aa", minutes=45)
 
 
@@ -196,7 +196,7 @@ class TestNetworkWlanHandlers:
         client = AsyncMock()
         client.create_wlan.return_value = {}
         ctx = _fake_ctx(_readwrite_config(), network=client)
-        await _call(server, "network_create_wlan", ctx, name="Guest", x_passphrase="pw", enabled=False)
+        await _call(server, "unifi_network_create_wlan", ctx, name="Guest", x_passphrase="pw", enabled=False)
         args, _ = client.create_wlan.call_args
         payload = args[0]
         assert payload["name"] == "Guest"
@@ -210,7 +210,7 @@ class TestNetworkWlanHandlers:
         client = AsyncMock()
         ctx = _fake_ctx(_readonly_config(), network=client)
         with pytest.raises(ToolError, match="read-only mode"):
-            await _call(server, "network_delete_wlan", ctx, wlan_id="w-1")
+            await _call(server, "unifi_network_delete_wlan", ctx, wlan_id="w-1")
 
 
 # ── Network firewall, networks, port_forward, routing, system — smoke ──────
@@ -220,8 +220,8 @@ class TestNetworkWlanHandlers:
 @pytest.mark.parametrize(
     ("register_fn", "write_tool", "client_method", "kwargs"),
     [
-        (register_firewall_tools, "network_delete_firewall_rule", "delete_firewall_rule", {"rule_id": "r-1"}),
-        (register_system_tools, "network_upgrade_device", "upgrade_device", {"mac": "aa"}),
+        (register_firewall_tools, "unifi_network_delete_firewall_rule", "delete_firewall_rule", {"rule_id": "r-1"}),
+        (register_system_tools, "unifi_network_upgrade_device", "upgrade_device", {"mac": "aa"}),
     ],
 )
 async def test_write_tool_readonly_blocks_and_readwrite_delegates(register_fn, write_tool, client_method, kwargs):
@@ -251,7 +251,7 @@ class TestProtectHandlers:
         client = AsyncMock()
         client.list_cameras.return_value = [{"id": "cam-1"}]
         ctx = _fake_ctx(_readonly_config(), protect=client)
-        result = await _call(s, "protect_list_cameras", ctx)
+        result = await _call(s, "unifi_protect_list_cameras", ctx)
         assert result == [{"id": "cam-1"}]
 
     async def test_update_camera_readonly_blocked(self):
@@ -260,7 +260,7 @@ class TestProtectHandlers:
         client = AsyncMock()
         ctx = _fake_ctx(_readonly_config(), protect=client)
         with pytest.raises(ToolError, match="read-only mode"):
-            await _call(s, "protect_update_camera", ctx, camera_id="cam-1", data={"name": "x"})
+            await _call(s, "unifi_protect_update_camera", ctx, camera_id="cam-1", data={"name": "x"})
 
     async def test_set_recording_mode_forwards_padding(self):
         s = FastMCP(name="t")
@@ -268,7 +268,7 @@ class TestProtectHandlers:
         client = AsyncMock()
         client.set_recording_mode.return_value = {}
         ctx = _fake_ctx(_readwrite_config(), protect=client)
-        await _call(s, "protect_set_recording_mode", ctx, camera_id="cam-1", mode="motion", pre_padding=5)
+        await _call(s, "unifi_protect_set_recording_mode", ctx, camera_id="cam-1", mode="motion", pre_padding=5)
         client.set_recording_mode.assert_awaited_once_with("cam-1", "motion", pre_padding=5, post_padding=None)
 
     async def test_list_chimes_delegates(self):
@@ -277,7 +277,7 @@ class TestProtectHandlers:
         client = AsyncMock()
         client.list_chimes.return_value = [{"id": "c-1"}]
         ctx = _fake_ctx(_readonly_config(), protect=client)
-        result = await _call(s, "protect_list_chimes", ctx)
+        result = await _call(s, "unifi_protect_list_chimes", ctx)
         assert result == [{"id": "c-1"}]
 
     async def test_list_events_passes_filters(self):
@@ -286,7 +286,7 @@ class TestProtectHandlers:
         client = AsyncMock()
         client.list_events.return_value = []
         ctx = _fake_ctx(_readonly_config(), protect=client)
-        await _call(s, "protect_list_events", ctx, camera_ids=["cam-1"], limit=10)
+        await _call(s, "unifi_protect_list_events", ctx, camera_ids=["cam-1"], limit=10)
         _, kwargs = client.list_events.call_args
         assert kwargs["camera_ids"] == ["cam-1"]
         assert kwargs["limit"] == 10
@@ -297,7 +297,7 @@ class TestProtectHandlers:
         client = AsyncMock()
         client.get_nvr.return_value = {"name": "nvr"}
         ctx = _fake_ctx(_readonly_config(), protect=client)
-        result = await _call(s, "protect_get_nvr", ctx)
+        result = await _call(s, "unifi_protect_get_nvr", ctx)
         assert result == {"name": "nvr"}
 
     async def test_update_nvr_readonly_blocked(self):
@@ -306,7 +306,7 @@ class TestProtectHandlers:
         client = AsyncMock()
         ctx = _fake_ctx(_readonly_config(), protect=client)
         with pytest.raises(ToolError, match="read-only mode"):
-            await _call(s, "protect_update_nvr", ctx, data={"name": "x"})
+            await _call(s, "unifi_protect_update_nvr", ctx, data={"name": "x"})
 
     async def test_export_video_plumbs_max_bytes(self):
         s = FastMCP(name="t")
@@ -314,7 +314,7 @@ class TestProtectHandlers:
         client = AsyncMock()
         client.export_video.return_value = b"mp4"
         ctx = _fake_ctx(_readonly_config(), protect=client)
-        result = await _call(s, "protect_export_video", ctx, camera_id="cam-1", start=1, end=2)
+        result = await _call(s, "unifi_protect_export_video", ctx, camera_id="cam-1", start=1, end=2)
         assert result["format"] == "mp4"
         # The max_bytes kwarg should be pulled from config and forwarded.
         _, kwargs = client.export_video.call_args
@@ -327,7 +327,7 @@ class TestProtectHandlers:
         client = AsyncMock()
         client.get_snapshot.return_value = b"\xff\xd8\xff\xe0"
         ctx = _fake_ctx(_readonly_config(), protect=client)
-        result = await _call(s, "protect_get_snapshot", ctx, camera_id="cam-1")
+        result = await _call(s, "unifi_protect_get_snapshot", ctx, camera_id="cam-1")
         assert result["format"] == "jpeg"
         assert result["size_bytes"] == 4
 
@@ -340,4 +340,4 @@ class TestErrorPropagation:
         client.get_health.side_effect = UniFiNotFoundError("missing", status_code=404)
         ctx = _fake_ctx(_readonly_config(), network=client)
         with pytest.raises(ToolError, match="Resource not found"):
-            await _call(s, "network_get_health", ctx)
+            await _call(s, "unifi_network_get_health", ctx)

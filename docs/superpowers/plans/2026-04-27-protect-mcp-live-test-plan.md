@@ -20,7 +20,7 @@
 
 - **Modify:** `tests/integration/test_all_tools_live.py`
   - Add module-level `XFAIL_NO_ARG_READ_TOOLS` set, `_redact_data_base64` helper.
-  - Remove `protect_get_bootstrap` and `protect_list_events` from `NO_ARG_READ_TOOLS`.
+  - Remove `unifi_protect_get_bootstrap` and `unifi_protect_list_events` from `NO_ARG_READ_TOOLS`.
   - Add `TestReadTools.test_xfail_no_arg_read_tool` (parametrized, xfail-strict).
   - Add `TestReadTools.test_protect_get_snapshot_shape`.
   - Add `TestProtectWriteRoundtrips` class (4 round-trip tests, gated by `LIVE_TEST_WRITES=1`).
@@ -78,8 +78,8 @@ uv run pytest tests/integration/test_all_tools_live.py::TestReadTools -v -m inte
 ```
 
 Expected:
-- `test_every_no_arg_read_tool` currently FAILS with `protect_get_bootstrap` and `protect_list_events` in the failures list (because they're in `NO_ARG_READ_TOOLS` without xfail). This is the bug Task 1 fixes — record the exception messages from the artifacts dump for use in the #130 evidence comment later.
-- `test_detail_read_tools_via_list_first` PASSES (covers `protect_get_camera`).
+- `test_every_no_arg_read_tool` currently FAILS with `unifi_protect_get_bootstrap` and `unifi_protect_list_events` in the failures list (because they're in `NO_ARG_READ_TOOLS` without xfail). This is the bug Task 1 fixes — record the exception messages from the artifacts dump for use in the #130 evidence comment later.
+- `test_detail_read_tools_via_list_first` PASSES (covers `unifi_protect_get_camera`).
 
 - [ ] **Step 4: Save the baseline artifacts dir**
 
@@ -87,13 +87,13 @@ Expected:
 ls /Users/mills/Desktop/Projects/unifi-mcp/tests/integration/artifacts/ | tail -1
 ```
 
-Note the most recent timestamp dir — its `protect_get_bootstrap.json` and `protect_list_events.json` files contain the integration-v1 404 response shapes that go into Task 10's #130 evidence comment.
+Note the most recent timestamp dir — its `unifi_protect_get_bootstrap.json` and `unifi_protect_list_events.json` files contain the integration-v1 404 response shapes that go into Task 10's #130 evidence comment.
 
 - [ ] **Step 5: Do not commit anything yet — Task 0 is a verification step.**
 
 ---
 
-## Task 1: Reclassify `protect_get_bootstrap` and `protect_list_events` to xfail-strict at MCP layer
+## Task 1: Reclassify `unifi_protect_get_bootstrap` and `unifi_protect_list_events` to xfail-strict at MCP layer
 
 **Files:**
 - Modify: `tests/integration/test_all_tools_live.py:94-124` (the `NO_ARG_READ_TOOLS` literal) and `tests/integration/test_all_tools_live.py:149-171` (`TestReadTools` class).
@@ -105,21 +105,21 @@ Note the most recent timestamp dir — its `protect_get_bootstrap.json` and `pro
 Find these two lines inside the `NO_ARG_READ_TOOLS = {...}` literal:
 
 ```python
-    "protect_get_bootstrap",
+    "unifi_protect_get_bootstrap",
     ...
-    "protect_list_events",
+    "unifi_protect_list_events",
 ```
 
 Delete both. The Protect block in the set should become:
 
 ```python
     # Protect
-    "protect_get_nvr",
-    "protect_list_cameras",
-    "protect_list_chimes",
-    "protect_list_lights",
-    "protect_list_sensors",
-    "protect_list_viewers",
+    "unifi_protect_get_nvr",
+    "unifi_protect_list_cameras",
+    "unifi_protect_list_chimes",
+    "unifi_protect_list_lights",
+    "unifi_protect_list_sensors",
+    "unifi_protect_list_viewers",
 ```
 
 - [ ] **Step 2: Add `XFAIL_NO_ARG_READ_TOOLS` immediately below `NO_ARG_READ_TOOLS`**
@@ -133,8 +133,8 @@ Insert after the closing `}` of `NO_ARG_READ_TOOLS`, before `# Read tools that t
 # strict xfail flips to a hard failure if Ubiquiti ever adds them back,
 # signaling that #130 can close.
 XFAIL_NO_ARG_READ_TOOLS = {
-    "protect_get_bootstrap": "#130 — integration/v1 has no bootstrap endpoint",
-    "protect_list_events": "#130 — integration/v1 has no events endpoint",
+    "unifi_protect_get_bootstrap": "#130 — integration/v1 has no bootstrap endpoint",
+    "unifi_protect_list_events": "#130 — integration/v1 has no events endpoint",
 }
 ```
 
@@ -187,8 +187,8 @@ uv run pytest tests/integration/test_all_tools_live.py::TestReadTools -v -m inte
 
 Expected:
 - `test_every_no_arg_read_tool` PASSES (because the two #130 tools are no longer in the iterated set).
-- `test_xfail_no_arg_read_tool[protect_get_bootstrap]` XFAILS.
-- `test_xfail_no_arg_read_tool[protect_list_events]` XFAILS.
+- `test_xfail_no_arg_read_tool[unifi_protect_get_bootstrap]` XFAILS.
+- `test_xfail_no_arg_read_tool[unifi_protect_list_events]` XFAILS.
 - `test_detail_read_tools_via_list_first` PASSES.
 
 If `test_every_no_arg_read_tool` still fails on a different Protect tool, that's a real bug — capture the artifacts dump (`tests/integration/artifacts/<latest>/`) and continue to Task 2; we'll triage in Task 10.
@@ -200,7 +200,7 @@ cd /Users/mills/Desktop/Projects/unifi-mcp && git add tests/integration/test_all
 git commit -m "$(cat <<'EOF'
 test: reclassify #130 Protect reads to xfail-strict at MCP layer
 
-protect_get_bootstrap and protect_list_events are documented missing on
+unifi_protect_get_bootstrap and unifi_protect_list_events are documented missing on
 integration v1 (#130). They were in NO_ARG_READ_TOOLS without xfail, so a
 real-hardware run showed them as generic test failures. Move them to a
 new XFAIL_NO_ARG_READ_TOOLS map and assert via parametrized xfail-strict
@@ -214,7 +214,7 @@ EOF
 
 ---
 
-## Task 2: Add MCP-shape test for `protect_get_snapshot`
+## Task 2: Add MCP-shape test for `unifi_protect_get_snapshot`
 
 **Files:**
 - Modify: `tests/integration/test_all_tools_live.py` — add `_redact_data_base64` helper and a new test method inside `TestReadTools`.
@@ -256,18 +256,18 @@ Insert after `test_xfail_no_arg_read_tool` (added in Task 1):
         shape and the decoded bytes are a real JPEG.
         """
         tool_defs = {t.name for t in await live_client.list_tools()}
-        if "protect_get_snapshot" not in tool_defs or "protect_list_cameras" not in tool_defs:
+        if "unifi_protect_get_snapshot" not in tool_defs or "unifi_protect_list_cameras" not in tool_defs:
             pytest.skip("Protect tools not registered")
 
-        cameras = _unwrap_list(await _invoke(live_client, "protect_list_cameras"))
+        cameras = _unwrap_list(await _invoke(live_client, "unifi_protect_list_cameras"))
         if not cameras:
             pytest.skip("No cameras adopted on the NVR")
         camera_id = cameras[0].get("id")
         assert camera_id, f"First camera entry missing id: {cameras[0]!r}"
 
-        payload = await _invoke(live_client, "protect_get_snapshot", {"camera_id": camera_id})
+        payload = await _invoke(live_client, "unifi_protect_get_snapshot", {"camera_id": camera_id})
         artifacts.dump(
-            "protect_get_snapshot",
+            "unifi_protect_get_snapshot",
             {"ok": True, "camera_id": camera_id, "payload": _redact_data_base64(payload)},
         )
 
@@ -310,7 +310,7 @@ Expected: `PASSED`. If it fails, examine the artifacts dump — likely outcomes:
 
 ```bash
 git add tests/integration/test_all_tools_live.py
-git commit -m "test: add MCP-shape assertion for protect_get_snapshot
+git commit -m "test: add MCP-shape assertion for unifi_protect_get_snapshot
 
 Existing client-level test verifies JPEG bytes. The MCP tool wraps bytes
 as {format, data_base64, size_bytes} — verify that envelope at the
@@ -321,12 +321,12 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ---
 
-## Task 3: Add `protect_export_video` client-level tests
+## Task 3: Add `unifi_protect_export_video` client-level tests
 
 **Files:**
 - Modify: `tests/integration/test_protect_live.py` — add `import time` and two tests.
 
-**Why:** `protect_export_video` has zero coverage anywhere in the suite. Memory says snapshot/export against an unknown camera id returns 429 (rate-limit) on integration v1 — interesting but separate. Here we just exercise the happy path against a known camera + one negative shape.
+**Why:** `unifi_protect_export_video` has zero coverage anywhere in the suite. Memory says snapshot/export against an unknown camera id returns 429 (rate-limit) on integration v1 — interesting but separate. Here we just exercise the happy path against a known camera + one negative shape.
 
 - [ ] **Step 1: Add `import time` to the imports block**
 
@@ -428,7 +428,7 @@ Expected: both PASSED. If `test_export_video_reversed_window_raises` does NOT ra
 git add tests/integration/test_protect_live.py
 git commit -m "test: add export_video happy path + reversed-window negative
 
-Cover protect_export_video at the client level — was previously untested
+Cover unifi_protect_export_video at the client level — was previously untested
 anywhere in the suite. Treats 0-byte response as 'no recording yet' skip
 (avoids false negatives on a freshly-adopted camera with no retention).
 
@@ -458,7 +458,7 @@ async def _first_protect_camera_id(client: Client) -> str:
     rather than failing when no camera is adopted (e.g., NVR exists but
     operator hasn't added a camera yet).
     """
-    cameras = _unwrap_list(await _invoke(client, "protect_list_cameras"))
+    cameras = _unwrap_list(await _invoke(client, "unifi_protect_list_cameras"))
     if not cameras:
         pytest.skip("No cameras adopted on the NVR")
     camera_id = cameras[0].get("id")
@@ -485,7 +485,7 @@ class TestProtectWriteRoundtrips:
         """
         camera_id = await _first_protect_camera_id(live_client)
 
-        before = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+        before = await _invoke(live_client, "unifi_protect_get_camera", {"camera_id": camera_id})
         original_mode = (
             before.get("recordingSettings", {}).get("mode")
             if isinstance(before, dict)
@@ -503,12 +503,12 @@ class TestProtectWriteRoundtrips:
         try:
             applied = await _invoke(
                 live_client,
-                "protect_set_recording_mode",
+                "unifi_protect_set_recording_mode",
                 {"camera_id": camera_id, "mode": target},
             )
             artifacts.dump("recording_mode_applied", {"target": target, "response": applied})
 
-            after = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+            after = await _invoke(live_client, "unifi_protect_get_camera", {"camera_id": camera_id})
             after_mode = (
                 after.get("recordingSettings", {}).get("mode")
                 if isinstance(after, dict)
@@ -521,7 +521,7 @@ class TestProtectWriteRoundtrips:
         finally:
             await _invoke(
                 live_client,
-                "protect_set_recording_mode",
+                "unifi_protect_set_recording_mode",
                 {"camera_id": camera_id, "mode": original_mode},
             )
             artifacts.dump("recording_mode_restored", {"restored_mode": original_mode})
@@ -550,7 +550,7 @@ Likely failure modes (each is a finding):
 - `ToolError: Invalid request` from the SET call → the integration v1 PUT shape is different from what `clients/protect.py:set_recording_mode` sends. File as `bug` (Protect write is broken on integration v1) referencing the artifacts dump.
 - `ToolError: Resource not found` → camera id resolution issue at the integration boundary. Capture and continue to next test; investigate in Task 10.
 
-If the test fails, the `finally` still runs and restores the original mode — confirm by re-reading the camera in the UCK UI or via `protect_get_camera`.
+If the test fails, the `finally` still runs and restores the original mode — confirm by re-reading the camera in the UCK UI or via `unifi_protect_get_camera`.
 
 - [ ] **Step 4: Commit (test result either way — passing test commits coverage; failing test commits the regression-detector that will start passing once #130-related write fixes ship)**
 
@@ -583,7 +583,7 @@ Insert after `test_recording_mode_roundtrip`:
         """
         camera_id = await _first_protect_camera_id(live_client)
 
-        before = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+        before = await _invoke(live_client, "unifi_protect_get_camera", {"camera_id": camera_id})
         original = (
             list(before.get("smartDetectSettings", {}).get("objectTypes", []))
             if isinstance(before, dict)
@@ -601,12 +601,12 @@ Insert after `test_recording_mode_roundtrip`:
         try:
             applied = await _invoke(
                 live_client,
-                "protect_set_smart_detection",
+                "unifi_protect_set_smart_detection",
                 {"camera_id": camera_id, "object_types": target},
             )
             artifacts.dump("smart_detection_applied", {"target": target, "response": applied})
 
-            after = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+            after = await _invoke(live_client, "unifi_protect_get_camera", {"camera_id": camera_id})
             after_types = (
                 list(after.get("smartDetectSettings", {}).get("objectTypes", []))
                 if isinstance(after, dict)
@@ -619,7 +619,7 @@ Insert after `test_recording_mode_roundtrip`:
         finally:
             await _invoke(
                 live_client,
-                "protect_set_smart_detection",
+                "unifi_protect_set_smart_detection",
                 {"camera_id": camera_id, "object_types": original},
             )
             artifacts.dump("smart_detection_restored", {"restored": original})
@@ -654,13 +654,13 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```python
     async def test_update_camera_roundtrip(self, live_client, artifacts):
         """Round-trip a string field (name) and a nested settings field
-        (ledSettings.isEnabled) via protect_update_camera. Exercises both
+        (ledSettings.isEnabled) via unifi_protect_update_camera. Exercises both
         the simple-key and nested-dict shapes of PUT cameras/{id} on
         integration v1.
         """
         camera_id = await _first_protect_camera_id(live_client)
 
-        before = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+        before = await _invoke(live_client, "unifi_protect_get_camera", {"camera_id": camera_id})
         if not isinstance(before, dict):
             pytest.skip(f"Camera response is not a dict: {before!r}")
         original_name = before.get("name")
@@ -680,7 +680,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
         try:
             applied = await _invoke(
                 live_client,
-                "protect_update_camera",
+                "unifi_protect_update_camera",
                 {
                     "camera_id": camera_id,
                     "data": {"name": target_name, "ledSettings": {"isEnabled": target_led}},
@@ -691,7 +691,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
                 {"target_name": target_name, "target_led": target_led, "response": applied},
             )
 
-            after = await _invoke(live_client, "protect_get_camera", {"camera_id": camera_id})
+            after = await _invoke(live_client, "unifi_protect_get_camera", {"camera_id": camera_id})
             after_name = after.get("name") if isinstance(after, dict) else None
             after_led = after.get("ledSettings", {}).get("isEnabled") if isinstance(after, dict) else None
             artifacts.dump(
@@ -707,7 +707,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
         finally:
             await _invoke(
                 live_client,
-                "protect_update_camera",
+                "unifi_protect_update_camera",
                 {
                     "camera_id": camera_id,
                     "data": {"name": original_name, "ledSettings": {"isEnabled": original_led}},
@@ -752,11 +752,11 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ```python
     async def test_update_nvr_roundtrip(self, live_client, artifacts):
-        """Round-trip the NVR name via protect_update_nvr. First live-hardware
+        """Round-trip the NVR name via unifi_protect_update_nvr. First live-hardware
         validation of PUT /nvrs on integration v1 — see TODO(#130) in
         clients/protect.py.
         """
-        before = await _invoke(live_client, "protect_get_nvr")
+        before = await _invoke(live_client, "unifi_protect_get_nvr")
         if not isinstance(before, dict):
             pytest.skip(f"NVR response is not a dict: {before!r}")
         original_name = before.get("name")
@@ -769,12 +769,12 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
         try:
             applied = await _invoke(
                 live_client,
-                "protect_update_nvr",
+                "unifi_protect_update_nvr",
                 {"data": {"name": target_name}},
             )
             artifacts.dump("update_nvr_applied", {"target_name": target_name, "response": applied})
 
-            after = await _invoke(live_client, "protect_get_nvr")
+            after = await _invoke(live_client, "unifi_protect_get_nvr")
             after_name = after.get("name") if isinstance(after, dict) else None
             artifacts.dump("update_nvr_readback", {"after_name": after_name, "snapshot": after})
             assert after_name == target_name, (
@@ -783,7 +783,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
         finally:
             await _invoke(
                 live_client,
-                "protect_update_nvr",
+                "unifi_protect_update_nvr",
                 {"data": {"name": original_name}},
             )
             artifacts.dump("update_nvr_restored", {"restored_name": original_name})
@@ -844,7 +844,7 @@ class TestProtectWriteNegatives:
         with pytest.raises(ToolError) as exc_info:
             await _invoke(
                 live_client,
-                "protect_set_recording_mode",
+                "unifi_protect_set_recording_mode",
                 {"camera_id": camera_id, "mode": "this-is-not-a-real-mode"},
             )
         artifacts.dump(
@@ -857,7 +857,7 @@ class TestProtectWriteNegatives:
         with pytest.raises(ToolError) as exc_info:
             await _invoke(
                 live_client,
-                "protect_set_smart_detection",
+                "unifi_protect_set_smart_detection",
                 {"camera_id": camera_id, "object_types": ["blueGiraffe"]},
             )
         artifacts.dump(
@@ -870,7 +870,7 @@ class TestProtectWriteNegatives:
         with pytest.raises(ToolError) as exc_info:
             await _invoke(
                 live_client,
-                "protect_update_camera",
+                "unifi_protect_update_camera",
                 {"camera_id": camera_id, "data": {"thisIsNotAField": "garbage"}},
             )
         artifacts.dump(
@@ -882,7 +882,7 @@ class TestProtectWriteNegatives:
         with pytest.raises(ToolError) as exc_info:
             await _invoke(
                 live_client,
-                "protect_update_nvr",
+                "unifi_protect_update_nvr",
                 {"data": {"thisIsNotAField": "garbage"}},
             )
         artifacts.dump("update_nvr_unknown_field", {"error": str(exc_info.value)})
@@ -950,7 +950,7 @@ The most recent timestamp dir is the evidence source for Task 10 / Task 11.
 
 - [ ] **Step 3: Sanity check — at least one of the assertion-driven tests should have surfaced *something***
 
-If literally every test passed, that's plausible (all-green hardware), but: spot-check the `update_nvr` artifacts dump. If `protect_update_nvr` actually round-tripped successfully on `PUT /nvrs`, that closes the `TODO(#130)` at `clients/protect.py:174` — note that as a positive finding, see Task 10.
+If literally every test passed, that's plausible (all-green hardware), but: spot-check the `update_nvr` artifacts dump. If `unifi_protect_update_nvr` actually round-tripped successfully on `PUT /nvrs`, that closes the `TODO(#130)` at `clients/protect.py:174` — note that as a positive finding, see Task 10.
 
 ---
 
@@ -968,9 +968,9 @@ If Task 1's xfail tests both XFAILed (expected outcome on current hardware):
 gh issue comment 130 --body "$(cat <<'EOF'
 Confirmed against UCK-G2-Plus (Protect 7.0.107) with a freshly-adopted camera, 2026-04-27.
 
-`protect_get_bootstrap` and `protect_list_events` continue to return 404 on `/proxy/protect/integration/v1/`. Locked in at the MCP layer via `XFAIL_NO_ARG_READ_TOOLS` in `tests/integration/test_all_tools_live.py` — strict-xfail flips to a hard failure when Ubiquiti adds these endpoints back, signaling this can close.
+`unifi_protect_get_bootstrap` and `unifi_protect_list_events` continue to return 404 on `/proxy/protect/integration/v1/`. Locked in at the MCP layer via `XFAIL_NO_ARG_READ_TOOLS` in `tests/integration/test_all_tools_live.py` — strict-xfail flips to a hard failure when Ubiquiti adds these endpoints back, signaling this can close.
 
-Evidence: `tests/integration/artifacts/<ts>/protect_get_bootstrap.json`, `protect_list_events.json` (404 envelopes).
+Evidence: `tests/integration/artifacts/<ts>/unifi_protect_get_bootstrap.json`, `unifi_protect_list_events.json` (404 envelopes).
 EOF
 )"
 ```
@@ -1034,7 +1034,7 @@ That validates the long-standing `TODO(#130)` — file or update one issue speci
 
 ```bash
 gh issue create \
-  --title "bug: protect_update_nvr fails on integration v1 — PUT /nvrs path is wrong" \
+  --title "bug: unifi_protect_update_nvr fails on integration v1 — PUT /nvrs path is wrong" \
   --label bug \
   --body "<filled per template, with the artifacts dump>"
 ```
@@ -1056,7 +1056,7 @@ Protect live-test rollout complete.
 
 Tests added: 8 new (export_video x2, snapshot-shape, 4 write-roundtrips, 4 write-negatives) + 1 reclassification (xfail-strict for #130 reads at MCP layer).
 Tests passed: <N>/<total>
-Tests xfailed (expected): protect_get_bootstrap, protect_list_events (#130)
+Tests xfailed (expected): unifi_protect_get_bootstrap, unifi_protect_list_events (#130)
 
 Issues:
 - Updated #130 with current-hardware evidence: <link>

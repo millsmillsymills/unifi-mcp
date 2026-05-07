@@ -112,13 +112,13 @@ class TestToolRegistration:
         """Verify all three site manager tools are registered."""
         tools = await mcp_server.list_tools()
         tool_names = {t.name for t in tools}
-        assert "site_manager_list_hosts" in tool_names
-        assert "site_manager_list_sites" in tool_names
-        assert "site_manager_list_devices" in tool_names
+        assert "unifi_site_manager_list_hosts" in tool_names
+        assert "unifi_site_manager_list_sites" in tool_names
+        assert "unifi_site_manager_list_devices" in tool_names
 
     async def test_tools_have_site_manager_tag(self, mcp_server):
         """Verify tools are tagged with site_manager."""
         tools = await mcp_server.list_tools()
         for tool in tools:
-            if tool.name.startswith("site_manager_"):
+            if tool.name.startswith("unifi_site_manager_"):
                 assert "site_manager" in tool.tags

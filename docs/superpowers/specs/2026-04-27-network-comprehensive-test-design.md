@@ -89,7 +89,7 @@ def protected_macs() -> frozenset[str]:
     """MACs that must NEVER be modified.
 
     Set via UNIFI_MCP_TEST_PROTECTED_MACS=aa:bb:cc:dd:ee:ff,...
-    Fail-fast (with a printed list of devices via network_list_devices)
+    Fail-fast (with a printed list of devices via unifi_network_list_devices)
     if unset — explicit allowlist required, no auto-detection.
     """
 
@@ -165,8 +165,8 @@ Expand `tests/integration/test_network_live.py` from 6 tests to 24 — one per r
 | Module | Tools (one test each) |
 |---|---|
 | `stats` (9) | `get_health`, `list_events`, `list_devices`, `list_devices_basic`, `list_active_clients`, `list_configured_clients`, `list_all_clients`, `get_dpi_stats`, `get_sysinfo` |
-| `clients` (1) | `network_get_client` (parametrized over a MAC pulled from `list_active_clients`) |
-| `devices` (1) | `network_get_device` (parametrized over the `test_target_mac` fixture) |
+| `clients` (1) | `unifi_network_get_client` (parametrized over a MAC pulled from `list_active_clients`) |
+| `devices` (1) | `unifi_network_get_device` (parametrized over the `test_target_mac` fixture) |
 | `firewall` (4) | `list_firewall_rules`, `get_firewall_rule`, `list_firewall_groups`, `get_firewall_group` |
 | `networks` (2) | `list_networks`, `get_network` (uses `default_lan_id` for read; never writes) |
 | `port_forward` (2) | `list_port_forwards`, `get_port_forward` (skips with reason if list empty) |
@@ -228,8 +228,8 @@ Five flows against `test_target_mac`. File-level fixture asserts `target ∉ pro
 | `test_forget_adopt_roundtrip` | `forget_device` → poll until target appears in `pending` (max 180s) → `adopt_device` → poll until `state == 1` (max 240s) | `cleanup_register` retries adopt in `finally`; fail-loud if unrecoverable. |
 
 **Excluded outright:**
-- `network_upgrade_device` — too risky (can brick). Manual-only; documented gap.
-- `network_assign_port_profile` against a port currently in use — only fires against a port pre-flagged "available" (no link state, no LLDP neighbor). If no such port exists, test skips.
+- `unifi_network_upgrade_device` — too risky (can brick). Manual-only; documented gap.
+- `unifi_network_assign_port_profile` against a port currently in use — only fires against a port pre-flagged "available" (no link state, no LLDP neighbor). If no such port exists, test skips.
 
 ### 8.2 `test_network_clients_live.py`
 
@@ -255,15 +255,15 @@ Documented in the spec as "the test most likely to need manual intervention."
 
 | Tool | Test | Marker | Notes |
 |---|---|---|---|
-| `network_get_settings` | `test_get_settings_returns_shape` | non-disruptive | Asserts at least one expected key. |
-| `network_update_settings` | `test_update_settings_no_op_roundtrip` | non-disruptive | No-op pattern: read → write same value → read → assert unchanged. Targets `super_identity.site_desc` (low-stakes string). |
-| `network_run_speedtest` | `test_run_speedtest_returns_result` | **disruptive** | Asserts shape (`xput_download`, `xput_upload`, `latency`). Disruptive because of WAN load. |
-| `network_create_backup` | `test_create_backup_returns_path_or_url` | non-disruptive | Best-effort delete via backup-delete endpoint if exposed; otherwise documented as "leaves ~1MB artifact on controller, manually clearable via UI." |
-| `network_archive_events` | `test_archive_events_returns_ok` | non-disruptive | One-way operation. Only fires if `list_events()` returned ≥1 unarchived event in smoke pass; otherwise skips with reason. |
-| `network_reset_dpi` | `test_reset_dpi` | **disruptive + extra gate** | Triple-gate: marker + `UNIFI_MCP_TEST_ALLOW_DISRUPTIVE=1` + `UNIFI_MCP_TEST_ALLOW_DPI_RESET=1`. Permanent data loss if triggered. |
-| `network_upgrade_device` | — | — | Excluded outright (matches §8.1). |
-| `network_power_cycle_port` | — | — | Covered in `test_network_devices_live.py`. |
-| `network_unauthorize_guest` | — | — | Paired with `authorize_guest` in `test_network_clients_live.py`. |
+| `unifi_network_get_settings` | `test_get_settings_returns_shape` | non-disruptive | Asserts at least one expected key. |
+| `unifi_network_update_settings` | `test_update_settings_no_op_roundtrip` | non-disruptive | No-op pattern: read → write same value → read → assert unchanged. Targets `super_identity.site_desc` (low-stakes string). |
+| `unifi_network_run_speedtest` | `test_run_speedtest_returns_result` | **disruptive** | Asserts shape (`xput_download`, `xput_upload`, `latency`). Disruptive because of WAN load. |
+| `unifi_network_create_backup` | `test_create_backup_returns_path_or_url` | non-disruptive | Best-effort delete via backup-delete endpoint if exposed; otherwise documented as "leaves ~1MB artifact on controller, manually clearable via UI." |
+| `unifi_network_archive_events` | `test_archive_events_returns_ok` | non-disruptive | One-way operation. Only fires if `list_events()` returned ≥1 unarchived event in smoke pass; otherwise skips with reason. |
+| `unifi_network_reset_dpi` | `test_reset_dpi` | **disruptive + extra gate** | Triple-gate: marker + `UNIFI_MCP_TEST_ALLOW_DISRUPTIVE=1` + `UNIFI_MCP_TEST_ALLOW_DPI_RESET=1`. Permanent data loss if triggered. |
+| `unifi_network_upgrade_device` | — | — | Excluded outright (matches §8.1). |
+| `unifi_network_power_cycle_port` | — | — | Covered in `test_network_devices_live.py`. |
+| `unifi_network_unauthorize_guest` | — | — | Paired with `authorize_guest` in `test_network_clients_live.py`. |
 
 ### 9.1 Trade-offs called out
 
@@ -358,7 +358,7 @@ No custom reporter. Three reasons:
 
 - **Site Manager API** — separate API surface (3 read tools); future spec can mirror this approach.
 - **Protect API** — covered by recent #103 work + separate live tests (`test_protect_live.py`).
-- **`network_upgrade_device`** — manual-only; documented gap.
+- **`unifi_network_upgrade_device`** — manual-only; documented gap.
 - **Multi-site testing** — assumes the configured `UNIFI_NETWORK_SITE` (default `default`) is the test site.
 - **CI integration** — live suite never runs in CI (no live hardware).
 

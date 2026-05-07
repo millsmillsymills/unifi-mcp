@@ -14,7 +14,7 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
     """Register Protect accessory device tools."""
 
     @mcp.tool(tags={"protect"})
-    async def protect_list_chimes(ctx: Context) -> list[dict[str, Any]]:
+    async def unifi_protect_list_chimes(ctx: Context) -> list[dict[str, Any]]:
         """List all Protect chime devices.
 
         Args:
@@ -30,7 +30,7 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"protect"})
-    async def protect_list_lights(ctx: Context) -> list[dict[str, Any]]:
+    async def unifi_protect_list_lights(ctx: Context) -> list[dict[str, Any]]:
         """List all Protect smart light devices.
 
         Args:
@@ -46,7 +46,7 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"protect"})
-    async def protect_list_sensors(ctx: Context) -> list[dict[str, Any]]:
+    async def unifi_protect_list_sensors(ctx: Context) -> list[dict[str, Any]]:
         """List all Protect sensor devices.
 
         Args:
@@ -62,7 +62,7 @@ def register_protect_device_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"protect"})
-    async def protect_list_viewers(ctx: Context) -> list[dict[str, Any]]:
+    async def unifi_protect_list_viewers(ctx: Context) -> list[dict[str, Any]]:
         """List all Protect viewport devices.
 
         Args:

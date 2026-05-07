@@ -14,7 +14,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
     """Register network stats tools."""
 
     @mcp.tool(tags={"network"})
-    async def network_get_health(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_get_health(ctx: Context) -> dict[str, Any]:
         """Get health status for all network subsystems (www, wlan, lan, wan).
 
         Args:
@@ -30,7 +30,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_list_events(ctx: Context, limit: int = 100) -> dict[str, Any]:
+    async def unifi_network_list_events(ctx: Context, limit: int = 100) -> dict[str, Any]:
         """List recent network events and alerts.
 
         Args:
@@ -46,7 +46,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_list_devices(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_list_devices(ctx: Context) -> dict[str, Any]:
         """List all adopted network devices with full details (APs, switches, gateways).
 
         Args:
@@ -62,7 +62,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_list_devices_basic(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_list_devices_basic(ctx: Context) -> dict[str, Any]:
         """List all adopted network devices with basic info only (faster than full list).
 
         Args:
@@ -78,7 +78,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_list_active_clients(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_list_active_clients(ctx: Context) -> dict[str, Any]:
         """List all currently connected network clients.
 
         Args:
@@ -94,7 +94,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_list_configured_clients(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_list_configured_clients(ctx: Context) -> dict[str, Any]:
         """List all configured (known) clients, including those not currently connected.
 
         Args:
@@ -110,7 +110,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_list_all_clients(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_list_all_clients(ctx: Context) -> dict[str, Any]:
         """List all clients (active and historical) across all time.
 
         Args:
@@ -126,7 +126,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_get_dpi_stats(ctx: Context, dpi_type: str = "by_app") -> dict[str, Any]:
+    async def unifi_network_get_dpi_stats(ctx: Context, dpi_type: str = "by_app") -> dict[str, Any]:
         """Get deep packet inspection (DPI) statistics.
 
         Args:
@@ -142,7 +142,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"network"})
-    async def network_get_sysinfo(ctx: Context) -> dict[str, Any]:
+    async def unifi_network_get_sysinfo(ctx: Context) -> dict[str, Any]:
         """Get controller system information (version, timezone, etc.).
 
         Args:

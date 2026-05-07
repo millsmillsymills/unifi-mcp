@@ -15,7 +15,7 @@ def register_media_tools(mcp: FastMCP) -> None:
     """Register Protect media tools."""
 
     @mcp.tool(tags={"protect"})
-    async def protect_get_snapshot(ctx: Context, camera_id: str, timestamp: int | None = None) -> dict[str, Any]:
+    async def unifi_protect_get_snapshot(ctx: Context, camera_id: str, timestamp: int | None = None) -> dict[str, Any]:
         """Get a JPEG snapshot from a camera.
 
         The response is base64-encoded inline, so the server caps the snapshot
@@ -44,7 +44,7 @@ def register_media_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"protect"})
-    async def protect_export_video(ctx: Context, camera_id: str, start: int, end: int) -> dict[str, Any]:
+    async def unifi_protect_export_video(ctx: Context, camera_id: str, start: int, end: int) -> dict[str, Any]:
         """Export a video clip from a camera for a time range.
 
         The response is base64-encoded inline, so the server caps the clip at

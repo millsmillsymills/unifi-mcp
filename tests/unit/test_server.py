@@ -39,15 +39,15 @@ class TestModeGating:
         tools = await server.list_tools()
         tool_names = {t.name for t in tools}
         # Write tools should not be visible
-        assert "network_create_wlan" not in tool_names
-        assert "network_delete_wlan" not in tool_names
-        assert "network_restart_device" not in tool_names
-        assert "protect_update_camera" not in tool_names
+        assert "unifi_network_create_wlan" not in tool_names
+        assert "unifi_network_delete_wlan" not in tool_names
+        assert "unifi_network_restart_device" not in tool_names
+        assert "unifi_protect_update_camera" not in tool_names
         # Read tools should be visible
-        assert "network_get_health" in tool_names
-        assert "network_list_devices" in tool_names
-        assert "protect_list_cameras" in tool_names
-        assert "site_manager_list_hosts" in tool_names
+        assert "unifi_network_get_health" in tool_names
+        assert "unifi_network_list_devices" in tool_names
+        assert "unifi_protect_list_cameras" in tool_names
+        assert "unifi_site_manager_list_hosts" in tool_names
 
     async def test_write_tools_enabled_in_readwrite_mode(self):
         config = _make_config(unifi_mode=UniFiMode.READWRITE)
@@ -55,29 +55,29 @@ class TestModeGating:
         tools = await server.list_tools()
         tool_names = {t.name for t in tools}
         # Write tools should be visible
-        assert "network_create_wlan" in tool_names
-        assert "network_delete_wlan" in tool_names
-        assert "network_restart_device" in tool_names
-        assert "protect_update_camera" in tool_names
+        assert "unifi_network_create_wlan" in tool_names
+        assert "unifi_network_delete_wlan" in tool_names
+        assert "unifi_network_restart_device" in tool_names
+        assert "unifi_protect_update_camera" in tool_names
         # Read tools should still be visible
-        assert "network_get_health" in tool_names
-        assert "protect_list_cameras" in tool_names
+        assert "unifi_network_get_health" in tool_names
+        assert "unifi_protect_list_cameras" in tool_names
 
     async def test_no_protect_tools_when_not_configured(self):
         config = _make_config(unifi_protect_api=None)
         server = create_server(config)
         tools = await server.list_tools()
         tool_names = {t.name for t in tools}
-        assert "protect_list_cameras" not in tool_names
-        assert "network_get_health" in tool_names
+        assert "unifi_protect_list_cameras" not in tool_names
+        assert "unifi_network_get_health" in tool_names
 
     async def test_no_site_manager_tools_when_not_configured(self):
         config = _make_config(unifi_site_manager_api=None)
         server = create_server(config)
         tools = await server.list_tools()
         tool_names = {t.name for t in tools}
-        assert "site_manager_list_hosts" not in tool_names
-        assert "network_get_health" in tool_names
+        assert "unifi_site_manager_list_hosts" not in tool_names
+        assert "unifi_network_get_health" in tool_names
 
     async def test_tool_count_readwrite_all_apis(self):
         config = _make_config(unifi_mode=UniFiMode.READWRITE)
