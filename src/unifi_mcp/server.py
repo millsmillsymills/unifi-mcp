@@ -69,7 +69,7 @@ async def _register_client(context: ServerContext, name: str, client: Any) -> Ba
         await _safe_close(name, client)
         return exc
     if valid:
-        context.clients[name] = client  # type: ignore[literal-required]
+        context.clients[name] = client  # type: ignore[literal-required]  # ty: ignore[invalid-key]
         logger.info("%s API client initialized", name)
         return None
     logger.warning("%s API validation returned False — skipping", name)
@@ -81,7 +81,7 @@ async def _register_client(context: ServerContext, name: str, client: Any) -> Ba
     return stashed
 
 
-@lifespan  # type: ignore[arg-type]
+@lifespan  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
     """Initialize clients for configured APIs, validate, and yield context.
 
@@ -184,7 +184,7 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
         # bare Exception here is deliberate: this is a cleanup path, and
         # leaking the first failure aborts the loop and leaks sockets for
         # the remaining clients.
-        clients_to_close: list[tuple[str, BaseUniFiClient]] = list(context.clients.items())  # type: ignore[arg-type]
+        clients_to_close: list[tuple[str, BaseUniFiClient]] = list(context.clients.items())  # type: ignore[arg-type]  # ty: ignore[invalid-assignment]
         for name, c in clients_to_close:
             try:
                 await c.close()

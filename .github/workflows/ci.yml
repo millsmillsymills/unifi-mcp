@@ -55,8 +55,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
-      - name: Mypy
-        run: uv run mypy src/unifi_mcp/
+      - name: ty check
+        run: uv run ty check src/unifi_mcp/
 
   test:
     name: Test (Python ${{ matrix.python-version }})

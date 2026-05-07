@@ -38,7 +38,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "respx>=0.23.1",
     "ruff>=0.15.12",
-    "mypy>=1.20.2",
+    "ty>=0.0.34",
     "bandit[toml]>=1.9.4",
     "pre-commit>=4.6.0",
 ]
@@ -117,35 +117,17 @@ indent-style = "space"
 docstring-code-format = true
 
 # =============================================================================
-# Mypy — strict type checking
+# ty — strict type checking
 # =============================================================================
-[tool.mypy]
-python_version = "3.11"
-strict = true
-warn_return_any = true
-warn_unused_configs = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-no_implicit_optional = true
-show_error_codes = true
-show_column_numbers = true
-plugins = ["pydantic.mypy"]
+[tool.ty]
+src.include = ["src", "tests"]
 
-[[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
+[tool.ty.environment]
+python-version = "3.11"
 
-[[tool.mypy.overrides]]
-module = "fastmcp.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "respx.*"
-ignore_missing_imports = true
+[tool.ty.rules]
+unused-ignore-comment = "warn"
+possibly-unresolved-reference = "warn"
 
 # =============================================================================
 # Pytest — testing
