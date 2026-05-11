@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Production-grade Python MCP server for UniFi Site Manager, Network, and Protect APIs. Published to PyPI as `unifi-mcp`. Uses FastMCP framework with declarative read/write mode separation and graceful per-API degradation.
+Production-grade Python MCP server for UniFi Site Manager, Network, and Protect APIs. Distributed as the `unifi-mcp` package (not yet on PyPI — install from source via `uv sync`). Uses FastMCP framework with declarative read/write mode separation and graceful per-API degradation.
 
 ## Commands
 
@@ -34,6 +34,10 @@ uv run pre-commit run --all-files
 
 # Build package
 uv build
+
+# Run the server (after `uv sync`)
+uv run unifi-mcp                       # readonly mode (default, safe)
+UNIFI_MODE=readwrite uv run unifi-mcp  # exposes the 44 write tools
 ```
 
 ## Architecture
@@ -42,8 +46,9 @@ uv build
 src/unifi_mcp/
 ├── __init__.py          # Package root, exports __version__
 ├── __main__.py          # Entry point: creates and runs server
+├── _logging.py          # Structured logging setup
 ├── server.py            # FastMCP server creation + lifespan
-├── config.py            # Pydantic settings (env vars)
+├── config.py            # Pydantic settings (env vars, including UNIFI_MODE)
 ├── errors.py            # Exception hierarchy + error mapping
 ├── clients/             # API clients (httpx async)
 │   ├── base.py          # BaseUniFiClient with retry/auth/error mapping
@@ -93,12 +98,19 @@ if config.protect_enabled:
     register_protect_tools(mcp)
 ```
 
+## Gotchas
+
+- **Protect host must be set on split deployments (#107)**: If Protect runs on a separate UCK/NVR from the gateway, `UNIFI_PROTECT_HOST` must be set explicitly. The default inherits `UNIFI_NETWORK_HOST`, `validate_connection` fails at startup, and every Protect tool deregisters with a single WARN line.
+- **API keys are service-scoped (#131)**: A Network-scoped key returns 401 on `/proxy/protect/...`. `UNIFI_NETWORK_API` and `UNIFI_PROTECT_API` must be issued under their respective services in UniFi OS.
+- **Protect bootstrap/events endpoints (#130)**: `unifi_protect_get_bootstrap` and `unifi_protect_list_events` always return 404 against the v1 integration API — left registered for parity but non-functional.
+- **No Pydantic validation layer between clients and tools**: An earlier `src/unifi_mcp/models/` layer was abandoned; clients pass raw `dict[str, Any]` straight to tools. Don't reintroduce one without a clear motivating constraint.
+
 ## CI/CD
 
 - **CI**: Runs on push to main and PRs. Lint (ruff), typecheck (ty), and test (pytest) all on Python 3.13
-- **Release**: Triggered by `v*` tags. Builds with `uv build` (hatchling backend), publishes to TestPyPI then PyPI via trusted publishing
 - **Security**: Weekly Bandit scans + dependency review on PRs
 - **Dependabot**: Weekly updates for Python deps and GitHub Actions
+- **Release**: No automated release pipeline yet — `uv build` produces a wheel locally; PyPI publishing is not wired up
 
 ## Canonical MCP standards
 
