@@ -27,6 +27,7 @@ class NetworkClient(BaseUniFiClient):
         *,
         site: str = "default",
         verify_ssl: bool = False,
+        cert_fingerprint: str | None = None,
         timeout: int = 30,
         max_retries: int = 3,
     ) -> None:
@@ -35,6 +36,7 @@ class NetworkClient(BaseUniFiClient):
             base_url=base_url,
             api_key=api_key,
             verify_ssl=verify_ssl,
+            cert_fingerprint=cert_fingerprint,
             timeout=timeout,
             max_retries=max_retries,
         )

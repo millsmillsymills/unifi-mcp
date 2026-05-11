@@ -612,8 +612,12 @@ class TestDeviceLocateCycle:
         if not items:
             pytest.skip("No adopted devices to locate")
 
+        online = [d for d in items if isinstance(d, dict) and d.get("state") == 1]
+        if not online:
+            pytest.skip("No online adopted devices to locate")
+
         failures: list[tuple[str, str]] = []
-        for dev in items:
+        for dev in online:
             mac = dev.get("mac")
             if not mac:
                 continue
@@ -621,6 +625,17 @@ class TestDeviceLocateCycle:
                 await _invoke(live_client, "unifi_network_locate_device", {"mac": mac})
                 await _invoke(live_client, "unifi_network_unlocate_device", {"mac": mac})
                 artifacts.dump(f"locate_cycle-{mac}", {"ok": True, "mac": mac})
+            except ToolError as exc:
+                # Race: device went offline between list_devices and locate. Skip
+                # rather than fail the whole cycle.
+                if "api.err.DeviceOffline" in str(exc):
+                    artifacts.dump(
+                        f"locate_cycle-{mac}",
+                        {"ok": False, "skipped": True, "reason": "DeviceOffline", "mac": mac},
+                    )
+                    continue
+                failures.append((mac, f"{type(exc).__name__}: {exc}"))
+                artifacts.dump(f"locate_cycle-{mac}", {"ok": False, "error": f"{type(exc).__name__}: {exc}"})
             except Exception as exc:
                 failures.append((mac, f"{type(exc).__name__}: {exc}"))
                 artifacts.dump(f"locate_cycle-{mac}", {"ok": False, "error": f"{type(exc).__name__}: {exc}"})
