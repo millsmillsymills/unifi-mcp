@@ -16,6 +16,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from unifi_mcp.clients._pinning import CertPinningTransport
 from unifi_mcp.errors import (
     UniFiAuthError,
     UniFiBadRequestError,
@@ -48,17 +49,25 @@ class BaseUniFiClient(ABC):
         api_key: str,
         *,
         verify_ssl: bool = False,
+        cert_fingerprint: str | None = None,
         timeout: int = 30,
         max_retries: int = 3,
     ) -> None:
         self._api_key = api_key
         self._max_retries = max_retries
-        self._client = httpx.AsyncClient(
-            base_url=base_url,
-            headers={"X-API-Key": api_key},
-            verify=verify_ssl,
-            timeout=httpx.Timeout(timeout),
-        )
+        client_kwargs: dict[str, Any] = {
+            "base_url": base_url,
+            "headers": {"X-API-Key": api_key},
+            "timeout": httpx.Timeout(timeout),
+        }
+        if cert_fingerprint is not None:
+            # Pinning takes precedence over verify_ssl: chain/hostname checks
+            # are disabled inside the pinning transport because the pin is
+            # the trust anchor.
+            client_kwargs["transport"] = CertPinningTransport(expected_fingerprint=cert_fingerprint)
+        else:
+            client_kwargs["verify"] = verify_ssl
+        self._client = httpx.AsyncClient(**client_kwargs)
         # Captured by validate_connection on failure so the lifespan can
         # report WHY the API was disabled (auth vs. unreachability vs. path
         # mismatch) instead of a generic "validate_connection failed". See

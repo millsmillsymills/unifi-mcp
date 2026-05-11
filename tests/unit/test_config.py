@@ -1,6 +1,7 @@
 """Tests for UniFi MCP configuration."""
 
 import logging
+import socket
 
 import pytest
 from pydantic import ValidationError
@@ -15,6 +16,9 @@ from unifi_mcp.errors import (
     UniFiReadOnlyError,
     handle_client_error,
 )
+
+_PIN = "a" * 64  # 64 hex chars — valid canonical pin
+_PIN_WITH_COLONS = ":".join(["aa"] * 32)  # 32 pairs of 'aa' joined by colons
 
 
 class TestUniFiMode:
@@ -295,3 +299,160 @@ class TestHandleClientError:
         with pytest.raises(Exception, match="Unexpected error") as exc_info:
             handle_client_error(RuntimeError("boom"))
         assert "[HTTP" not in str(exc_info.value)
+
+
+class TestCertFingerprintValidation:
+    """Item 3 of #149: fingerprint format is validated at load time."""
+
+    def test_accepts_canonical_64_hex(self):
+        config = UniFiConfig(_env_file=None, unifi_network_cert_fingerprint=_PIN)
+        assert config.unifi_network_cert_fingerprint == _PIN
+
+    def test_accepts_colon_separated_openssl_form(self):
+        config = UniFiConfig(_env_file=None, unifi_protect_cert_fingerprint=_PIN_WITH_COLONS)
+        # Canonical form: colons stripped, lowercase.
+        assert config.unifi_protect_cert_fingerprint == "aa" * 32
+
+    def test_accepts_uppercase_hex(self):
+        config = UniFiConfig(_env_file=None, unifi_network_cert_fingerprint=_PIN.upper())
+        assert config.unifi_network_cert_fingerprint == _PIN
+
+    def test_empty_string_normalizes_to_none(self):
+        """Unset env vars come through as empty strings; treat as None, not
+        as an invalid fingerprint."""
+        config = UniFiConfig(_env_file=None, unifi_network_cert_fingerprint="")
+        assert config.unifi_network_cert_fingerprint is None
+
+    def test_rejects_too_short(self):
+        with pytest.raises(ValidationError, match="64 hex chars"):
+            UniFiConfig(_env_file=None, unifi_network_cert_fingerprint="aa")
+
+    def test_rejects_non_hex(self):
+        bad = "z" * 64
+        with pytest.raises(ValidationError, match="64 hex chars"):
+            UniFiConfig(_env_file=None, unifi_protect_cert_fingerprint=bad)
+
+    def test_rejects_wrong_length_with_colons(self):
+        with pytest.raises(ValidationError, match="64 hex chars"):
+            UniFiConfig(_env_file=None, unifi_network_cert_fingerprint="aa:bb:cc")
+
+
+class TestVerifySSLAudit:
+    """Items 1+2 of #149: warn on verify_ssl=False with an API key set."""
+
+    def test_silent_when_verify_ssl_true(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="unifi_mcp.config"):
+            UniFiConfig(
+                _env_file=None,
+                unifi_network_host="10.0.0.1",
+                unifi_network_api="k",
+                unifi_network_verify_ssl=True,
+            )
+        assert not [r for r in caplog.records if "verify_ssl=False" in r.getMessage()]
+
+    def test_silent_when_no_api_key(self, caplog):
+        """Without an API key the service won't register tools, so the WARN
+        would be noise."""
+        with caplog.at_level(logging.WARNING, logger="unifi_mcp.config"):
+            UniFiConfig(
+                _env_file=None,
+                unifi_network_host="10.0.0.1",
+                unifi_network_verify_ssl=False,
+            )
+        assert not [r for r in caplog.records if "verify_ssl=False" in r.getMessage()]
+
+    def test_unconditional_warn_on_private_host(self, caplog, monkeypatch):
+        """Item 1: private host still gets the unconditional WARN, but not
+        the public-IP MITM WARN."""
+        monkeypatch.setattr(socket, "gethostbyname", lambda _h: "10.0.0.1")
+        with caplog.at_level(logging.WARNING, logger="unifi_mcp.config"):
+            UniFiConfig(
+                _env_file=None,
+                unifi_network_host="10.0.0.1",
+                unifi_network_api="k",
+            )
+        messages = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        unconditional = [m for m in messages if "verify_ssl=False for Network" in m]
+        public = [m for m in messages if "non-private host" in m]
+        assert len(unconditional) == 1, messages
+        assert public == [], messages
+        assert "10.0.0.1" in unconditional[0]
+
+    def test_both_warns_on_public_ip(self, caplog, monkeypatch):
+        """Item 2: a non-RFC1918 resolution triggers the additional MITM WARN."""
+        monkeypatch.setattr(socket, "gethostbyname", lambda _h: "8.8.8.8")
+        with caplog.at_level(logging.WARNING, logger="unifi_mcp.config"):
+            UniFiConfig(
+                _env_file=None,
+                unifi_network_host="controller.example.com",
+                unifi_network_api="k",
+            )
+        messages = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        unconditional = [m for m in messages if "verify_ssl=False for Network" in m]
+        public = [m for m in messages if "non-private host" in m and "MITM" in m]
+        assert len(unconditional) == 1, messages
+        assert len(public) == 1, messages
+        assert "8.8.8.8" in public[0]
+        assert "controller.example.com" in public[0]
+
+    def test_dns_failure_soft_warns(self, caplog, monkeypatch):
+        """DNS failure must not crash startup; emit a soft WARN that the
+        non-private check was skipped."""
+
+        def boom(_h: str) -> str:
+            raise socket.gaierror("nodename nor servname provided")
+
+        monkeypatch.setattr(socket, "gethostbyname", boom)
+        with caplog.at_level(logging.WARNING, logger="unifi_mcp.config"):
+            UniFiConfig(
+                _env_file=None,
+                unifi_network_host="does-not-resolve.invalid",
+                unifi_network_api="k",
+            )
+        messages = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("verify_ssl=False for Network" in m for m in messages), messages
+        assert any("could not resolve" in m for m in messages), messages
+        # The public-IP WARN must NOT fire when resolution failed.
+        assert not any("non-private host" in m and "MITM" in m for m in messages), messages
+
+    def test_loopback_treated_as_safe(self, caplog, monkeypatch):
+        monkeypatch.setattr(socket, "gethostbyname", lambda _h: "127.0.0.1")
+        with caplog.at_level(logging.WARNING, logger="unifi_mcp.config"):
+            UniFiConfig(
+                _env_file=None,
+                unifi_network_host="127.0.0.1",
+                unifi_network_api="k",
+            )
+        messages = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert not any("non-private host" in m for m in messages), messages
+
+    def test_protect_branch_uses_protect_host(self, caplog, monkeypatch):
+        """Protect host should be evaluated separately and surface 'Protect'
+        in the WARN."""
+        monkeypatch.setattr(socket, "gethostbyname", lambda _h: "8.8.8.8")
+        with caplog.at_level(logging.WARNING, logger="unifi_mcp.config"):
+            UniFiConfig(
+                _env_file=None,
+                unifi_network_host="10.0.0.1",
+                unifi_protect_host="protect.example.com",
+                unifi_protect_api="k",
+                unifi_network_api=None,
+            )
+        messages = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("verify_ssl=False for Protect" in m for m in messages), messages
+        assert any("for Protect" in m and "non-private host" in m for m in messages), messages
+
+    def test_pin_suppresses_verify_ssl_warns(self, caplog, monkeypatch):
+        """Item 3: pinning provides identity, so the verify_ssl WARNs should
+        not fire even on a non-private host."""
+        monkeypatch.setattr(socket, "gethostbyname", lambda _h: "8.8.8.8")
+        with caplog.at_level(logging.WARNING, logger="unifi_mcp.config"):
+            UniFiConfig(
+                _env_file=None,
+                unifi_network_host="controller.example.com",
+                unifi_network_api="k",
+                unifi_network_cert_fingerprint=_PIN,
+            )
+        messages = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert not [m for m in messages if "verify_ssl=False" in m], messages
+        assert not [m for m in messages if "non-private host" in m], messages
