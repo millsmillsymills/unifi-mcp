@@ -1,0 +1,165 @@
+"""Tests for the certificate-pinning transport.
+
+These tests don't exercise a real TLS handshake — they construct an
+``httpx.Response`` whose ``network_stream`` extension is a stub that returns
+a controlled ``ssl_object``. That's enough to verify the pin comparison
+logic without standing up a live HTTPS server.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import ssl
+from typing import Any
+
+import httpx
+import pytest
+
+from unifi_mcp.clients._pinning import (
+    CertPinningTransport,
+    build_pinning_ssl_context,
+    fingerprint_of,
+)
+from unifi_mcp.errors import UniFiAuthError
+
+# Deterministic fake DER bytes — content doesn't matter, only its hash.
+_FAKE_DER = b"\x30\x82\x01\x00fake-cert-bytes-for-testing"
+_FAKE_FP = hashlib.sha256(_FAKE_DER).hexdigest()
+
+
+class _FakeSSLObject:
+    def __init__(self, der: bytes | None) -> None:
+        self._der = der
+
+    def getpeercert(self, binary_form: bool = False) -> bytes | None:
+        assert binary_form is True
+        return self._der
+
+
+class _FakeNetworkStream:
+    def __init__(self, ssl_object: object | None) -> None:
+        self._ssl_object = ssl_object
+
+    def get_extra_info(self, info: str) -> object | None:
+        if info == "ssl_object":
+            return self._ssl_object
+        return None
+
+
+def _make_response(ssl_object: object | None) -> httpx.Response:
+    """Build an httpx.Response carrying a stubbed ``network_stream`` extension."""
+    return httpx.Response(
+        status_code=200,
+        extensions={"network_stream": _FakeNetworkStream(ssl_object)},
+    )
+
+
+class TestBuildPinningSSLContext:
+    def test_disables_hostname_and_chain_verification(self):
+        ctx = build_pinning_ssl_context()
+        assert ctx.check_hostname is False
+        assert ctx.verify_mode == ssl.CERT_NONE
+
+
+class TestFingerprintOf:
+    def test_canonical_hex(self):
+        assert fingerprint_of(_FAKE_DER) == _FAKE_FP
+        assert len(fingerprint_of(_FAKE_DER)) == 64
+
+
+class TestVerifyPin:
+    """``_verify_pin`` is the only post-handshake logic worth unit-testing."""
+
+    def test_passes_on_matching_pin(self):
+        transport = CertPinningTransport(expected_fingerprint=_FAKE_FP)
+        response = _make_response(_FakeSSLObject(_FAKE_DER))
+        # No exception = pass.
+        transport._verify_pin(response)
+
+    def test_accepts_uppercase_pin_input(self):
+        """The transport normalizes the configured pin to lowercase."""
+        transport = CertPinningTransport(expected_fingerprint=_FAKE_FP.upper())
+        response = _make_response(_FakeSSLObject(_FAKE_DER))
+        transport._verify_pin(response)
+
+    def test_raises_on_mismatch(self):
+        bad_pin = "b" * 64
+        transport = CertPinningTransport(expected_fingerprint=bad_pin)
+        response = _make_response(_FakeSSLObject(_FAKE_DER))
+        with pytest.raises(UniFiAuthError) as exc:
+            transport._verify_pin(response)
+        assert "pin mismatch" in str(exc.value)
+        assert bad_pin in str(exc.value)
+        assert _FAKE_FP in str(exc.value)
+
+    def test_raises_when_no_ssl_object(self):
+        transport = CertPinningTransport(expected_fingerprint=_FAKE_FP)
+        response = _make_response(None)
+        with pytest.raises(UniFiAuthError, match="no ssl_object"):
+            transport._verify_pin(response)
+
+    def test_raises_when_peer_cert_empty(self):
+        transport = CertPinningTransport(expected_fingerprint=_FAKE_FP)
+        response = _make_response(_FakeSSLObject(b""))
+        with pytest.raises(UniFiAuthError, match="no certificate"):
+            transport._verify_pin(response)
+
+
+class TestCertPinningTransportHandlesRequests:
+    """End-to-end: ``handle_async_request`` should call ``_verify_pin``."""
+
+    async def test_handle_async_request_invokes_verification(self, monkeypatch):
+        transport = CertPinningTransport(expected_fingerprint=_FAKE_FP)
+
+        async def fake_super(self_: Any, request: httpx.Request) -> httpx.Response:
+            return _make_response(_FakeSSLObject(_FAKE_DER))
+
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", fake_super)
+        request = httpx.Request("GET", "https://example.invalid/")
+        response = await transport.handle_async_request(request)
+        assert response.status_code == 200
+
+    async def test_handle_async_request_propagates_mismatch(self, monkeypatch):
+        transport = CertPinningTransport(expected_fingerprint="c" * 64)
+
+        async def fake_super(self_: Any, request: httpx.Request) -> httpx.Response:
+            return _make_response(_FakeSSLObject(_FAKE_DER))
+
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", fake_super)
+        request = httpx.Request("GET", "https://example.invalid/")
+        with pytest.raises(UniFiAuthError, match="pin mismatch"):
+            await transport.handle_async_request(request)
+
+
+class TestClientIntegration:
+    """Pinning should be wired into ``NetworkClient`` / ``ProtectClient``."""
+
+    def test_network_client_uses_pinning_transport_when_fingerprint_set(self):
+        from unifi_mcp.clients.network import NetworkClient
+
+        client = NetworkClient(
+            base_url="https://10.0.0.1:443",
+            api_key="k",
+            cert_fingerprint=_FAKE_FP,
+        )
+        # The underlying transport on the AsyncClient should be ours.
+        assert isinstance(client._client._transport, CertPinningTransport)
+
+    def test_protect_client_uses_pinning_transport_when_fingerprint_set(self):
+        from unifi_mcp.clients.protect import ProtectClient
+
+        client = ProtectClient(
+            base_url="https://10.0.0.1:443",
+            api_key="k",
+            cert_fingerprint=_FAKE_FP,
+        )
+        assert isinstance(client._client._transport, CertPinningTransport)
+
+    def test_no_pinning_transport_when_fingerprint_absent(self):
+        from unifi_mcp.clients.network import NetworkClient
+
+        client = NetworkClient(
+            base_url="https://10.0.0.1:443",
+            api_key="k",
+        )
+        assert not isinstance(client._client._transport, CertPinningTransport)

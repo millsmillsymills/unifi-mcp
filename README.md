@@ -125,6 +125,72 @@ See [.env.example](.env.example) for all configuration options.
 | `UNIFI_NETWORK_API` | — | Network API key |
 | `UNIFI_PROTECT_API` | — | Protect API key |
 | `UNIFI_SITE_MANAGER_API` | — | Site Manager cloud API key |
+| `UNIFI_NETWORK_VERIFY_SSL` | `false` | Validate the Network controller's TLS chain |
+| `UNIFI_PROTECT_VERIFY_SSL` | `false` | Validate the Protect NVR's TLS chain |
+| `UNIFI_NETWORK_CERT_FINGERPRINT` | — | SHA-256 leaf-cert pin (Network); takes precedence over chain verification |
+| `UNIFI_PROTECT_CERT_FINGERPRINT` | — | SHA-256 leaf-cert pin (Protect); takes precedence over chain verification |
+
+## TLS
+
+UniFi controllers ship self-signed certificates, so `UNIFI_*_VERIFY_SSL`
+defaults to `false`. That bypasses chain and hostname verification entirely:
+anyone on the path between the MCP server and the controller can present
+their own cert and harvest the `X-API-Key` header. The server emits a
+startup `WARNING` for every service running with `verify_ssl=False` and an
+additional `WARNING` when the resolved host is not RFC1918, loopback, or
+link-local.
+
+You have three options to silence the warnings safely.
+
+### Option A — Pin the controller's leaf cert (recommended for self-signed)
+
+Capture the fingerprint once:
+
+```bash
+openssl s_client -connect <host>:443 -servername <host> </dev/null 2>/dev/null \
+  | openssl x509 -fingerprint -sha256 -noout
+```
+
+Set it in the environment:
+
+```bash
+UNIFI_NETWORK_CERT_FINGERPRINT=AA:BB:CC:...      # colons optional, case-insensitive
+UNIFI_PROTECT_CERT_FINGERPRINT=DD:EE:FF:...
+```
+
+When a pin is set, the client validates the leaf cert's SHA-256 fingerprint
+on every response and refuses to talk to any other cert. Chain and hostname
+verification are bypassed because the pin replaces them — that's the whole
+point of pinning a self-signed cert. If the controller's cert is rotated,
+the pin must be updated; mismatched pins fail loudly with the expected vs.
+actual fingerprints in the error.
+
+### Option B — Install your own CA and enable full verification
+
+If you've configured your controller with a cert signed by your own CA,
+point Python at the CA bundle and turn full verification on:
+
+```bash
+# Either of these env vars is honored by Python's ssl module
+export SSL_CERT_FILE=/path/to/your-ca-bundle.pem
+# (httpx/requests also honor REQUESTS_CA_BUNDLE)
+export REQUESTS_CA_BUNDLE=/path/to/your-ca-bundle.pem
+
+UNIFI_NETWORK_VERIFY_SSL=true
+UNIFI_PROTECT_VERIFY_SSL=true
+```
+
+On macOS you can alternatively install the CA into the System keychain and
+mark it trusted for SSL; on Linux drop it into `/usr/local/share/ca-certificates/`
+and run `update-ca-certificates`. Either path teaches the platform trust
+store about your CA so `verify_ssl=true` works without a custom bundle.
+
+### Option C — Stay on `verify_ssl=False` (not recommended)
+
+Accept the startup `WARNING`. Only safe on a trusted private LAN where you
+control every hop between the MCP server and the controller. The
+non-private-host extra `WARNING` is a strong hint that this option doesn't
+fit your topology.
 
 ## Development
 
