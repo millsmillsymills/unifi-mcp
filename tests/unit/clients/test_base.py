@@ -240,6 +240,40 @@ class TestErrorBodyExtraction:
             f"expected DEBUG log with full body; got {[r.getMessage() for r in caplog.records]!r}"
         )
 
+    @respx.mock
+    async def test_empty_body_401_yields_empty_body_hint(self, client):
+        """Empty body must produce '(empty body)' instead of a dangling
+        'HTTP 401: ' so operators have something to look up.
+        """
+        respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(401, text=""))
+        with pytest.raises(UniFiAuthError) as exc_info:
+            await client.get("/test")
+        msg = str(exc_info.value)
+        assert "(empty body)" in msg
+        assert not msg.rstrip().endswith(":")
+
+    @respx.mock
+    async def test_empty_body_401_with_www_authenticate_includes_header(self, client):
+        """When the body is empty but WWW-Authenticate is present, surface
+        the header value in the hint so operators can identify the scheme.
+        """
+        respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(401, text="", headers={"WWW-Authenticate": "Bearer"})
+        )
+        with pytest.raises(UniFiAuthError) as exc_info:
+            await client.get("/test")
+        assert "(empty body; WWW-Authenticate: Bearer)" in str(exc_info.value)
+
+    @respx.mock
+    async def test_whitespace_only_body_treated_as_empty(self, client):
+        """A body containing only whitespace is functionally the same as an
+        empty body — same hint, no dangling colon.
+        """
+        respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(401, text="   \n\t  "))
+        with pytest.raises(UniFiAuthError) as exc_info:
+            await client.get("/test")
+        assert "(empty body)" in str(exc_info.value)
+
 
 class TestMalformedJson:
     @respx.mock

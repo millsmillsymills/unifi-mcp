@@ -119,6 +119,14 @@ class BaseUniFiClient(ABC):
         try:
             data = response.json()
         except ValueError:
+            if not response.text.strip():
+                # Empty (or whitespace-only) body: surface a hint instead of an
+                # uninformative dangling "HTTP 401: " so operators have something
+                # to look up. WWW-Authenticate is the most useful auth-error clue.
+                www_auth = response.headers.get("www-authenticate")
+                if www_auth:
+                    return f"(empty body; WWW-Authenticate: {www_auth})"
+                return "(empty body)"
             return fallback
         if not isinstance(data, dict):
             return fallback
