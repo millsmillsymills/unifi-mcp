@@ -1,4 +1,4 @@
-"""Read-mode tools must redact secrets before returning to the agent (#146)."""
+"""Read-mode tools must redact secrets before returning to the agent (#146, #203)."""
 
 from __future__ import annotations
 
@@ -12,9 +12,16 @@ from fastmcp import FastMCP
 from unifi_mcp._redaction import REDACTED
 from unifi_mcp.config import UniFiConfig, UniFiMode
 from unifi_mcp.tools.network.clients import register_client_tools
+from unifi_mcp.tools.network.firewall import register_firewall_tools
+from unifi_mcp.tools.network.port_forward import register_port_forward_tools
+from unifi_mcp.tools.network.port_profiles import register_port_profile_tools
+from unifi_mcp.tools.network.routing import register_routing_tools
+from unifi_mcp.tools.network.stats import register_stats_tools
 from unifi_mcp.tools.network.system import register_system_tools
 from unifi_mcp.tools.network.wlan import register_wlan_tools
+from unifi_mcp.tools.protect.devices import register_protect_device_tools
 from unifi_mcp.tools.protect.nvr import register_nvr_tools
+from unifi_mcp.tools.site_manager.discovery import register_site_manager_tools
 
 
 @dataclass
@@ -144,3 +151,261 @@ class TestProtectNvrRedaction:
         result = await _call(server, "unifi_protect_get_nvr", ctx)
         assert result["ssoToken"] == REDACTED
         assert result["name"] == "CloudKey"
+
+
+class TestNetworkStatsRedaction:
+    """#203 — extend redaction to remaining stats tools."""
+
+    @pytest.fixture
+    def server(self) -> FastMCP:
+        s = FastMCP(name="t")
+        register_stats_tools(s)
+        return s
+
+    async def test_get_health_redacts_token(self, server):
+        network_client = AsyncMock()
+        network_client.get_health = AsyncMock(
+            return_value={"data": [{"subsystem": "wlan", "token": "leak", "status": "ok"}]},
+        )
+        ctx = _fake_ctx(network=network_client)
+        result = await _call(server, "unifi_network_get_health", ctx)
+        assert result["data"][0]["token"] == REDACTED
+        assert result["data"][0]["subsystem"] == "wlan"
+
+    async def test_list_events_redacts_password(self, server):
+        network_client = AsyncMock()
+        network_client.list_events = AsyncMock(
+            return_value={"data": [{"msg": "User login", "password": "raw-pw"}]},
+        )
+        ctx = _fake_ctx(network=network_client)
+        result = await _call(server, "unifi_network_list_events", ctx, limit=10)
+        assert result["data"][0]["password"] == REDACTED
+        assert result["data"][0]["msg"] == "User login"
+
+    async def test_get_dpi_stats_redacts_secret(self, server):
+        network_client = AsyncMock()
+        network_client.get_dpi_stats = AsyncMock(
+            return_value={"data": [{"app": "https", "client_secret": "leak"}]},
+        )
+        ctx = _fake_ctx(network=network_client)
+        result = await _call(server, "unifi_network_get_dpi_stats", ctx)
+        assert result["data"][0]["client_secret"] == REDACTED
+
+    async def test_get_sysinfo_redacts_super_password(self, server):
+        network_client = AsyncMock()
+        network_client.get_sysinfo = AsyncMock(
+            return_value={"data": [{"version": "9.0.0", "super_mgmt_password": "leak"}]},
+        )
+        ctx = _fake_ctx(network=network_client)
+        result = await _call(server, "unifi_network_get_sysinfo", ctx)
+        assert result["data"][0]["super_mgmt_password"] == REDACTED
+
+
+class TestNetworkFirewallRedaction:
+    """#203 — firewall read tools may surface RADIUS-like secrets."""
+
+    @pytest.fixture
+    def server(self) -> FastMCP:
+        s = FastMCP(name="t")
+        register_firewall_tools(s)
+        return s
+
+    async def test_list_firewall_rules_redacts_secret(self, server):
+        network_client = AsyncMock()
+        network_client.list_firewall_rules = AsyncMock(
+            return_value={"data": [{"name": "block-x", "secret": "leak"}]},
+        )
+        ctx = _fake_ctx(network=network_client)
+        result = await _call(server, "unifi_network_list_firewall_rules", ctx)
+        assert result["data"][0]["secret"] == REDACTED
+        assert result["data"][0]["name"] == "block-x"
+
+    async def test_get_firewall_rule_redacts_token(self, server):
+        network_client = AsyncMock()
+        network_client.get_firewall_rule = AsyncMock(
+            return_value={"_id": "fw-1", "token": "leak", "name": "r1"},
+        )
+        ctx = _fake_ctx(network=network_client)
+        result = await _call(server, "unifi_network_get_firewall_rule", ctx, rule_id="fw-1")
+        assert result["token"] == REDACTED
+
+    async def test_list_firewall_groups_redacts_password(self, server):
+        network_client = AsyncMock()
+        network_client.list_firewall_groups = AsyncMock(
+            return_value={"data": [{"name": "g1", "password": "leak"}]},
+        )
+        ctx = _fake_ctx(network=network_client)
+        result = await _call(server, "unifi_network_list_firewall_groups", ctx)
+        assert result["data"][0]["password"] == REDACTED
+
+    async def test_get_firewall_group_redacts_apikey(self, server):
+        network_client = AsyncMock()
+        network_client.get_firewall_group = AsyncMock(
+            return_value={"_id": "g-1", "api_key": "leak", "name": "g"},
+        )
+        ctx = _fake_ctx(network=network_client)
+        result = await _call(server, "unifi_network_get_firewall_group", ctx, group_id="g-1")
+        assert result["api_key"] == REDACTED
+
+
+class TestNetworkPortForwardRedaction:
+    @pytest.fixture
+    def server(self) -> FastMCP:
+        s = FastMCP(name="t")
+        register_port_forward_tools(s)
+        return s
+
+    async def test_list_port_forwards_redacts_password(self, server):
+        network_client = AsyncMock()
+        network_client.list_port_forwards = AsyncMock(
+            return_value={"data": [{"name": "ssh", "password": "leak"}]},
+        )
+        ctx = _fake_ctx(network=network_client)
+        result = await _call(server, "unifi_network_list_port_forwards", ctx)
+        assert result["data"][0]["password"] == REDACTED
+
+    async def test_get_port_forward_redacts_secret(self, server):
+        network_client = AsyncMock()
+        network_client.get_port_forward = AsyncMock(
+            return_value={"_id": "pf-1", "client_secret": "leak", "name": "pf"},
+        )
+        ctx = _fake_ctx(network=network_client)
+        result = await _call(server, "unifi_network_get_port_forward", ctx, port_forward_id="pf-1")
+        assert result["client_secret"] == REDACTED
+
+
+class TestNetworkPortProfileRedaction:
+    @pytest.fixture
+    def server(self) -> FastMCP:
+        s = FastMCP(name="t")
+        register_port_profile_tools(s)
+        return s
+
+    async def test_list_port_profiles_redacts_token(self, server):
+        network_client = AsyncMock()
+        network_client.list_port_profiles = AsyncMock(
+            return_value={"data": [{"name": "default", "token": "leak"}]},
+        )
+        ctx = _fake_ctx(network=network_client)
+        result = await _call(server, "unifi_network_list_port_profiles", ctx)
+        assert result["data"][0]["token"] == REDACTED
+
+    async def test_get_port_profile_redacts_password(self, server):
+        network_client = AsyncMock()
+        network_client.get_port_profile = AsyncMock(
+            return_value={"_id": "p-1", "password": "leak", "name": "ap-default"},
+        )
+        ctx = _fake_ctx(network=network_client)
+        result = await _call(server, "unifi_network_get_port_profile", ctx, profile_id="p-1")
+        assert result["password"] == REDACTED
+
+
+class TestNetworkRoutingRedaction:
+    @pytest.fixture
+    def server(self) -> FastMCP:
+        s = FastMCP(name="t")
+        register_routing_tools(s)
+        return s
+
+    async def test_list_routes_redacts_secret(self, server):
+        network_client = AsyncMock()
+        network_client.list_routes = AsyncMock(
+            return_value={"data": [{"name": "lan", "secret": "leak"}]},
+        )
+        ctx = _fake_ctx(network=network_client)
+        result = await _call(server, "unifi_network_list_routes", ctx)
+        assert result["data"][0]["secret"] == REDACTED
+
+    async def test_get_route_redacts_token(self, server):
+        network_client = AsyncMock()
+        network_client.get_route = AsyncMock(
+            return_value={"_id": "r-1", "token": "leak", "name": "r"},
+        )
+        ctx = _fake_ctx(network=network_client)
+        result = await _call(server, "unifi_network_get_route", ctx, route_id="r-1")
+        assert result["token"] == REDACTED
+
+
+class TestProtectDevicesRedaction:
+    """#203 — Protect accessory list tools return list[dict]."""
+
+    @pytest.fixture
+    def server(self) -> FastMCP:
+        s = FastMCP(name="t")
+        register_protect_device_tools(s)
+        return s
+
+    async def test_list_chimes_redacts_password(self, server):
+        protect_client = AsyncMock()
+        protect_client.list_chimes = AsyncMock(
+            return_value=[{"id": "c-1", "name": "Doorbell", "password": "leak"}],
+        )
+        ctx = _fake_ctx(protect=protect_client)
+        result = await _call(server, "unifi_protect_list_chimes", ctx)
+        assert result[0]["password"] == REDACTED
+        assert result[0]["name"] == "Doorbell"
+
+    async def test_list_lights_redacts_token(self, server):
+        protect_client = AsyncMock()
+        protect_client.list_lights = AsyncMock(
+            return_value=[{"id": "l-1", "name": "Porch", "token": "leak"}],
+        )
+        ctx = _fake_ctx(protect=protect_client)
+        result = await _call(server, "unifi_protect_list_lights", ctx)
+        assert result[0]["token"] == REDACTED
+
+    async def test_list_sensors_redacts_secret(self, server):
+        protect_client = AsyncMock()
+        protect_client.list_sensors = AsyncMock(
+            return_value=[{"id": "s-1", "name": "Door", "client_secret": "leak"}],
+        )
+        ctx = _fake_ctx(protect=protect_client)
+        result = await _call(server, "unifi_protect_list_sensors", ctx)
+        assert result[0]["client_secret"] == REDACTED
+
+    async def test_list_viewers_redacts_sso_token(self, server):
+        protect_client = AsyncMock()
+        protect_client.list_viewers = AsyncMock(
+            return_value=[{"id": "v-1", "name": "Wall", "ssoToken": "leak"}],
+        )
+        ctx = _fake_ctx(protect=protect_client)
+        result = await _call(server, "unifi_protect_list_viewers", ctx)
+        assert result[0]["ssoToken"] == REDACTED
+
+
+class TestSiteManagerDiscoveryRedaction:
+    """#203 — Site Manager listings could surface controller bearer tokens."""
+
+    @pytest.fixture
+    def server(self) -> FastMCP:
+        s = FastMCP(name="t")
+        register_site_manager_tools(s)
+        return s
+
+    async def test_list_hosts_redacts_token(self, server):
+        site_manager_client = AsyncMock()
+        site_manager_client.list_hosts = AsyncMock(
+            return_value={"data": [{"id": "h-1", "hostName": "uck", "token": "leak"}]},
+        )
+        ctx = _fake_ctx(site_manager=site_manager_client)
+        result = await _call(server, "unifi_site_manager_list_hosts", ctx)
+        assert result["data"][0]["token"] == REDACTED
+        assert result["data"][0]["hostName"] == "uck"
+
+    async def test_list_sites_redacts_secret(self, server):
+        site_manager_client = AsyncMock()
+        site_manager_client.list_sites = AsyncMock(
+            return_value={"data": [{"id": "s-1", "meta": {"name": "HQ"}, "secret": "leak"}]},
+        )
+        ctx = _fake_ctx(site_manager=site_manager_client)
+        result = await _call(server, "unifi_site_manager_list_sites", ctx)
+        assert result["data"][0]["secret"] == REDACTED
+
+    async def test_list_devices_redacts_apikey(self, server):
+        site_manager_client = AsyncMock()
+        site_manager_client.list_devices = AsyncMock(
+            return_value={"data": [{"id": "d-1", "mac": "aa:bb", "api_key": "leak"}]},
+        )
+        ctx = _fake_ctx(site_manager=site_manager_client)
+        result = await _call(server, "unifi_site_manager_list_devices", ctx)
+        assert result["data"][0]["api_key"] == REDACTED

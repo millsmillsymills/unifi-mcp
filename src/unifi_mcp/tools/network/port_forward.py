@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context, reject_dangerous_keys
+from unifi_mcp.tools._common import JsonObject, get_server_context, redact_secrets, reject_dangerous_keys
 
 
 def register_port_forward_tools(mcp: FastMCP) -> None:
@@ -21,11 +21,11 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
             ctx: FastMCP request context.
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].list_port_forwards()
+            return redact_secrets(await context.clients["network"].list_port_forwards())
         except Exception as e:
             handle_client_error(e)
 
@@ -37,11 +37,11 @@ def register_port_forward_tools(mcp: FastMCP) -> None:
             port_forward_id: The port forward rule ID.
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].get_port_forward(port_forward_id)
+            return redact_secrets(await context.clients["network"].get_port_forward(port_forward_id))
         except Exception as e:
             handle_client_error(e)
 
