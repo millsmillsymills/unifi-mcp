@@ -52,8 +52,11 @@ class NetworkClient(BaseUniFiClient):
         """List recent events / alarms.
 
         Uses ``list/alarm``. Both legacy ``stat/event`` and ``stat/alarm`` now
-        return 404 on current UniFi controllers; ``list/alarm`` is the
-        surviving path for site-wide alarm history.
+        return 404 on current UniFi controllers; ``list/alarm`` was the
+        surviving path for site-wide alarm history, but UCG Ultra firmware
+        also returns ``api.err.NotFound`` here (tracked in #138). The MCP
+        layer keeps the tool registered behind a strict xfail until either
+        the new path is identified or the tool is retired.
         """
         result: dict[str, Any] = await self.get("list/alarm", params={"_limit": limit})
         return result

@@ -96,7 +96,6 @@ async def live_client():
 NO_ARG_READ_TOOLS = {
     # Network stats / system
     "unifi_network_get_health",
-    "unifi_network_list_events",
     "unifi_network_list_devices",
     "unifi_network_list_devices_basic",
     "unifi_network_list_active_clients",
@@ -123,14 +122,16 @@ NO_ARG_READ_TOOLS = {
     "unifi_site_manager_list_devices",
 }
 
-# Read tools that exist in the registered set but have no integration-v1
-# endpoint — the legacy /proxy/protect/api/ exposed bootstrap and events,
-# the new /proxy/protect/integration/v1/ does not. Tracked in #130. The
-# strict xfail flips to a hard failure if Ubiquiti ever adds them back,
-# signaling that #130 can close.
+# Read tools that exist in the registered set but always 404 against the
+# current UniFi APIs — either the integration-v1 surface never exposed them
+# (Protect bootstrap/events, #130) or the legacy Network endpoint has been
+# retired (network_list_events on UCG Ultra, #138). The strict xfail flips
+# to a hard failure if Ubiquiti adds them back, signaling the tracking
+# issue can close.
 XFAIL_NO_ARG_READ_TOOLS = {
     "unifi_protect_get_bootstrap": "#130 — integration/v1 has no bootstrap endpoint",
     "unifi_protect_list_events": "#130 — integration/v1 has no events endpoint",
+    "unifi_network_list_events": "#138 — list/alarm 404s on current UCG Ultra firmware",
 }
 
 # Read tools that take required args; covered via the detail-fetch harness.
@@ -214,12 +215,14 @@ class TestReadTools:
         ],
     )
     async def test_xfail_no_arg_read_tool(self, live_client, artifacts, tool_name):
-        """Tools that should fail today per #130. Strict xfail flips to a hard
-        failure if Ubiquiti adds these endpoints back, signaling #130 can close.
+        """Tools that should fail today per their tracking issue (see the
+        ``XFAIL_NO_ARG_READ_TOOLS`` reason strings). Strict xfail flips to a
+        hard failure if Ubiquiti restores the endpoint, signaling that the
+        tracking issue can close.
         """
         tool_defs = {t.name for t in await live_client.list_tools()}
         if tool_name not in tool_defs:
-            pytest.skip(f"{tool_name} not registered (Protect API not configured?)")
+            pytest.skip(f"{tool_name} not registered (API not configured?)")
         payload = await _invoke(live_client, tool_name)
         # If we got here, the integration API now exposes this endpoint —
         # capture the payload so the operator can confirm the new shape.
