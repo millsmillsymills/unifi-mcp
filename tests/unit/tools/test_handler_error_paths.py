@@ -218,7 +218,13 @@ ERROR_PATH_CASES: list[tuple[Any, str, str, str, dict[str, Any]]] = [
     (register_routing_tools, "unifi_network_delete_route", "delete_route", "network", {"route_id": "r"}),
     # System
     (register_system_tools, "unifi_network_get_settings", "get_settings", "network", {}),
-    (register_system_tools, "unifi_network_update_settings", "update_settings", "network", {"data": {}}),
+    (
+        register_system_tools,
+        "unifi_network_update_settings",
+        "update_settings",
+        "network",
+        {"data": {"timezone": "UTC"}},
+    ),
     (register_system_tools, "unifi_network_run_speedtest", "run_speedtest", "network", {}),
     (register_system_tools, "unifi_network_create_backup", "create_backup", "network", {}),
     (register_system_tools, "unifi_network_upgrade_device", "upgrade_device", "network", {"mac": "aa:bb:cc:dd:ee:ff"}),
@@ -241,7 +247,13 @@ ERROR_PATH_CASES: list[tuple[Any, str, str, str, dict[str, Any]]] = [
     # Protect
     (register_camera_tools, "unifi_protect_list_cameras", "list_cameras", "protect", {}),
     (register_camera_tools, "unifi_protect_get_camera", "get_camera", "protect", {"camera_id": "c"}),
-    (register_camera_tools, "unifi_protect_update_camera", "update_camera", "protect", {"camera_id": "c", "data": {}}),
+    (
+        register_camera_tools,
+        "unifi_protect_update_camera",
+        "update_camera",
+        "protect",
+        {"camera_id": "c", "data": {"name": "cam"}},
+    ),
     (
         register_camera_tools,
         "unifi_protect_set_recording_mode",
@@ -261,7 +273,7 @@ ERROR_PATH_CASES: list[tuple[Any, str, str, str, dict[str, Any]]] = [
     (register_protect_device_tools, "unifi_protect_list_sensors", "list_sensors", "protect", {}),
     (register_protect_device_tools, "unifi_protect_list_viewers", "list_viewers", "protect", {}),
     (register_nvr_tools, "unifi_protect_get_nvr", "get_nvr", "protect", {}),
-    (register_nvr_tools, "unifi_protect_update_nvr", "update_nvr", "protect", {"data": {}}),
+    (register_nvr_tools, "unifi_protect_update_nvr", "update_nvr", "protect", {"data": {"name": "nvr"}}),
     (register_media_tools, "unifi_protect_get_snapshot", "get_snapshot", "protect", {"camera_id": "c"}),
     (
         register_media_tools,

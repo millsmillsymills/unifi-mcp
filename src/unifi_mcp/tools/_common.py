@@ -130,7 +130,12 @@ def reject_dangerous_keys(data: Any, *, tool_name: str) -> None:
 # similar short tokens, never URL-shaped.
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-_MAC_RE = re.compile(r"^[0-9a-fA-F:.-]{12,17}$")
+_MAC_RE = re.compile(
+    r"(?:^[0-9a-fA-F]{12}$)"
+    r"|(?:^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$)"
+    r"|(?:^([0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}$)"
+    r"|(?:^([0-9a-fA-F]{4}\.){2}[0-9a-fA-F]{4}$)"
+)
 
 
 def validate_id(value: str, *, field: str) -> None:
@@ -221,7 +226,7 @@ def build_named_arg_body(
     supplied_named = {k: v for k, v in named_values.items() if v is not None}
     if supplied_named and data is not None:
         raise UniFiBadRequestError("Cannot mix named args with raw data dict")
-    if data is not None:
+    if data:
         return data
     if not supplied_named:
         raise UniFiBadRequestError(f"{tool_name}: at least one field must be provided")

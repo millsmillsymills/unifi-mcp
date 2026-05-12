@@ -192,7 +192,13 @@ NETWORK_HAPPY_PATHS = [
     (register_routing_tools, "unifi_network_delete_route", "delete_route", {"route_id": "r-1"}, None),
     # system
     (register_system_tools, "unifi_network_get_settings", "get_settings", {}, None),
-    (register_system_tools, "unifi_network_update_settings", "update_settings", {"data": {}}, None),
+    (
+        register_system_tools,
+        "unifi_network_update_settings",
+        "update_settings",
+        {"data": {"timezone": "UTC"}},
+        None,
+    ),
     (register_system_tools, "unifi_network_run_speedtest", "run_speedtest", {}, None),
     (register_system_tools, "unifi_network_create_backup", "create_backup", {}, None),
     (
@@ -231,7 +237,12 @@ async def test_network_tool_happy_path(register_fn, tool_name, client_method, to
 
 PROTECT_HAPPY_PATHS = [
     (register_camera_tools, "unifi_protect_get_camera", "get_camera", {"camera_id": "cam-1"}),
-    (register_camera_tools, "unifi_protect_update_camera", "update_camera", {"camera_id": "cam-1", "data": {}}),
+    (
+        register_camera_tools,
+        "unifi_protect_update_camera",
+        "update_camera",
+        {"camera_id": "cam-1", "data": {"name": "cam"}},
+    ),
     (
         register_camera_tools,
         "unifi_protect_set_smart_detection",
