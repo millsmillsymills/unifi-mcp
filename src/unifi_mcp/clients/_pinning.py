@@ -6,20 +6,25 @@ entirely — anyone in the network path can present any cert and harvest the
 ``X-API-Key`` header. Pinning the SHA-256 fingerprint of the leaf cert
 restores identity verification without requiring users to install a custom CA:
 the operator captures the fingerprint once with ``openssl s_client`` and the
-client refuses to talk to any other cert.
+client rejects responses from any cert that doesn't match the pin.
 
 The pin replaces chain + hostname verification — that's the whole point of
 pinning self-signed certs — so the ``ssl.SSLContext`` we hand to httpx still
 has ``check_hostname=False`` and ``verify_mode=CERT_NONE``. After the TLS
 handshake completes, ``handle_async_request`` reads the leaf DER from the
 httpcore ``ssl_object`` extension, hashes it, and compares against the
-configured pin. A mismatch closes the connection and raises
-``UniFiAuthError`` so the agent sees an actionable, status-coded failure
-instead of a confused HTTP error later.
+configured pin. This is a post-handshake detector, NOT a pre-send preventer:
+the API key has already been written to the wire by the time the check
+runs. On mismatch the transport closes the streamed response, evicts the
+offending connection from its pool, and raises ``UniFiAuthError`` so the
+agent sees an actionable failure and so a subsequent request can't reuse the
+suspect socket. Moving verification to a true pre-send check would require a
+custom ``ssl.SSLContext`` cert callback; that work is deferred (see #189).
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import ssl
 from typing import Any
@@ -54,7 +59,8 @@ class CertPinningTransport(httpx.AsyncHTTPTransport):
     After each handled request, the underlying httpcore network stream is
     queried for its ``ssl_object``; the peer's leaf DER is hashed and
     compared against the configured pin. A mismatch raises
-    ``UniFiAuthError`` and the response is discarded.
+    ``UniFiAuthError``, closes the streamed response, and evicts the
+    matching connection from the underlying pool so it can't be reused.
 
     The check runs once per *response*, not once per *connection* — keep-alive
     means subsequent requests reuse the same socket, and re-checking is cheap
@@ -68,8 +74,41 @@ class CertPinningTransport(httpx.AsyncHTTPTransport):
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         response = await super().handle_async_request(request)
-        self._verify_pin(response)
+        try:
+            self._verify_pin(response)
+        except UniFiAuthError:
+            await self._teardown_on_mismatch(response, request)
+            raise
         return response
+
+    async def _teardown_on_mismatch(self, response: httpx.Response, request: httpx.Request) -> None:
+        """Close the streamed response and evict the offending pool connection.
+
+        Best-effort: any error during teardown is suppressed so the original
+        ``UniFiAuthError`` reaches the caller unchanged. The pin check
+        happens *after* the TLS handshake completes, so the API key has
+        already been written to the wire; tearing the connection down here
+        prevents the suspect socket from being reused by subsequent requests
+        to the same origin.
+        """
+        with contextlib.suppress(Exception):
+            await response.aclose()
+        pool = getattr(self, "_pool", None)
+        if pool is None:
+            return
+        target_host = request.url.raw_host
+        target_port = request.url.port or (443 if request.url.scheme == "https" else 80)
+        try:
+            connections = list(getattr(pool, "connections", ()))
+        except Exception:
+            return
+        for conn in connections:
+            origin = getattr(conn, "_origin", None)
+            if origin is None:
+                continue
+            if getattr(origin, "host", None) == target_host and getattr(origin, "port", None) == target_port:
+                with contextlib.suppress(Exception):
+                    await conn.aclose()
 
     def _verify_pin(self, response: httpx.Response) -> None:
         """Hash the peer leaf cert and compare against the configured pin.
@@ -84,14 +123,13 @@ class CertPinningTransport(httpx.AsyncHTTPTransport):
         if ssl_object is None:
             raise UniFiAuthError(
                 "cert pin configured but TLS layer exposed no ssl_object; "
-                "refusing to send API key over an unverified connection",
+                "rejecting response from unverified connection",
                 status_code=None,
             )
         der = ssl_object.getpeercert(binary_form=True)
         if not der:
             raise UniFiAuthError(
-                "cert pin configured but peer presented no certificate; "
-                "refusing to send API key over an unverified connection",
+                "cert pin configured but peer presented no certificate; rejecting response from unverified connection",
                 status_code=None,
             )
         actual = fingerprint_of(der)

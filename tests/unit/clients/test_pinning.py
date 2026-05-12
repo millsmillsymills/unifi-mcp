@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import ssl
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -129,6 +130,82 @@ class TestCertPinningTransportHandlesRequests:
         request = httpx.Request("GET", "https://example.invalid/")
         with pytest.raises(UniFiAuthError, match="pin mismatch"):
             await transport.handle_async_request(request)
+
+
+class TestTeardownOnMismatch:
+    """#189: pin mismatch must close the response and evict the pool entry.
+
+    Cert pinning runs *after* the TLS handshake and request send, so the API
+    key has already been written by the time the pin check fires. Tearing the
+    suspect connection down deterministically prevents reuse.
+    """
+
+    async def test_mismatch_closes_response(self, monkeypatch):
+        transport = CertPinningTransport(expected_fingerprint="c" * 64)
+        response = _make_response(_FakeSSLObject(_FAKE_DER))
+        response.aclose = AsyncMock()  # type: ignore[method-assign]
+
+        async def fake_super(self_: Any, request: httpx.Request) -> httpx.Response:
+            return response
+
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", fake_super)
+        request = httpx.Request("GET", "https://example.invalid/")
+        with pytest.raises(UniFiAuthError, match="pin mismatch"):
+            await transport.handle_async_request(request)
+        response.aclose.assert_awaited_once()
+
+    async def test_mismatch_evicts_matching_pool_connection(self, monkeypatch):
+        transport = CertPinningTransport(expected_fingerprint="c" * 64)
+        response = _make_response(_FakeSSLObject(_FAKE_DER))
+
+        class _FakeOrigin:
+            host = b"example.invalid"
+            port = 443
+
+        class _FakeConn:
+            def __init__(self) -> None:
+                self._origin = _FakeOrigin()
+                self.aclose = AsyncMock()
+
+        matching = _FakeConn()
+
+        # A non-matching connection for a different host should NOT be touched.
+        class _OtherOrigin:
+            host = b"other.invalid"
+            port = 443
+
+        non_matching = _FakeConn()
+        non_matching._origin = _OtherOrigin()  # type: ignore[assignment]
+
+        class _FakePool:
+            def __init__(self, conns: list[_FakeConn]) -> None:
+                self.connections = conns
+
+        transport._pool = _FakePool([matching, non_matching])  # type: ignore[assignment]
+
+        async def fake_super(self_: Any, request: httpx.Request) -> httpx.Response:
+            return response
+
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", fake_super)
+        request = httpx.Request("GET", "https://example.invalid/")
+        with pytest.raises(UniFiAuthError, match="pin mismatch"):
+            await transport.handle_async_request(request)
+        matching.aclose.assert_awaited_once()
+        non_matching.aclose.assert_not_awaited()
+
+    async def test_success_path_does_not_teardown(self, monkeypatch):
+        transport = CertPinningTransport(expected_fingerprint=_FAKE_FP)
+        response = _make_response(_FakeSSLObject(_FAKE_DER))
+        response.aclose = AsyncMock()  # type: ignore[method-assign]
+
+        async def fake_super(self_: Any, request: httpx.Request) -> httpx.Response:
+            return response
+
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", fake_super)
+        request = httpx.Request("GET", "https://example.invalid/")
+        result = await transport.handle_async_request(request)
+        assert result is response
+        response.aclose.assert_not_awaited()
 
 
 class TestClientIntegration:
