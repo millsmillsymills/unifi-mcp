@@ -1,12 +1,13 @@
-"""Validator rollout regression tests (#207).
+"""Validator rollout regression tests (#206 + #207).
 
 PR #206 wired ``validate_id`` / ``validate_mac`` (from
-``unifi_mcp.tools._common``) into a starter set of tools. This issue
-extends the gate to every remaining ID-taking and MAC-taking tool.
-
-These tests assert, for each newly-wired tool, that a path-traversal
-payload (or otherwise non-conforming value) is rejected at the tool
-layer *before* the request reaches the upstream client method.
+``unifi_mcp.tools._common``) into a starter set of tools; #207 extended
+the gate to every remaining ID-taking and MAC-taking tool. This file is
+the combined regression net: it asserts, for *every* ID/MAC-taking tool
+across Network, Protect, and Site Manager, that a path-traversal payload
+is rejected at the tool layer before the request reaches the upstream
+client method. A future change that drops a validator on any of these
+tools will fail here.
 
 The contract:
 
@@ -36,6 +37,8 @@ from unifi_mcp.tools.network.port_profiles import register_port_profile_tools
 from unifi_mcp.tools.network.routing import register_routing_tools
 from unifi_mcp.tools.network.system import register_system_tools
 from unifi_mcp.tools.network.wlan import register_wlan_tools
+from unifi_mcp.tools.protect.cameras import register_camera_tools
+from unifi_mcp.tools.protect.media import register_media_tools
 from unifi_mcp.tools.site_manager.discovery import register_site_manager_tools
 
 TRAVERSAL = "../foo"
@@ -222,6 +225,50 @@ ID_TAKING_TOOLS: list[tuple[Any, str, dict[str, Any], str, str]] = [
         "list_devices",
         "site_manager",
     ),
+    # protect/cameras — wired in #206, pinned here so a future regression fails
+    (
+        register_camera_tools,
+        "unifi_protect_get_camera",
+        {"camera_id": TRAVERSAL},
+        "get_camera",
+        "protect",
+    ),
+    (
+        register_camera_tools,
+        "unifi_protect_update_camera",
+        {"camera_id": TRAVERSAL, "data": {}},
+        "update_camera",
+        "protect",
+    ),
+    (
+        register_camera_tools,
+        "unifi_protect_set_recording_mode",
+        {"camera_id": TRAVERSAL, "mode": "motion"},
+        "set_recording_mode",
+        "protect",
+    ),
+    (
+        register_camera_tools,
+        "unifi_protect_set_smart_detection",
+        {"camera_id": TRAVERSAL, "object_types": ["person"]},
+        "set_smart_detection",
+        "protect",
+    ),
+    # protect/media — wired in #206
+    (
+        register_media_tools,
+        "unifi_protect_get_snapshot",
+        {"camera_id": TRAVERSAL},
+        "get_snapshot",
+        "protect",
+    ),
+    (
+        register_media_tools,
+        "unifi_protect_export_video",
+        {"camera_id": TRAVERSAL, "start": 1, "end": 2},
+        "export_video",
+        "protect",
+    ),
 ]
 
 
@@ -270,6 +317,13 @@ MAC_TAKING_TOOLS: list[tuple[Any, str, dict[str, Any], str, str]] = [
         "unifi_network_get_client",
         {"mac": TRAVERSAL},
         "list_active_clients",
+        "network",
+    ),
+    (
+        register_client_tools,
+        "unifi_network_block_client",
+        {"mac": TRAVERSAL},
+        "block_client",
         "network",
     ),
     (
