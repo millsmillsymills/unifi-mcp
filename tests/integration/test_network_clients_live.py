@@ -144,8 +144,14 @@ class TestAuthorizeUnauthorizeCycle:
         mac = test_client_mac
 
         actives = await network_live_client.list_active_clients()
-        if mac not in _active_macs(actives):
+        entry = _find_active(actives, mac)
+        if entry is None:
             pytest.skip(f"Target MAC {mac} not currently active; cannot test authorize cycle")
+        if not entry.get("is_guest") and not entry.get("_is_guest_by_ugw") and not entry.get("_is_guest_by_usw"):
+            pytest.skip(
+                f"Target MAC {mac} is not on a guest network — authorize_guest is a no-op; "
+                "set UNIFI_MCP_TEST_CLIENT_MAC to a guest-portal client to exercise this cycle."
+            )
 
         try:
             authorize_response = await network_live_client.authorize_guest(mac, minutes=1)
