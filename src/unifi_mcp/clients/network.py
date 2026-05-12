@@ -8,7 +8,12 @@ from typing import Any
 import httpx
 
 from unifi_mcp.clients.base import BaseUniFiClient
-from unifi_mcp.errors import UniFiDeviceAlreadyAdoptedError, UniFiError, UniFiNotFoundError
+from unifi_mcp.errors import (
+    UniFiBadRequestError,
+    UniFiDeviceAlreadyAdoptedError,
+    UniFiError,
+    UniFiNotFoundError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -462,12 +467,38 @@ class NetworkClient(BaseUniFiClient):
         result: dict[str, Any] = await self.post("cmd/stamgr", json={"cmd": "kick-sta", "mac": mac})
         return result
 
+    async def _assert_client_is_guest(self, mac: str) -> None:
+        """Raise if ``mac`` isn't a known guest-portal client.
+
+        The controller silently no-ops ``authorize-guest`` / ``unauthorize-guest``
+        on non-guest clients — HTTP 200, ``meta.rc == "ok"``, no state change.
+        Pre-check the client's ``is_guest`` flag against ``list_all_clients``
+        and surface a typed error instead. See #220.
+
+        Same atomicity caveat as ``_assert_client_known`` (see #96, #151) —
+        the pre-check and the subsequent POST are separate requests.
+        """
+        response = await self.list_all_clients()
+        entry = next(
+            (c for c in response.get("data", []) if c.get("mac", "").lower() == mac.lower()),
+            None,
+        )
+        if entry is None:
+            raise UniFiNotFoundError(f"Client with MAC {mac} not found")
+        if not entry.get("is_guest"):
+            raise UniFiBadRequestError(
+                f"Client with MAC {mac} is not on a guest network; "
+                "authorize_guest / unauthorize_guest only apply to guest-portal clients."
+            )
+
     async def authorize_guest(self, mac: str, minutes: int = 60) -> dict[str, Any]:
         """Authorize a guest client for a given duration.
 
-        Raises ``UniFiNotFoundError`` when ``mac`` is unknown (see #96).
+        Raises ``UniFiNotFoundError`` when ``mac`` is unknown (#96) and
+        ``UniFiBadRequestError`` when ``mac`` is not a guest-portal client
+        (#220).
         """
-        await self._assert_client_known(mac)
+        await self._assert_client_is_guest(mac)
         result: dict[str, Any] = await self.post(
             "cmd/stamgr", json={"cmd": "authorize-guest", "mac": mac, "minutes": minutes}
         )
@@ -476,9 +507,11 @@ class NetworkClient(BaseUniFiClient):
     async def unauthorize_guest(self, mac: str) -> dict[str, Any]:
         """Revoke guest authorization.
 
-        Raises ``UniFiNotFoundError`` when ``mac`` is unknown (see #96).
+        Raises ``UniFiNotFoundError`` when ``mac`` is unknown (#96) and
+        ``UniFiBadRequestError`` when ``mac`` is not a guest-portal client
+        (#220).
         """
-        await self._assert_client_known(mac)
+        await self._assert_client_is_guest(mac)
         result: dict[str, Any] = await self.post("cmd/stamgr", json={"cmd": "unauthorize-guest", "mac": mac})
         return result
 

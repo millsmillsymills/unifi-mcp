@@ -111,7 +111,7 @@ class TestClientCommandEndpoints:
     async def test_authorize_guest_passes_minutes(self, network_client):
         mac = "aa:bb:cc:dd:ee:ff"
         respx.get(f"{SITE_PREFIX}/stat/alluser").mock(
-            return_value=httpx.Response(200, json={"data": [{"mac": mac}]}),
+            return_value=httpx.Response(200, json={"data": [{"mac": mac, "is_guest": True}]}),
         )
         route = respx.post(f"{SITE_PREFIX}/cmd/stamgr").mock(return_value=httpx.Response(200, json={}))
         await network_client.authorize_guest(mac, minutes=120)

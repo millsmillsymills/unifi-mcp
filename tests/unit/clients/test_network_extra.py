@@ -216,7 +216,8 @@ class TestCommandMethods:
             # stamgr commands pre-check against the client list (#96).
             ("unblock_client", "cmd/stamgr", b"unblock-sta", "client"),
             ("kick_client", "cmd/stamgr", b"kick-sta", None),
-            ("unauthorize_guest", "cmd/stamgr", b"unauthorize-guest", "client"),
+            # unauthorize_guest additionally requires is_guest=True (#220).
+            ("unauthorize_guest", "cmd/stamgr", b"unauthorize-guest", "guest"),
         ],
     )
     @respx.mock
@@ -225,6 +226,10 @@ class TestCommandMethods:
         if precheck == "client":
             respx.get(f"{API_PREFIX}stat/alluser").mock(
                 return_value=httpx.Response(200, json={"data": [{"mac": mac}]}),
+            )
+        elif precheck == "guest":
+            respx.get(f"{API_PREFIX}stat/alluser").mock(
+                return_value=httpx.Response(200, json={"data": [{"mac": mac, "is_guest": True}]}),
             )
         elif precheck == "device":
             # Return empty device list so adopt proceeds (MAC not yet adopted).
@@ -249,7 +254,7 @@ class TestCommandMethods:
     async def test_authorize_guest_sends_minutes(self, client):
         mac = "aa:bb:cc:dd:ee:ff"
         respx.get(f"{API_PREFIX}stat/alluser").mock(
-            return_value=httpx.Response(200, json={"data": [{"mac": mac}]}),
+            return_value=httpx.Response(200, json={"data": [{"mac": mac, "is_guest": True}]}),
         )
         route = respx.post(f"{API_PREFIX}cmd/stamgr").mock(return_value=httpx.Response(200, json={}))
         await client.authorize_guest(mac, minutes=90)
@@ -294,6 +299,47 @@ class TestSilentNoOpProtection:
         respx.post(f"{API_PREFIX}cmd/stamgr").mock(return_value=httpx.Response(200, json={}))
         await client.kick_client("aa:bb:cc:dd:ee:ff")
         assert list_route.call_count == 0
+
+
+class TestGuestOnlyProtection:
+    """#220: authorize_guest / unauthorize_guest must reject non-guest MACs.
+
+    The controller silently no-ops these commands on corp/non-guest clients
+    (HTTP 200, meta.rc == "ok", but the active-client doc still reads
+    authorized=True afterwards). Surface a typed error so agents see the
+    no-op as a real failure.
+    """
+
+    @pytest.mark.parametrize("method_name", ["authorize_guest", "unauthorize_guest"])
+    @respx.mock
+    async def test_non_guest_mac_raises_bad_request(self, client, method_name):
+        mac = "aa:bb:cc:dd:ee:ff"
+        respx.get(f"{API_PREFIX}stat/alluser").mock(
+            return_value=httpx.Response(200, json={"data": [{"mac": mac, "is_guest": False}]}),
+        )
+        post_route = respx.post(f"{API_PREFIX}cmd/stamgr").mock(return_value=httpx.Response(200, json={}))
+
+        from unifi_mcp.errors import UniFiBadRequestError
+
+        with pytest.raises(UniFiBadRequestError, match="not on a guest network"):
+            await getattr(client, method_name)(mac)
+        assert post_route.call_count == 0
+
+    @pytest.mark.parametrize("method_name", ["authorize_guest", "unauthorize_guest"])
+    @respx.mock
+    async def test_missing_is_guest_field_raises_bad_request(self, client, method_name):
+        """A client doc without ``is_guest`` (treated as False) is also rejected."""
+        mac = "aa:bb:cc:dd:ee:ff"
+        respx.get(f"{API_PREFIX}stat/alluser").mock(
+            return_value=httpx.Response(200, json={"data": [{"mac": mac}]}),
+        )
+        post_route = respx.post(f"{API_PREFIX}cmd/stamgr").mock(return_value=httpx.Response(200, json={}))
+
+        from unifi_mcp.errors import UniFiBadRequestError
+
+        with pytest.raises(UniFiBadRequestError, match="not on a guest network"):
+            await getattr(client, method_name)(mac)
+        assert post_route.call_count == 0
 
 
 class TestAdoptIdempotency:
