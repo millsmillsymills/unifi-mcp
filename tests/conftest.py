@@ -12,7 +12,20 @@ from fastmcp import FastMCP
 from unifi_mcp.clients.network import NetworkClient
 from unifi_mcp.clients.protect import ProtectClient
 from unifi_mcp.clients.site_manager import SITE_MANAGER_BASE_URL, SiteManagerClient
-from unifi_mcp.config import UniFiConfig, UniFiMode
+from unifi_mcp.config import UniFiConfig, UniFiMode, get_config
+
+
+@pytest.fixture(autouse=True)
+def _clear_config_cache():
+    """Reset the process-wide ``get_config`` cache between tests.
+
+    ``get_config`` is ``lru_cache``-d so the TLS audit fires once per
+    process (#190). Tests mutate env vars between cases, so the cache
+    has to be cleared in both directions to keep them isolated.
+    """
+    get_config.cache_clear()
+    yield
+    get_config.cache_clear()
 
 
 @dataclass

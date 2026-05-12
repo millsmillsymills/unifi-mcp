@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import enum
+import functools
 import ipaddress
 import logging
 import re
@@ -223,6 +224,20 @@ class UniFiConfig(BaseSettings):
         """Base URL for Protect API."""
         host = self.unifi_protect_host or self.unifi_network_host
         return f"https://{host}:{self.unifi_protect_port}"
+
+
+@functools.lru_cache(maxsize=1)
+def get_config() -> UniFiConfig:
+    """Return the process-wide ``UniFiConfig`` instance.
+
+    Cached so the ``@model_validator``s — notably ``_audit_tls_posture`` —
+    run exactly once per process. Multiple call sites (``create_server``
+    and ``server_lifespan``) must share the same instance, otherwise the
+    operator sees duplicate "verify_ssl=False" WARN lines for the same
+    condition (#190). Tests that need a fresh instance should construct
+    ``UniFiConfig(...)`` directly or call ``get_config.cache_clear()``.
+    """
+    return UniFiConfig()
 
 
 def _resolve_host(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address:

@@ -18,7 +18,7 @@ import httpx
 from fastmcp import FastMCP
 from fastmcp.server.lifespan import lifespan
 
-from unifi_mcp.config import UniFiConfig
+from unifi_mcp.config import UniFiConfig, get_config
 from unifi_mcp.errors import UniFiError
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
     its tools registered and every invocation raises ``KeyError`` inside the
     handler (see #87).
     """
-    config = UniFiConfig()
+    config = get_config()
     context = ServerContext(config=config)
 
     # Lazily import clients to avoid circular deps
@@ -198,7 +198,7 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
 def create_server(config: UniFiConfig | None = None) -> FastMCP:
     """Create and configure the FastMCP server."""
     if config is None:
-        config = UniFiConfig()
+        config = get_config()
 
     server = FastMCP(
         name="unifi-mcp",
