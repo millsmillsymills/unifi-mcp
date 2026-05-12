@@ -130,6 +130,12 @@ See [.env.example](.env.example) for all configuration options.
 | `UNIFI_NETWORK_CERT_FINGERPRINT` | — | SHA-256 leaf-cert pin (Network); takes precedence over chain verification |
 | `UNIFI_PROTECT_CERT_FINGERPRINT` | — | SHA-256 leaf-cert pin (Protect); takes precedence over chain verification |
 
+`.env` is read from the current working directory; run `unifi-mcp` only from a
+trusted directory so an unrelated `.env` cannot override your API keys.
+
+Rotating UniFi API keys requires restarting the server process; there is no
+hot-reload.
+
 ## TLS
 
 UniFi controllers ship self-signed certificates, so `UNIFI_*_VERIFY_SSL`

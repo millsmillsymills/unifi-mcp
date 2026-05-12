@@ -155,6 +155,8 @@ def register_system_tools(mcp: FastMCP) -> None:
     async def unifi_network_create_backup(ctx: Context) -> dict[str, Any]:
         """Create a backup of the controller configuration.
 
+        This call may block up to 5 minutes while the controller builds the backup archive.
+
         Args:
             ctx: FastMCP request context.
 
