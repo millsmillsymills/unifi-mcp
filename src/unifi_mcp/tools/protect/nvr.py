@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context
+from unifi_mcp.tools._common import JsonObject, get_server_context, reject_dangerous_keys
 
 
 def register_nvr_tools(mcp: FastMCP) -> None:
@@ -43,6 +43,7 @@ def register_nvr_tools(mcp: FastMCP) -> None:
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot update NVR in read-only mode")
+            reject_dangerous_keys(data, tool_name="unifi_protect_update_nvr")
             return await context.clients["protect"].update_nvr(data)
         except Exception as e:
             handle_client_error(e)

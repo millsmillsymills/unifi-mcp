@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context
+from unifi_mcp.tools._common import JsonObject, get_server_context, reject_dangerous_keys
 
 
 def register_system_tools(mcp: FastMCP) -> None:
@@ -43,6 +43,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot update settings in read-only mode")
+            reject_dangerous_keys(data, tool_name="unifi_network_update_settings")
             return await context.clients["network"].update_settings(data)
         except Exception as e:
             handle_client_error(e)

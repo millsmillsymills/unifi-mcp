@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context
+from unifi_mcp.tools._common import JsonObject, get_server_context, reject_dangerous_keys
 
 
 def register_firewall_tools(mcp: FastMCP) -> None:
@@ -135,6 +135,8 @@ def register_firewall_tools(mcp: FastMCP) -> None:
                     data["src_address"] = src_address
                 if dst_address is not None:
                     data["dst_address"] = dst_address
+            else:
+                reject_dangerous_keys(data, tool_name="unifi_network_create_firewall_rule")
             return await context.clients["network"].create_firewall_rule(data)
         except Exception as e:
             handle_client_error(e)
@@ -154,6 +156,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot update firewall rule in read-only mode")
+            reject_dangerous_keys(data, tool_name="unifi_network_update_firewall_rule")
             return await context.clients["network"].update_firewall_rule(rule_id, data)
         except Exception as e:
             handle_client_error(e)
@@ -221,6 +224,7 @@ def register_firewall_tools(mcp: FastMCP) -> None:
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot update firewall group in read-only mode")
+            reject_dangerous_keys(data, tool_name="unifi_network_update_firewall_group")
             return await context.clients["network"].update_firewall_group(group_id, data)
         except Exception as e:
             handle_client_error(e)
