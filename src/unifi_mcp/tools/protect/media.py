@@ -8,7 +8,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import handle_client_error
-from unifi_mcp.tools._common import get_server_context
+from unifi_mcp.tools._common import get_server_context, validate_id
 
 
 def register_media_tools(mcp: FastMCP) -> None:
@@ -31,6 +31,7 @@ def register_media_tools(mcp: FastMCP) -> None:
             is the JPEG bytes encoded with standard base64; decode before writing to disk.
         """
         try:
+            validate_id(camera_id, field="camera_id")
             context = get_server_context(ctx)
             data: bytes = await context.clients["protect"].get_snapshot(
                 camera_id, timestamp=timestamp, max_bytes=context.config.unifi_max_snapshot_bytes
@@ -61,6 +62,7 @@ def register_media_tools(mcp: FastMCP) -> None:
             is the MP4 bytes encoded with standard base64; decode before writing to disk.
         """
         try:
+            validate_id(camera_id, field="camera_id")
             context = get_server_context(ctx)
             data: bytes = await context.clients["protect"].export_video(
                 camera_id, start, end, max_bytes=context.config.unifi_max_export_bytes

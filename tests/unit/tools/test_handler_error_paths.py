@@ -81,7 +81,7 @@ ERROR_PATH_CASES: list[tuple[Any, str, str, str, dict[str, Any]]] = [
     (register_device_tools, "unifi_network_unlocate_device", "unlocate_device", "network", {"mac": "aa"}),
     (register_device_tools, "unifi_network_provision_device", "provision_device", "network", {"mac": "aa"}),
     # Network clients
-    (register_client_tools, "unifi_network_block_client", "block_client", "network", {"mac": "aa"}),
+    (register_client_tools, "unifi_network_block_client", "block_client", "network", {"mac": "aa:bb:cc:dd:ee:ff"}),
     (register_client_tools, "unifi_network_unblock_client", "unblock_client", "network", {"mac": "aa"}),
     (register_client_tools, "unifi_network_kick_client", "kick_client", "network", {"mac": "aa"}),
     (register_client_tools, "unifi_network_authorize_guest", "authorize_guest", "network", {"mac": "aa"}),

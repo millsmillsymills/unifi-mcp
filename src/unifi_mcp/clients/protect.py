@@ -49,7 +49,7 @@ class ProtectClient(BaseUniFiClient):
 
     async def get_camera(self, camera_id: str) -> dict[str, Any]:
         """Get a specific camera by ID."""
-        result: dict[str, Any] = await self.get(f"cameras/{camera_id}")
+        result: dict[str, Any] = await self.get(f"cameras/{self._segment(camera_id)}")
         return result
 
     async def get_nvr(self) -> dict[str, Any]:
@@ -85,7 +85,7 @@ class ProtectClient(BaseUniFiClient):
 
     async def update_camera(self, camera_id: str, data: dict[str, Any]) -> dict[str, Any]:
         """Update camera settings."""
-        result: dict[str, Any] = await self.put(f"cameras/{camera_id}", json=data)
+        result: dict[str, Any] = await self.put(f"cameras/{self._segment(camera_id)}", json=data)
         return result
 
     async def set_recording_mode(
@@ -110,7 +110,7 @@ class ProtectClient(BaseUniFiClient):
             recording_settings["postPaddingSecs"] = post_padding
 
         result: dict[str, Any] = await self.put(
-            f"cameras/{camera_id}",
+            f"cameras/{self._segment(camera_id)}",
             json={"recordingSettings": recording_settings},
         )
         return result
@@ -123,7 +123,7 @@ class ProtectClient(BaseUniFiClient):
             object_types: List of smart detection object types to enable.
         """
         result: dict[str, Any] = await self.put(
-            f"cameras/{camera_id}",
+            f"cameras/{self._segment(camera_id)}",
             json={"smartDetectSettings": {"objectTypes": object_types}},
         )
         return result
@@ -154,7 +154,7 @@ class ProtectClient(BaseUniFiClient):
         params: dict[str, int] = {}
         if timestamp is not None:
             params["ts"] = timestamp
-        return await self.get_raw(f"cameras/{camera_id}/snapshot", params=params, max_bytes=max_bytes)
+        return await self.get_raw(f"cameras/{self._segment(camera_id)}/snapshot", params=params, max_bytes=max_bytes)
 
     async def export_video(self, camera_id: str, start: int, end: int, *, max_bytes: int | None = None) -> bytes:
         """Export a video clip from a camera.
@@ -170,7 +170,7 @@ class ProtectClient(BaseUniFiClient):
             Raw video bytes.
         """
         return await self.get_raw(
-            f"cameras/{camera_id}/video/export",
+            f"cameras/{self._segment(camera_id)}/video/export",
             params={"start": start, "end": end},
             max_bytes=max_bytes,
         )

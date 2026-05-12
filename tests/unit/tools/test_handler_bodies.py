@@ -171,7 +171,7 @@ class TestNetworkClientHandlers:
         client = AsyncMock()
         ctx = _fake_ctx(_readonly_config(), network=client)
         with pytest.raises(ToolError, match="read-only mode"):
-            await _call(server, "unifi_network_block_client", ctx, mac="aa")
+            await _call(server, "unifi_network_block_client", ctx, mac="aa:bb:cc:dd:ee:ff")
 
     async def test_authorize_guest_passes_minutes(self, server):
         client = AsyncMock()

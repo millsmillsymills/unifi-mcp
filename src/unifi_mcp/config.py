@@ -23,6 +23,12 @@ _DNS_LOOKUP_TIMEOUT_S = 2.0
 # accepted input form additionally allows colon separators and any case.
 _FINGERPRINT_RE = re.compile(r"^[0-9a-f]{64}$")
 
+# Site identifiers are interpolated into the Network ``_path_prefix`` at
+# client construction. Restricting them at load time keeps a hostile env
+# var (e.g. ``UNIFI_NETWORK_SITE=bad/site``) from rewriting the prefix
+# itself, ahead of the per-request ``_segment`` defense. See #145.
+_SITE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
 
 def _normalize_fingerprint(raw: str) -> str:
     """Return canonical sha256 fingerprint (64 lowercase hex chars, no colons).
@@ -102,6 +108,20 @@ class UniFiConfig(BaseSettings):
         if not value.strip():
             return None
         return _normalize_fingerprint(value)
+
+    @field_validator("unifi_network_site")
+    @classmethod
+    def _validate_site(cls, value: str) -> str:
+        """Reject site identifiers that could rewrite the Network path prefix.
+
+        ``unifi_network_site`` is interpolated into ``_path_prefix`` at
+        ``NetworkClient`` construction; an unconstrained value like
+        ``default/../foo`` or ``default?evil=1`` would reshape the prefix
+        before any per-request ``_segment`` gate runs. See #145.
+        """
+        if not _SITE_RE.match(value):
+            raise ValueError(f"invalid unifi_network_site {value!r}: expected one or more chars from [A-Za-z0-9_-]")
+        return value
 
     @model_validator(mode="after")
     def _default_protect_host(self) -> UniFiConfig:

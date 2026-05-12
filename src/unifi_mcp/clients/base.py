@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import urllib.parse
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -92,6 +93,29 @@ class BaseUniFiClient(ABC):
     def _url(self, path: str) -> str:
         """Build full path with prefix."""
         return f"{self._path_prefix}{path}"
+
+    @staticmethod
+    def _segment(value: str) -> str:
+        """Return a URL-safe single path segment from an agent-controlled value.
+
+        Defends against path traversal (#145). ``httpx`` does not normalize
+        ``..`` segments client-side, so an unencoded ID interpolated into a
+        path string can escape ``_path_prefix`` and pivot to a different
+        endpoint under the same auth. Every ID, MAC, or similar caller-
+        supplied value that lands in a URL path segment must flow through
+        this helper.
+
+        Rejects empty strings, ``..``, segments containing ``/``, and ASCII
+        control characters (incl. NUL, CR, LF) with ``UniFiBadRequestError``.
+        Other characters are percent-encoded via ``urllib.parse.quote`` with
+        ``safe=""`` so query separators (``?``, ``#``) and reserved chars
+        are escaped rather than reinterpreted.
+        """
+        if not isinstance(value, str) or not value or value == ".." or "/" in value:
+            raise UniFiBadRequestError(f"invalid URL path segment: {value!r}")
+        if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
+            raise UniFiBadRequestError(f"invalid URL path segment: {value!r}")
+        return urllib.parse.quote(value, safe="")
 
     @staticmethod
     def _parse_retry_after(header_value: str | None) -> int | None:
