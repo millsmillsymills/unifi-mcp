@@ -164,11 +164,12 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
             err = failures.get(api_name)
             if err is not None:
                 logger.warning(
-                    "%s tools disabled — %s: %s",
+                    "%s tools disabled — %s (HTTP %s); see DEBUG log for details",
                     api_name,
                     type(err).__name__,
-                    err,
+                    getattr(err, "status_code", None),
                 )
+                logger.debug("%s tools disabled — full exception", api_name, exc_info=err)
             else:
                 logger.warning(
                     "%s tools disabled — validate_connection failed and the backend is unreachable",

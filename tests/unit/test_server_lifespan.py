@@ -286,7 +286,7 @@ class TestServerLifespan:
             patch("unifi_mcp.clients.network.NetworkClient", return_value=good_net),
             patch("unifi_mcp.clients.protect.ProtectClient", return_value=failing_prot),
             patch("unifi_mcp.clients.site_manager.SiteManagerClient", return_value=good_sm),
-            caplog.at_level(logging.WARNING, logger="unifi_mcp.server"),
+            caplog.at_level(logging.DEBUG, logger="unifi_mcp.server"),
         ):
             gen = server_lifespan._fn(None)
             async with aclosing(gen):
@@ -299,8 +299,15 @@ class TestServerLifespan:
         ]
         assert disabled_warns, "expected 'protect tools disabled' WARN"
         msg = disabled_warns[0].getMessage()
+        # Post-#148: WARN carries the exception class and status code only.
+        # The full message ships to DEBUG via exc_info so reflected bodies
+        # never reach a WARN-level sink.
         assert "UniFiConnectionError" in msg, f"expected stashed exception class in WARN; got {msg!r}"
-        assert "host unreachable" in msg, f"expected stashed exception text in WARN; got {msg!r}"
+        assert "host unreachable" not in msg, f"WARN must not echo stashed exception text; got {msg!r}"
+        debug_records = [r for r in caplog.records if r.levelno == logging.DEBUG and r.exc_info]
+        assert any("host unreachable" in str(r.exc_info[1]) for r in debug_records if r.exc_info), (
+            "expected DEBUG log with full exception via exc_info"
+        )
 
     async def test_validation_false_return_without_stashed_exception_falls_back(self, monkeypatch, caplog):
         """If a client returns False but stashed nothing (e.g. pre-#104

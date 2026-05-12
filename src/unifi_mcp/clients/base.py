@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -33,6 +34,69 @@ logger = logging.getLogger(__name__)
 # Upper bound on a single Retry-After sleep. Ubiquiti sometimes returns very
 # generous values; capping keeps a single tool call bounded.
 _MAX_RETRY_AFTER_SECONDS = 30
+
+# Sensitive keys that must be masked before an error body is logged at DEBUG
+# or stringified into a UniFi exception. UniFi controllers echo the submitted
+# JSON in some 400 responses, so a Wi-Fi passphrase or RADIUS secret can come
+# back unmasked in an error body — match #146's redaction set so a value
+# never appears in two different forms depending on the call site. See #148.
+_SENSITIVE_KEYS = frozenset(
+    {
+        "x_passphrase",
+        "x_password",
+        "password",
+        "passphrase",
+        "radius_secret",
+        "wpa_psk",
+        "private_key",
+        "ssotoken",
+        "bearer",
+        "token",
+        "api_key",
+        "apikey",
+        "secret",
+    }
+)
+
+# Placeholder substituted for redacted values so the operator can still see
+# the structure of the response without the credential.
+_REDACTED = "***REDACTED***"
+
+
+def _redact_sensitive(value: Any) -> Any:
+    """Return a copy of ``value`` with sensitive keys replaced.
+
+    Walks nested dicts and lists. String comparisons are case-insensitive
+    and also match ``super_*_password`` / ``super_*_url`` callback keys
+    that have leaked controller config in the past. Non-container values
+    pass through untouched.
+    """
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, sub in value.items():
+            key_str = str(key)
+            lowered = key_str.lower()
+            if lowered in _SENSITIVE_KEYS or (
+                lowered.startswith("super_") and (lowered.endswith("_password") or lowered.endswith("_url"))
+            ):
+                redacted[key_str] = _REDACTED
+            else:
+                redacted[key_str] = _redact_sensitive(sub)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_sensitive(item) for item in value]
+    return value
+
+
+def _log_raw_bodies_enabled() -> bool:
+    """Whether the operator opted into untouched-body DEBUG logging.
+
+    Read from the environment directly (rather than through ``UniFiConfig``)
+    so the helper stays available to callers that construct clients without
+    a config object — notably tests. Truthy values: ``1``, ``true``, ``yes``
+    (case-insensitive).
+    """
+    return os.environ.get("UNIFI_LOG_RAW_BODIES", "").strip().lower() in {"1", "true", "yes"}
 
 
 class BaseUniFiClient(ABC):
@@ -108,41 +172,58 @@ class BaseUniFiClient(ABC):
         - Protect integration: ``{"error": {"message": "..."}}``
         - Simpler forms: ``{"error": "..."}`` or ``{"message": "..."}``
 
-        Anything else (non-JSON, unrecognized shape) falls back to the first
-        200 chars of ``response.text``. The full body is logged at DEBUG
-        regardless so the complete error is recoverable from logs.
+        Sensitive keys (passphrases, secrets, tokens) are masked at this
+        boundary so downstream WARN logs and ``ToolError`` strings never
+        carry reflected credentials (#148). When ``UNIFI_LOG_RAW_BODIES`` is
+        unset (default), the DEBUG body log also receives the redacted form;
+        operators that need the untouched body for diagnosis must opt in.
         """
-        # Full-body DEBUG log is always emitted so operators can see the
-        # untruncated payload after the fact without re-triggering the error.
-        logger.debug("Error response body (HTTP %d): %s", response.status_code, response.text)
-        fallback = response.text[:200]
+        raw_log_enabled = _log_raw_bodies_enabled()
         try:
-            data = response.json()
+            parsed = response.json()
         except ValueError:
-            if not response.text.strip():
-                # Empty (or whitespace-only) body: surface a hint instead of an
-                # uninformative dangling "HTTP 401: " so operators have something
-                # to look up. WWW-Authenticate is the most useful auth-error clue.
-                www_auth = response.headers.get("www-authenticate")
-                if www_auth:
-                    return f"(empty body; WWW-Authenticate: {www_auth})"
-                return "(empty body)"
-            return fallback
-        if not isinstance(data, dict):
-            return fallback
-        # Try known envelopes in order. The first non-empty string wins.
-        meta = data.get("meta") if isinstance(data.get("meta"), dict) else None
-        err = data.get("error")
-        candidates: list[Any] = [
-            meta.get("msg") if meta else None,
-            err.get("message") if isinstance(err, dict) else None,
-            err if isinstance(err, str) else None,
-            data.get("message"),
-        ]
-        for candidate in candidates:
-            if isinstance(candidate, str) and candidate:
-                return candidate
-        return fallback
+            parsed = None
+
+        if parsed is not None:
+            safe_payload = _redact_sensitive(parsed)
+            if raw_log_enabled:
+                logger.debug("Error response body (HTTP %d): %s", response.status_code, response.text)
+            else:
+                logger.debug("Error response body (HTTP %d, redacted): %s", response.status_code, safe_payload)
+            if isinstance(safe_payload, dict):
+                meta = safe_payload.get("meta") if isinstance(safe_payload.get("meta"), dict) else None
+                err = safe_payload.get("error")
+                candidates: list[Any] = [
+                    meta.get("msg") if meta else None,
+                    err.get("message") if isinstance(err, dict) else None,
+                    err if isinstance(err, str) else None,
+                    safe_payload.get("message"),
+                ]
+                for candidate in candidates:
+                    if isinstance(candidate, str) and candidate:
+                        return candidate
+            # Structured but unrecognized — surface a stable opaque hint
+            # rather than a 200-char slice that could leak HTML scraps.
+            return "<unparseable body, see DEBUG log>"
+
+        # Non-JSON body.
+        if raw_log_enabled:
+            logger.debug("Error response body (HTTP %d): %s", response.status_code, response.text)
+        else:
+            logger.debug(
+                "Error response body (HTTP %d, %d bytes): redacted (set UNIFI_LOG_RAW_BODIES=1 to log)",
+                response.status_code,
+                len(response.text),
+            )
+        if not response.text.strip():
+            # Empty (or whitespace-only) body: surface a hint instead of an
+            # uninformative dangling "HTTP 401: " so operators have something
+            # to look up. WWW-Authenticate is the most useful auth-error clue.
+            www_auth = response.headers.get("www-authenticate")
+            if www_auth:
+                return f"(empty body; WWW-Authenticate: {www_auth})"
+            return "(empty body)"
+        return "<unparseable body, see DEBUG log>"
 
     def _raise_for_status(self, response: httpx.Response) -> None:
         """Map HTTP status codes to typed exceptions."""
