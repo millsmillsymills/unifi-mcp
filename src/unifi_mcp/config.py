@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import enum
 import functools
 import ipaddress
@@ -243,19 +244,21 @@ def _resolve_host(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
     """Resolve ``host`` to an IP address with a bounded DNS timeout.
 
     Numeric hosts (IPv4 or IPv6 literals) short-circuit DNS entirely. For
-    names, ``socket.gethostbyname`` is called with a temporary global DNS
-    timeout so a slow or unreachable resolver can't hang startup. Raises
-    ``OSError`` (incl. ``socket.gaierror``) on lookup failure or
-    ``ValueError`` if the result isn't a valid IP literal.
+    names, ``socket.gethostbyname`` runs on a worker thread bounded by
+    ``_DNS_LOOKUP_TIMEOUT_S`` so a slow or unreachable resolver can't hang
+    startup. Bounding via thread (rather than ``socket.setdefaulttimeout``)
+    avoids mutating process-global socket state. Raises ``OSError`` (incl.
+    ``socket.gaierror``) on lookup failure or timeout, or ``ValueError`` if
+    the result isn't a valid IP literal.
     """
     try:
         return ipaddress.ip_address(host)
     except ValueError:
         pass
-    previous = socket.getdefaulttimeout()
-    socket.setdefaulttimeout(_DNS_LOOKUP_TIMEOUT_S)
-    try:
-        resolved = socket.gethostbyname(host)
-    finally:
-        socket.setdefaulttimeout(previous)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="unifi-dns") as pool:
+        future = pool.submit(socket.gethostbyname, host)
+        try:
+            resolved = future.result(timeout=_DNS_LOOKUP_TIMEOUT_S)
+        except concurrent.futures.TimeoutError as exc:
+            raise OSError(f"DNS lookup for {host!r} exceeded {_DNS_LOOKUP_TIMEOUT_S}s timeout") from exc
     return ipaddress.ip_address(resolved)

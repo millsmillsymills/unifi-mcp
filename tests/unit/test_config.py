@@ -2,11 +2,12 @@
 
 import logging
 import socket
+import time
 
 import pytest
 from pydantic import ValidationError
 
-from unifi_mcp.config import UniFiConfig, UniFiMode, get_config
+from unifi_mcp.config import _DNS_LOOKUP_TIMEOUT_S, UniFiConfig, UniFiMode, _resolve_host, get_config
 from unifi_mcp.errors import (
     UniFiAuthError,
     UniFiConnectionError,
@@ -441,6 +442,23 @@ class TestVerifySSLAudit:
         messages = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
         assert any("verify_ssl=False for Protect" in m for m in messages), messages
         assert any("for Protect" in m and "non-private host" in m for m in messages), messages
+
+    def test_dns_timeout_does_not_mutate_socket_default(self, monkeypatch):
+        """#191: DNS bound via thread, never via socket.setdefaulttimeout.
+
+        A slow resolver must raise OSError without touching
+        ``socket.getdefaulttimeout()`` (process-global state).
+        """
+
+        def slow(_h: str) -> str:
+            time.sleep(_DNS_LOOKUP_TIMEOUT_S + 1.0)
+            return "1.2.3.4"
+
+        monkeypatch.setattr(socket, "gethostbyname", slow)
+        before = socket.getdefaulttimeout()
+        with pytest.raises(OSError, match="exceeded"):
+            _resolve_host("slow.example.invalid")
+        assert socket.getdefaulttimeout() == before
 
     def test_get_config_caches_singleton_and_audits_once(self, caplog, monkeypatch):
         """#190: ``get_config`` returns the same instance and the TLS audit
