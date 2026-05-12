@@ -157,6 +157,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_id(camera_id, field="camera_id")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot set recording mode in read-only mode")
@@ -180,6 +181,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_id(camera_id, field="camera_id")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot set smart detection in read-only mode")

@@ -107,6 +107,14 @@ class TestProtectPathTraversal:
                 await protect_client.get_camera("../../api/nvr")
             assert len(router.calls) == 0
 
+    async def test_update_camera_traversal_rejected(self, protect_client):
+        """Issue #145's worked example: ``update_camera`` traversal payload."""
+        with respx.mock(assert_all_called=False) as router:
+            router.route().mock(return_value=httpx.Response(200, json={}))
+            with pytest.raises(UniFiBadRequestError):
+                await protect_client.update_camera("../../api/nvr", {"name": "x"})
+            assert len(router.calls) == 0
+
     async def test_get_snapshot_path_stays_within_prefix(self, protect_client):
         """Even a benign ID is encoded; no path-prefix escape possible."""
         with respx.mock(assert_all_called=False) as router:
@@ -116,6 +124,46 @@ class TestProtectPathTraversal:
             raw_path = router.calls[0].request.url.raw_path.decode("ascii")
             assert raw_path.startswith(PROTECT_PREFIX), raw_path
             assert raw_path == f"{PROTECT_PREFIX}cameras/cam1/snapshot", raw_path
+
+
+class TestPercentEncodedTraversal:
+    """Pre-encoded ``%2e%2e`` payloads must not decode back to ``..`` upstream.
+
+    ``_segment`` escapes the literal ``%`` to ``%25``, so a payload like
+    ``%2e%2e`` reaches the server as ``%252e%252e`` (a literal seven-char
+    segment containing the characters ``%``, ``2``, ``e``, ``%``, ``2``,
+    ``e``) and cannot be path-decoded into ``..``.
+    """
+
+    async def test_percent_encoded_dotdot_is_double_encoded(self, network_client):
+        with respx.mock(assert_all_called=False) as router:
+            router.route().mock(return_value=httpx.Response(200, json={}))
+            await network_client.get_wlan("%2e%2e")
+            assert len(router.calls) == 1
+            raw_path = router.calls[0].request.url.raw_path.decode("ascii")
+            assert raw_path == f"{NETWORK_PREFIX}rest/wlanconf/%252e%252e", raw_path
+
+    async def test_percent_encoded_slash_is_double_encoded(self, network_client):
+        with respx.mock(assert_all_called=False) as router:
+            router.route().mock(return_value=httpx.Response(200, json={}))
+            await network_client.get_wlan("foo%2Fbar")
+            assert len(router.calls) == 1
+            raw_path = router.calls[0].request.url.raw_path.decode("ascii")
+            assert raw_path == f"{NETWORK_PREFIX}rest/wlanconf/foo%252Fbar", raw_path
+
+    async def test_nul_byte_rejected(self, network_client):
+        with respx.mock(assert_all_called=False) as router:
+            router.route().mock(return_value=httpx.Response(200, json={}))
+            with pytest.raises(UniFiBadRequestError):
+                await network_client.get_wlan("abc\x00def")
+            assert len(router.calls) == 0
+
+    async def test_newline_rejected(self, network_client):
+        with respx.mock(assert_all_called=False) as router:
+            router.route().mock(return_value=httpx.Response(200, json={}))
+            with pytest.raises(UniFiBadRequestError):
+                await network_client.get_wlan("abc\ndef")
+            assert len(router.calls) == 0
 
 
 class TestSiteConfigValidation:
