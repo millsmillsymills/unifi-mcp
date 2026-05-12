@@ -520,7 +520,7 @@ class TestProtectWriteRoundtrips:
     @pytest.mark.xfail(strict=True, reason=XFAIL_PROTECT_WRITE_TOOLS["unifi_protect_update_nvr"])
     async def test_update_nvr_roundtrip(self, live_client, artifacts):
         """Round-trip the NVR name via unifi_protect_update_nvr. First live-hardware
-        validation of PUT /nvrs on integration v1 — see TODO(#130) in
+        validation of PUT /nvrs on integration v1 — see TODO(#43) in
         clients/protect.py.
         """
         before = await _invoke(live_client, "unifi_protect_get_nvr")
