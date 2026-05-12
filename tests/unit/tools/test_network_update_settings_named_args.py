@@ -127,6 +127,39 @@ class TestUpdateSettingsNamedArgs:
         assert sent == {"ntp_server_1": "time.example.com", "ntp_server_2": "time2.example.com"}
 
     @respx.mock
+    async def test_partial_failure_surfaces_tool_error_first_section_applied(self):
+        """Tool-layer mirror of #225: second-section 500 surfaces as ToolError
+        with HTTP 500 in the message, AND the first section's PUT has already
+        been hit. Locks in the cross-section non-atomicity gap at the tool
+        boundary in addition to the client layer.
+
+        Relies on dict insertion-order iteration (Python 3.7+) for the
+        ``ntp`` -> ``mgmt`` dispatch order.
+        """
+        server = FastMCP(name="t")
+        register_system_tools(server)
+        ctx, _ = _ctx_with_network_client()
+        ntp_route = respx.put(f"{SITE_PREFIX}/rest/setting/ntp").mock(
+            return_value=httpx.Response(200, json={"meta": {"rc": "ok"}}),
+        )
+        mgmt_route = respx.put(f"{SITE_PREFIX}/rest/setting/mgmt").mock(
+            return_value=httpx.Response(500, json={"meta": {"rc": "error"}}),
+        )
+
+        with pytest.raises(ToolError) as exc:
+            await _call(
+                server,
+                "unifi_network_update_settings",
+                ctx,
+                ntp_server_1="time.example.com",
+                mgmt_led_enabled=False,
+            )
+        assert "HTTP 500" in str(exc.value)
+        assert "UniFi server error" in str(exc.value)
+        assert ntp_route.call_count == 1, "first section must have been applied before the second failed"
+        assert mgmt_route.call_count >= 1
+
+    @respx.mock
     async def test_mixed_sections_dispatch_one_put_per_section(self):
         server = FastMCP(name="t")
         register_system_tools(server)

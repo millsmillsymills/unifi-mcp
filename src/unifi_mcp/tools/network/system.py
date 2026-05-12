@@ -115,6 +115,14 @@ def register_system_tools(mcp: FastMCP) -> None:
 
         Returns:
             The upstream API response from the last section PUT.
+
+        Note:
+            Not atomic across sections. If the body covers multiple sections
+            and section N's PUT fails, sections 1..N-1 have already been
+            applied; the caller sees the failure but the controller state is
+            partially mutated. There is no UCG primitive for rollback. If
+            order matters, the caller should re-read state after a failure
+            or pass a single section per call. See #225.
         """
         try:
             context = get_server_context(ctx)
