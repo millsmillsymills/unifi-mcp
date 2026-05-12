@@ -6,7 +6,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
-from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
+from unifi_mcp.errors import UniFiBadRequestError, UniFiReadOnlyError, handle_client_error
 from unifi_mcp.tools._common import (
     JsonObject,
     get_server_context,
@@ -15,6 +15,11 @@ from unifi_mcp.tools._common import (
     validate_id,
     validate_mac,
 )
+
+# Mirrors the bound in ``tools/network/system.py`` — kept local rather than
+# imported so the two tool modules stay independently auditable. See #151.
+_PORT_IDX_MIN = 1
+_PORT_IDX_MAX = 52
 
 
 def register_port_profile_tools(mcp: FastMCP) -> None:
@@ -132,7 +137,8 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
 
         Args:
             mac: MAC address of the switch.
-            port_idx: 1-based port number on the switch.
+            port_idx: 1-based port number on the switch. Bounded to ``1..52``;
+                values outside this range raise ``UniFiBadRequestError``.
             profile_id: The port-profile ID to apply.
 
         Returns:
@@ -147,6 +153,10 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
         try:
             validate_mac(mac, field="mac")
             validate_id(profile_id, field="profile_id")
+            if not isinstance(port_idx, int) or not (_PORT_IDX_MIN <= port_idx <= _PORT_IDX_MAX):
+                raise UniFiBadRequestError(
+                    f"port_idx must be between {_PORT_IDX_MIN} and {_PORT_IDX_MAX} (got {port_idx!r})"
+                )
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot assign port profile in read-only mode")

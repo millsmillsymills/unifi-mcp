@@ -6,7 +6,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
-from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
+from unifi_mcp.errors import UniFiBadRequestError, UniFiReadOnlyError, handle_client_error
 from unifi_mcp.tools._common import (
     JsonObject,
     build_named_arg_body,
@@ -38,6 +38,19 @@ _SETTINGS_FIELD_PATHS: dict[str, tuple[str, ...]] = {
     "ntp_server_1": ("ntp", "ntp_server_1"),
     "ntp_server_2": ("ntp", "ntp_server_2"),
 }
+
+# UniFi switches expose ports indexed 1..N starting at 1. The largest stock SKU
+# is the Pro 48 PoE; capping at 52 keeps headroom for a few hypothetical SFP
+# expansion slots while rejecting agent-supplied ``0``, negative, or absurd
+# values that would otherwise reach the controller untouched. See #151.
+_PORT_IDX_MIN = 1
+_PORT_IDX_MAX = 52
+
+
+def _validate_port_idx(port_idx: int) -> None:
+    """Raise ``UniFiBadRequestError`` if ``port_idx`` is outside the supported range."""
+    if not isinstance(port_idx, int) or not (_PORT_IDX_MIN <= port_idx <= _PORT_IDX_MAX):
+        raise UniFiBadRequestError(f"port_idx must be between {_PORT_IDX_MIN} and {_PORT_IDX_MAX} (got {port_idx!r})")
 
 
 def register_system_tools(mcp: FastMCP) -> None:
@@ -181,13 +194,15 @@ def register_system_tools(mcp: FastMCP) -> None:
 
         Args:
             mac: MAC address of the switch.
-            port_idx: Port index to power cycle.
+            port_idx: Port index to power cycle. Bounded to ``1..52``; values
+                outside this range raise ``UniFiBadRequestError``.
 
         Returns:
             The upstream API response.
         """
         try:
             validate_mac(mac, field="mac")
+            _validate_port_idx(port_idx)
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot power cycle port in read-only mode")
@@ -204,6 +219,10 @@ def register_system_tools(mcp: FastMCP) -> None:
 
         Returns:
             The upstream API response.
+
+        NOTE: not atomic. Same TOCTOU caveat as ``unifi_network_block_client``:
+        the pre-check and the ``cmd/stamgr`` POST run as separate requests
+        with no compare-and-set primitive (#151).
         """
         try:
             validate_mac(mac, field="mac")
