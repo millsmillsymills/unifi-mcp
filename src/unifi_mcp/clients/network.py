@@ -259,9 +259,23 @@ class NetworkClient(BaseUniFiClient):
         return result
 
     async def update_settings(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Update controller settings."""
-        result: dict[str, Any] = await self.put("rest/setting", json=data)
-        return result
+        """Update controller settings via per-section PUTs.
+
+        The bare ``PUT rest/setting`` rejects multi-section bodies on current
+        UCG firmware (HTTP 500). The controller accepts ``PUT rest/setting/<key>``
+        with that section's partial body. Top-level keys in ``data`` that
+        map to dict values are dispatched one PUT per section; the response
+        from the last section is returned (final read-back is the caller's
+        responsibility). See #211 for the live evidence.
+        """
+        section_responses: list[dict[str, Any]] = []
+        for key, value in data.items():
+            if not isinstance(value, dict):
+                raise UniFiError(f"update_settings: section '{key}' must be a dict body, got {type(value).__name__}")
+            section_responses.append(await self.put(f"rest/setting/{self._segment(key)}", json=value))
+        if not section_responses:
+            raise UniFiError("update_settings: no sections in body")
+        return section_responses[-1]
 
     # ── Port profiles ──────────────────────────────────────────────────
 

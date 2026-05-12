@@ -165,10 +165,12 @@ class TestCrudMethods:
         assert route.call_count == 1
 
     @respx.mock
-    async def test_update_settings(self, client):
-        route = respx.put(f"{API_PREFIX}rest/setting").mock(return_value=httpx.Response(200, json={}))
-        await client.update_settings({"enabled": True})
-        assert route.call_count == 1
+    async def test_update_settings_dispatches_per_section(self, client):
+        ntp_route = respx.put(f"{API_PREFIX}rest/setting/ntp").mock(return_value=httpx.Response(200, json={}))
+        mgmt_route = respx.put(f"{API_PREFIX}rest/setting/mgmt").mock(return_value=httpx.Response(200, json={}))
+        await client.update_settings({"ntp": {"ntp_server_1": "time.example.com"}, "mgmt": {"led_enabled": False}})
+        assert ntp_route.call_count == 1
+        assert mgmt_route.call_count == 1
 
 
 class TestCommandMethods:

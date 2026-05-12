@@ -107,7 +107,7 @@ class TestSystemCommandEndpoints:
         assert b"reset-dpi" in route.calls[0].request.content
 
     @respx.mock
-    async def test_update_settings_puts_rest_setting(self, network_client):
-        route = respx.put(f"{SITE_PREFIX}/rest/setting").mock(return_value=httpx.Response(200, json={}))
-        await network_client.update_settings({"enabled": True})
+    async def test_update_settings_dispatches_per_section(self, network_client):
+        route = respx.put(f"{SITE_PREFIX}/rest/setting/ntp").mock(return_value=httpx.Response(200, json={}))
+        await network_client.update_settings({"ntp": {"ntp_server_1": "0.example.com"}})
         assert route.call_count == 1
