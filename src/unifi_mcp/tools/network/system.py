@@ -13,6 +13,7 @@ from unifi_mcp.tools._common import (
     get_server_context,
     redact_secrets,
     reject_dangerous_keys,
+    validate_mac,
 )
 
 # ── Option-1 allowlist for unifi_network_update_settings (#202) ────────────
@@ -166,6 +167,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_mac(mac, field="mac")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot upgrade device in read-only mode")
@@ -185,6 +187,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_mac(mac, field="mac")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot power cycle port in read-only mode")
@@ -203,6 +206,7 @@ def register_system_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_mac(mac, field="mac")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot unauthorize guest in read-only mode")

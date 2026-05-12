@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import handle_client_error
-from unifi_mcp.tools._common import get_server_context, redact_secrets
+from unifi_mcp.tools._common import get_server_context, redact_secrets, validate_id
 
 
 def register_site_manager_tools(mcp: FastMCP) -> None:
@@ -77,6 +77,8 @@ def register_site_manager_tools(mcp: FastMCP) -> None:
             ``model``, ``firmwareVersion``, and ``state``.
         """
         try:
+            if host_id is not None:
+                validate_id(host_id, field="host_id")
             context = get_server_context(ctx)
             return redact_secrets(await context.clients["site_manager"].list_devices(host_id=host_id))
         except Exception as e:

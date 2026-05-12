@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiNotFoundError, UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import get_server_context, redact_secrets
+from unifi_mcp.tools._common import get_server_context, redact_secrets, validate_mac
 
 
 def register_device_tools(mcp: FastMCP) -> None:
@@ -26,6 +26,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_mac(mac, field="mac")
             context = get_server_context(ctx)
             result = await context.clients["network"].list_devices()
             devices: list[dict[str, Any]] = result.get("data", [])
@@ -49,6 +50,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_mac(mac, field="mac")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot restart device in read-only mode")
@@ -67,6 +69,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_mac(mac, field="mac")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot adopt device in read-only mode")
@@ -85,6 +88,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_mac(mac, field="mac")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot locate device in read-only mode")
@@ -103,6 +107,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_mac(mac, field="mac")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot unlocate device in read-only mode")
@@ -121,6 +126,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_mac(mac, field="mac")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot provision device in read-only mode")
@@ -143,6 +149,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_mac(mac, field="mac")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot forget device in read-only mode")

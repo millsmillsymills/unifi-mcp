@@ -7,7 +7,14 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context, redact_secrets, reject_dangerous_keys
+from unifi_mcp.tools._common import (
+    JsonObject,
+    get_server_context,
+    redact_secrets,
+    reject_dangerous_keys,
+    validate_id,
+    validate_mac,
+)
 
 
 def register_port_profile_tools(mcp: FastMCP) -> None:
@@ -42,6 +49,7 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
             The upstream API response with sensitive fields redacted.
         """
         try:
+            validate_id(profile_id, field="profile_id")
             context = get_server_context(ctx)
             return redact_secrets(await context.clients["network"].get_port_profile(profile_id))
         except Exception as e:
@@ -84,6 +92,7 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_id(profile_id, field="profile_id")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot update port profile in read-only mode")
@@ -107,6 +116,7 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_id(profile_id, field="profile_id")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot delete port profile in read-only mode")
@@ -135,6 +145,8 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
             changes their link config.
         """
         try:
+            validate_mac(mac, field="mac")
+            validate_id(profile_id, field="profile_id")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot assign port profile in read-only mode")

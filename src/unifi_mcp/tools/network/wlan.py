@@ -132,6 +132,7 @@ def register_wlan_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_id(wlan_id, field="wlan_id")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot delete WLAN in read-only mode")

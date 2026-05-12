@@ -77,13 +77,13 @@ NETWORK_HAPPY_PATHS = [
     ),
     (register_stats_tools, "unifi_network_get_sysinfo", "get_sysinfo", {}, None),
     # devices
-    (register_device_tools, "unifi_network_adopt_device", "adopt_device", {"mac": "aa"}, None),
-    (register_device_tools, "unifi_network_locate_device", "locate_device", {"mac": "aa"}, None),
-    (register_device_tools, "unifi_network_unlocate_device", "unlocate_device", {"mac": "aa"}, None),
-    (register_device_tools, "unifi_network_provision_device", "provision_device", {"mac": "aa"}, None),
+    (register_device_tools, "unifi_network_adopt_device", "adopt_device", {"mac": "aa:bb:cc:dd:ee:ff"}, None),
+    (register_device_tools, "unifi_network_locate_device", "locate_device", {"mac": "aa:bb:cc:dd:ee:ff"}, None),
+    (register_device_tools, "unifi_network_unlocate_device", "unlocate_device", {"mac": "aa:bb:cc:dd:ee:ff"}, None),
+    (register_device_tools, "unifi_network_provision_device", "provision_device", {"mac": "aa:bb:cc:dd:ee:ff"}, None),
     # clients
-    (register_client_tools, "unifi_network_unblock_client", "unblock_client", {"mac": "aa"}, None),
-    (register_client_tools, "unifi_network_kick_client", "kick_client", {"mac": "aa"}, None),
+    (register_client_tools, "unifi_network_unblock_client", "unblock_client", {"mac": "aa:bb:cc:dd:ee:ff"}, None),
+    (register_client_tools, "unifi_network_kick_client", "kick_client", {"mac": "aa:bb:cc:dd:ee:ff"}, None),
     # wlan
     (register_wlan_tools, "unifi_network_list_wlans", "list_wlans", {}, None),
     (register_wlan_tools, "unifi_network_get_wlan", "get_wlan", {"wlan_id": "w-1"}, None),
@@ -195,8 +195,14 @@ NETWORK_HAPPY_PATHS = [
     (register_system_tools, "unifi_network_update_settings", "update_settings", {"data": {}}, None),
     (register_system_tools, "unifi_network_run_speedtest", "run_speedtest", {}, None),
     (register_system_tools, "unifi_network_create_backup", "create_backup", {}, None),
-    (register_system_tools, "unifi_network_power_cycle_port", "power_cycle_port", {"mac": "aa", "port_idx": 3}, None),
-    (register_system_tools, "unifi_network_unauthorize_guest", "unauthorize_guest", {"mac": "aa"}, None),
+    (
+        register_system_tools,
+        "unifi_network_power_cycle_port",
+        "power_cycle_port",
+        {"mac": "aa:bb:cc:dd:ee:ff", "port_idx": 3},
+        None,
+    ),
+    (register_system_tools, "unifi_network_unauthorize_guest", "unauthorize_guest", {"mac": "aa:bb:cc:dd:ee:ff"}, None),
     (register_system_tools, "unifi_network_archive_events", "archive_events", {}, None),
     (register_system_tools, "unifi_network_reset_dpi", "reset_dpi", {}, None),
 ]

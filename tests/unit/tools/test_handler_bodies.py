@@ -116,9 +116,9 @@ class TestNetworkDeviceHandlers:
 
     async def test_get_device_returns_match(self, server):
         client = AsyncMock()
-        client.list_devices.return_value = {"data": [{"mac": "AA:BB", "name": "ap-1"}]}
+        client.list_devices.return_value = {"data": [{"mac": "AA:BB:CC:DD:EE:FF", "name": "ap-1"}]}
         ctx = _fake_ctx(_readonly_config(), network=client)
-        result = await _call(server, "unifi_network_get_device", ctx, mac="aa:bb")
+        result = await _call(server, "unifi_network_get_device", ctx, mac="aa:bb:cc:dd:ee:ff")
         assert result["name"] == "ap-1"
 
     async def test_get_device_raises_not_found(self, server):
@@ -126,20 +126,20 @@ class TestNetworkDeviceHandlers:
         client.list_devices.return_value = {"data": []}
         ctx = _fake_ctx(_readonly_config(), network=client)
         with pytest.raises(ToolError, match="Resource not found"):
-            await _call(server, "unifi_network_get_device", ctx, mac="aa:bb")
+            await _call(server, "unifi_network_get_device", ctx, mac="aa:bb:cc:dd:ee:ff")
 
     async def test_readonly_blocks_restart(self, server):
         client = AsyncMock()
         ctx = _fake_ctx(_readonly_config(), network=client)
         with pytest.raises(ToolError, match="read-only mode"):
-            await _call(server, "unifi_network_restart_device", ctx, mac="aa:bb")
+            await _call(server, "unifi_network_restart_device", ctx, mac="aa:bb:cc:dd:ee:ff")
         client.restart_device.assert_not_awaited()
 
     async def test_readwrite_allows_restart(self, server):
         client = AsyncMock()
         client.restart_device.return_value = {"meta": {"rc": "ok"}}
         ctx = _fake_ctx(_readwrite_config(), network=client)
-        result = await _call(server, "unifi_network_restart_device", ctx, mac="aa:bb")
+        result = await _call(server, "unifi_network_restart_device", ctx, mac="aa:bb:cc:dd:ee:ff")
         assert result == {"meta": {"rc": "ok"}}
 
 
@@ -155,9 +155,9 @@ class TestNetworkClientHandlers:
 
     async def test_get_client_match(self, server):
         client = AsyncMock()
-        client.list_active_clients.return_value = {"data": [{"mac": "AA", "hostname": "host"}]}
+        client.list_active_clients.return_value = {"data": [{"mac": "AA:BB:CC:DD:EE:FF", "hostname": "host"}]}
         ctx = _fake_ctx(_readonly_config(), network=client)
-        result = await _call(server, "unifi_network_get_client", ctx, mac="aa")
+        result = await _call(server, "unifi_network_get_client", ctx, mac="aa:bb:cc:dd:ee:ff")
         assert result["hostname"] == "host"
 
     async def test_get_client_not_found(self, server):
@@ -165,7 +165,7 @@ class TestNetworkClientHandlers:
         client.list_active_clients.return_value = {"data": []}
         ctx = _fake_ctx(_readonly_config(), network=client)
         with pytest.raises(ToolError, match="Resource not found"):
-            await _call(server, "unifi_network_get_client", ctx, mac="aa")
+            await _call(server, "unifi_network_get_client", ctx, mac="aa:bb:cc:dd:ee:ff")
 
     async def test_block_client_readonly_blocked(self, server):
         client = AsyncMock()
@@ -177,8 +177,8 @@ class TestNetworkClientHandlers:
         client = AsyncMock()
         client.authorize_guest.return_value = {}
         ctx = _fake_ctx(_readwrite_config(), network=client)
-        await _call(server, "unifi_network_authorize_guest", ctx, mac="aa", minutes=45)
-        client.authorize_guest.assert_awaited_once_with("aa", minutes=45)
+        await _call(server, "unifi_network_authorize_guest", ctx, mac="aa:bb:cc:dd:ee:ff", minutes=45)
+        client.authorize_guest.assert_awaited_once_with("aa:bb:cc:dd:ee:ff", minutes=45)
 
 
 # ── Network wlan: create assembles payload, delete marks readonly ──────────
@@ -220,7 +220,7 @@ class TestNetworkWlanHandlers:
     ("register_fn", "write_tool", "client_method", "kwargs"),
     [
         (register_firewall_tools, "unifi_network_delete_firewall_rule", "delete_firewall_rule", {"rule_id": "r-1"}),
-        (register_system_tools, "unifi_network_upgrade_device", "upgrade_device", {"mac": "aa"}),
+        (register_system_tools, "unifi_network_upgrade_device", "upgrade_device", {"mac": "aa:bb:cc:dd:ee:ff"}),
     ],
 )
 async def test_write_tool_readonly_blocks_and_readwrite_delegates(register_fn, write_tool, client_method, kwargs):
