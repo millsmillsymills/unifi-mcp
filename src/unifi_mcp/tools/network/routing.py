@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context, reject_dangerous_keys
+from unifi_mcp.tools._common import JsonObject, get_server_context, redact_secrets, reject_dangerous_keys
 
 
 def register_routing_tools(mcp: FastMCP) -> None:
@@ -21,11 +21,11 @@ def register_routing_tools(mcp: FastMCP) -> None:
             ctx: FastMCP request context.
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].list_routes()
+            return redact_secrets(await context.clients["network"].list_routes())
         except Exception as e:
             handle_client_error(e)
 
@@ -37,11 +37,11 @@ def register_routing_tools(mcp: FastMCP) -> None:
             route_id: The route ID.
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].get_route(route_id)
+            return redact_secrets(await context.clients["network"].get_route(route_id))
         except Exception as e:
             handle_client_error(e)
 

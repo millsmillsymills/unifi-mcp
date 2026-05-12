@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context, reject_dangerous_keys
+from unifi_mcp.tools._common import JsonObject, get_server_context, redact_secrets, reject_dangerous_keys
 
 
 def register_port_profile_tools(mcp: FastMCP) -> None:
@@ -23,11 +23,11 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
             ctx: FastMCP request context.
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].list_port_profiles()
+            return redact_secrets(await context.clients["network"].list_port_profiles())
         except Exception as e:
             handle_client_error(e)
 
@@ -39,11 +39,11 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
             profile_id: The port-profile ID (``_id`` from ``list_port_profiles``).
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].get_port_profile(profile_id)
+            return redact_secrets(await context.clients["network"].get_port_profile(profile_id))
         except Exception as e:
             handle_client_error(e)
 

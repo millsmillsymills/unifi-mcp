@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import handle_client_error
-from unifi_mcp.tools._common import get_server_context
+from unifi_mcp.tools._common import get_server_context, redact_secrets
 
 
 def register_site_manager_tools(mcp: FastMCP) -> None:
@@ -27,7 +27,7 @@ def register_site_manager_tools(mcp: FastMCP) -> None:
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["site_manager"].list_hosts()
+            return redact_secrets(await context.clients["site_manager"].list_hosts())
         except Exception as e:
             handle_client_error(e)
 
@@ -45,7 +45,7 @@ def register_site_manager_tools(mcp: FastMCP) -> None:
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["site_manager"].list_sites()
+            return redact_secrets(await context.clients["site_manager"].list_sites())
         except Exception as e:
             handle_client_error(e)
 
@@ -66,6 +66,6 @@ def register_site_manager_tools(mcp: FastMCP) -> None:
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["site_manager"].list_devices(host_id=host_id)
+            return redact_secrets(await context.clients["site_manager"].list_devices(host_id=host_id))
         except Exception as e:
             handle_client_error(e)

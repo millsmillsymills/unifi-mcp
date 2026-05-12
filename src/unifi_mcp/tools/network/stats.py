@@ -21,11 +21,11 @@ def register_stats_tools(mcp: FastMCP) -> None:
             ctx: FastMCP request context.
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].get_health()
+            return redact_secrets(await context.clients["network"].get_health())
         except Exception as e:
             handle_client_error(e)
 
@@ -37,11 +37,11 @@ def register_stats_tools(mcp: FastMCP) -> None:
             limit: Maximum number of events to return (default: 100).
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].list_events(limit=limit)
+            return redact_secrets(await context.clients["network"].list_events(limit=limit))
         except Exception as e:
             handle_client_error(e)
 
@@ -133,11 +133,11 @@ def register_stats_tools(mcp: FastMCP) -> None:
             dpi_type: Type of DPI stats — "by_app" or "by_cat" (by category).
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].get_dpi_stats(dpi_type=dpi_type)
+            return redact_secrets(await context.clients["network"].get_dpi_stats(dpi_type=dpi_type))
         except Exception as e:
             handle_client_error(e)
 
@@ -149,10 +149,10 @@ def register_stats_tools(mcp: FastMCP) -> None:
             ctx: FastMCP request context.
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].get_sysinfo()
+            return redact_secrets(await context.clients["network"].get_sysinfo())
         except Exception as e:
             handle_client_error(e)
