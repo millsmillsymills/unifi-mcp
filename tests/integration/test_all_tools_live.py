@@ -125,9 +125,7 @@ NO_ARG_READ_TOOLS = {
 # Read tools that exist in the registered set but always 404 against the
 # current UniFi APIs. The strict xfail flips to a hard failure if a tool
 # starts working again, signaling that its tracking issue can close.
-XFAIL_NO_ARG_READ_TOOLS = {
-    "unifi_network_list_events": "#138 — list/alarm 404s on current UCG Ultra firmware",
-}
+XFAIL_NO_ARG_READ_TOOLS: dict[str, str] = {}
 
 # Protect write tools that 404 with `Entity 'endpoint' not found` against the
 # integration v1 API on UCK-G2-Plus (Protect 7.0.107). `recording_mode` works on
