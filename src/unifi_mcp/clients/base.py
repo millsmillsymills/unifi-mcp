@@ -17,6 +17,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from unifi_mcp._redaction import redact_secrets as _redact_sensitive
 from unifi_mcp.clients._pinning import CertPinningTransport
 from unifi_mcp.errors import (
     UniFiAuthError,
@@ -34,58 +35,6 @@ logger = logging.getLogger(__name__)
 # Upper bound on a single Retry-After sleep. Ubiquiti sometimes returns very
 # generous values; capping keeps a single tool call bounded.
 _MAX_RETRY_AFTER_SECONDS = 30
-
-# Sensitive keys that must be masked before an error body is logged at DEBUG
-# or stringified into a UniFi exception. UniFi controllers echo the submitted
-# JSON in some 400 responses, so a Wi-Fi passphrase or RADIUS secret can come
-# back unmasked in an error body — match #146's redaction set so a value
-# never appears in two different forms depending on the call site. See #148.
-_SENSITIVE_KEYS = frozenset(
-    {
-        "x_passphrase",
-        "x_password",
-        "password",
-        "passphrase",
-        "radius_secret",
-        "wpa_psk",
-        "private_key",
-        "ssotoken",
-        "bearer",
-        "token",
-        "api_key",
-        "apikey",
-        "secret",
-    }
-)
-
-# Placeholder substituted for redacted values so the operator can still see
-# the structure of the response without the credential.
-_REDACTED = "***REDACTED***"
-
-
-def _redact_sensitive(value: Any) -> Any:
-    """Return a copy of ``value`` with sensitive keys replaced.
-
-    Walks nested dicts and lists. String comparisons are case-insensitive
-    and also match ``super_*_password`` / ``super_*_url`` callback keys
-    that have leaked controller config in the past. Non-container values
-    pass through untouched.
-    """
-    if isinstance(value, dict):
-        redacted: dict[str, Any] = {}
-        for key, sub in value.items():
-            key_str = str(key)
-            lowered = key_str.lower()
-            if lowered in _SENSITIVE_KEYS or (
-                lowered.startswith("super_") and (lowered.endswith("_password") or lowered.endswith("_url"))
-            ):
-                redacted[key_str] = _REDACTED
-            else:
-                redacted[key_str] = _redact_sensitive(sub)
-        return redacted
-    if isinstance(value, list):
-        return [_redact_sensitive(item) for item in value]
-    return value
 
 
 def _log_raw_bodies_enabled() -> bool:

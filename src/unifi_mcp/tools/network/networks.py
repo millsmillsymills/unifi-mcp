@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context
+from unifi_mcp.tools._common import JsonObject, get_server_context, redact_secrets
 
 
 def register_network_config_tools(mcp: FastMCP) -> None:
@@ -25,7 +25,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].list_networks()
+            return redact_secrets(await context.clients["network"].list_networks())
         except Exception as e:
             handle_client_error(e)
 
@@ -33,15 +33,18 @@ def register_network_config_tools(mcp: FastMCP) -> None:
     async def unifi_network_get_network(ctx: Context, network_id: str) -> dict[str, Any]:
         """Get a specific network configuration by ID.
 
+        Portal credentials and other secret keys are redacted before the
+        response leaves this tool — see ``unifi_mcp._redaction`` (#146).
+
         Args:
             network_id: The network configuration ID.
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].get_network(network_id)
+            return redact_secrets(await context.clients["network"].get_network(network_id))
         except Exception as e:
             handle_client_error(e)
 

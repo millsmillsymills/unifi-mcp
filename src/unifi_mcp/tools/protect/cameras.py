@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context
+from unifi_mcp.tools._common import JsonObject, get_server_context, redact_secrets
 
 
 def register_camera_tools(mcp: FastMCP) -> None:
@@ -25,7 +25,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["protect"].list_cameras()
+            return redact_secrets(await context.clients["protect"].list_cameras())
         except Exception as e:
             handle_client_error(e)
 
@@ -33,15 +33,18 @@ def register_camera_tools(mcp: FastMCP) -> None:
     async def unifi_protect_get_camera(ctx: Context, camera_id: str) -> dict[str, Any]:
         """Get detailed info for a specific camera.
 
+        Camera credentials and token fields are redacted before the
+        response leaves this tool — see ``unifi_mcp._redaction`` (#146).
+
         Args:
             camera_id: The camera ID.
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["protect"].get_camera(camera_id)
+            return redact_secrets(await context.clients["protect"].get_camera(camera_id))
         except Exception as e:
             handle_client_error(e)
 

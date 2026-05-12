@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import handle_client_error
-from unifi_mcp.tools._common import get_server_context
+from unifi_mcp.tools._common import get_server_context, redact_secrets
 
 
 def register_stats_tools(mcp: FastMCP) -> None:
@@ -57,7 +57,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].list_devices()
+            return redact_secrets(await context.clients["network"].list_devices())
         except Exception as e:
             handle_client_error(e)
 
@@ -73,7 +73,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].list_devices_basic()
+            return redact_secrets(await context.clients["network"].list_devices_basic())
         except Exception as e:
             handle_client_error(e)
 
@@ -89,7 +89,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].list_active_clients()
+            return redact_secrets(await context.clients["network"].list_active_clients())
         except Exception as e:
             handle_client_error(e)
 
@@ -105,7 +105,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].list_configured_clients()
+            return redact_secrets(await context.clients["network"].list_configured_clients())
         except Exception as e:
             handle_client_error(e)
 
@@ -121,7 +121,7 @@ def register_stats_tools(mcp: FastMCP) -> None:
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].list_all_clients()
+            return redact_secrets(await context.clients["network"].list_all_clients())
         except Exception as e:
             handle_client_error(e)
 
