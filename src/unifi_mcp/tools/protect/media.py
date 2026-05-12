@@ -60,6 +60,13 @@ def register_media_tools(mcp: FastMCP) -> None:
         Returns:
             ``{"format": "mp4", "data_base64": str, "size_bytes": int}``. ``data_base64``
             is the MP4 bytes encoded with standard base64; decode before writing to disk.
+
+        Note:
+            The underlying endpoint is missing from Protect integration v1
+            on UCK-G2-Plus (Protect 7.0.107). Calls return ``HTTP 404 Entity
+            'endpoint' not found``. Tracked in #227; the tool stays
+            registered so it works automatically once Ubiquiti exposes the
+            endpoint on a future firmware.
         """
         try:
             validate_id(camera_id, field="camera_id")
