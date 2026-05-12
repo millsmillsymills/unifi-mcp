@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
@@ -47,7 +49,7 @@ jobs:
         with:
           name: bandit-report
           path: bandit-report.json
-          retention-days: 30
+          retention-days: 1
 
   dependency-review:
     name: Dependency Review
@@ -55,14 +57,11 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Dependency Review
         uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48  # v4.9.0
-        # Advisory: reports issues but doesn't block PRs.
-        # The dependency graph may not be populated for new repos,
-        # causing false failures. Remove continue-on-error once
-        # the graph is indexed and this check runs reliably.
-        continue-on-error: true
         with:
           fail-on-severity: high
           allow-licenses: Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, ISC, PSF-2.0, Python-2.0, 0BSD, Unlicense
