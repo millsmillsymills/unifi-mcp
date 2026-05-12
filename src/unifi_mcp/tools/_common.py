@@ -14,7 +14,13 @@ if TYPE_CHECKING:
 
 type JsonObject = dict[str, Any]
 
-__all__ = ["JsonObject", "get_server_context", "redact_secrets", "reject_dangerous_keys"]
+__all__ = [
+    "JsonObject",
+    "build_named_arg_body",
+    "get_server_context",
+    "redact_secrets",
+    "reject_dangerous_keys",
+]
 
 
 def get_server_context(ctx: Context) -> ServerContext:
@@ -108,3 +114,64 @@ def reject_dangerous_keys(data: Any, *, tool_name: str) -> None:
             path locating it in the payload.
     """
     _walk(data, "", tool_name=tool_name)
+
+
+# ── Option-1 named-arg builder (#202) ──────────────────────────────────────
+#
+# Per-endpoint write tools expose a flat, named-scalar surface that maps
+# allowlisted kwargs to nested fields in the controller's request body.
+# This builder enforces the shared contract:
+#   - named args win over the legacy ``data`` dict and may not be mixed,
+#   - at least one input is required,
+#   - the resulting body still flows through ``reject_dangerous_keys``.
+# Deliberately omitted fields (e.g. Protect ``recordingSettings``) stay
+# outside the allowlist so the named API can never reach them.
+
+
+def _assign_nested(body: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
+    cursor: dict[str, Any] = body
+    for segment in path[:-1]:
+        next_cursor = cursor.setdefault(segment, {})
+        if not isinstance(next_cursor, dict):
+            raise UniFiBadRequestError(f"path collision at '{segment}' while building update body")
+        cursor = next_cursor
+    cursor[path[-1]] = value
+
+
+def build_named_arg_body(
+    *,
+    tool_name: str,
+    field_paths: dict[str, tuple[str, ...]],
+    named_values: dict[str, Any],
+    data: JsonObject | None,
+) -> JsonObject:
+    """Resolve named scalar args + legacy ``data`` dict into one request body.
+
+    Args:
+        tool_name: Calling tool name, used in error messages.
+        field_paths: Maps each kwarg name to its dotted destination in the
+            outgoing body. Keys not present here cannot be set via the
+            named API — the named-arg surface is the allowlist.
+        named_values: Snapshot of the tool's keyword arguments, including
+            ``None`` for unsupplied ones; ``None`` values are skipped.
+        data: Legacy raw-dict path. ``None`` when the caller used named
+            args; otherwise passed through verbatim.
+
+    Returns:
+        The request body to forward to the upstream API.
+
+    Raises:
+        UniFiBadRequestError: If both ``data`` and named args are
+            supplied, or neither.
+    """
+    supplied_named = {k: v for k, v in named_values.items() if v is not None}
+    if supplied_named and data is not None:
+        raise UniFiBadRequestError("Cannot mix named args with raw data dict")
+    if data is not None:
+        return data
+    if not supplied_named:
+        raise UniFiBadRequestError(f"{tool_name}: at least one field must be provided")
+    body: JsonObject = {}
+    for kwarg, value in supplied_named.items():
+        _assign_nested(body, field_paths[kwarg], value)
+    return body
