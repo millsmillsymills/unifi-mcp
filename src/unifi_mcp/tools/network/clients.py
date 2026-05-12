@@ -60,6 +60,12 @@ def register_client_tools(mcp: FastMCP) -> None:
 
         Returns:
             The upstream API response.
+
+        NOTE: not atomic. A ``list_all_clients`` pre-check ensures the MAC is
+        known to the controller, then ``cmd/stamgr`` issues the block as a
+        separate request. A client that disconnects between the two calls
+        will still be blocked once it reconnects. The legacy ``cmd/*`` API
+        offers no compare-and-set primitive (#151).
         """
         try:
             validate_mac(mac, field="mac")
@@ -79,6 +85,10 @@ def register_client_tools(mcp: FastMCP) -> None:
 
         Returns:
             The upstream API response.
+
+        NOTE: not atomic. Same TOCTOU caveat as ``unifi_network_block_client``:
+        the pre-check and the ``cmd/stamgr`` POST run as separate requests
+        with no compare-and-set primitive (#151).
         """
         try:
             validate_mac(mac, field="mac")
@@ -120,11 +130,13 @@ def register_client_tools(mcp: FastMCP) -> None:
 
         Returns:
             The upstream API response.
+
+        NOTE: not atomic. Same TOCTOU caveat as ``unifi_network_block_client``:
+        the pre-check and the ``cmd/stamgr`` POST run as separate requests
+        with no compare-and-set primitive (#151).
         """
         try:
             validate_mac(mac, field="mac")
-<<<<<<< HEAD
-=======
             if not isinstance(minutes, int) or not (
                 _AUTHORIZE_GUEST_MIN_MINUTES <= minutes <= _AUTHORIZE_GUEST_MAX_MINUTES
             ):
@@ -132,7 +144,6 @@ def register_client_tools(mcp: FastMCP) -> None:
                     f"minutes must be between {_AUTHORIZE_GUEST_MIN_MINUTES} and "
                     f"{_AUTHORIZE_GUEST_MAX_MINUTES} (got {minutes!r})"
                 )
->>>>>>> f47c62a (fix(security): bound retry budget, list params, and base client phases (#151))
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot authorize guest in read-only mode")

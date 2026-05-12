@@ -819,7 +819,7 @@ class TestTotalElapsedBudget:
         # is captured at the start of ``_request``; each fake sleep advances it.
         import asyncio as _aio
 
-        real_loop = _aio.get_event_loop()
+        real_loop = _aio.get_running_loop()
         fake_now = 0.0
 
         def fake_time() -> float:

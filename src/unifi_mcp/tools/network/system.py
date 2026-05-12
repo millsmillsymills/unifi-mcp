@@ -219,6 +219,10 @@ def register_system_tools(mcp: FastMCP) -> None:
 
         Returns:
             The upstream API response.
+
+        NOTE: not atomic. Same TOCTOU caveat as ``unifi_network_block_client``:
+        the pre-check and the ``cmd/stamgr`` POST run as separate requests
+        with no compare-and-set primitive (#151).
         """
         try:
             validate_mac(mac, field="mac")

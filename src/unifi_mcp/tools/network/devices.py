@@ -67,6 +67,14 @@ def register_device_tools(mcp: FastMCP) -> None:
 
         Returns:
             The upstream API response.
+
+        NOTE: not atomic. A ``list_devices`` pre-check runs before the
+        ``cmd/devmgr`` adopt POST so already-adopted devices surface a typed
+        ``UniFiDeviceAlreadyAdoptedError`` (#93). A concurrent adopt between
+        the two calls can still produce that error after the parallel adopt
+        succeeded — agents should treat it as a soft "already done", not a
+        hard failure. The legacy ``cmd/*`` API has no compare-and-set
+        primitive (#151).
         """
         try:
             validate_mac(mac, field="mac")
@@ -147,6 +155,11 @@ def register_device_tools(mcp: FastMCP) -> None:
 
         Returns:
             The upstream API response.
+
+        NOTE: not atomic. A ``list_devices`` pre-check runs before the
+        ``cmd/sitemgr`` forget POST, so a concurrent forget/re-adopt between
+        them races; the legacy ``cmd/*`` API has no compare-and-set
+        primitive (#151).
         """
         try:
             validate_mac(mac, field="mac")

@@ -266,11 +266,13 @@ class BaseUniFiClient(ABC):
         the ``Retry-After`` duration (capped at ``_MAX_RETRY_AFTER_SECONDS``)
         or 1 second if the header is absent. Bounded by ``self._max_retries``.
 
-        Two retry budgets share a wall-clock fence: the tenacity transient-
-        error budget and the explicit 429-loop run independently, so we
-        refuse to sleep past ``timeout * _TOTAL_ELAPSED_TIMEOUT_MULTIPLIER``
-        in cumulative time. Without this fence a pathological controller
-        that alternates between transient failures and 429s can chain both
+        The tenacity transient-error budget and the explicit 429-loop run
+        independently, so the 429 loop applies a wall-clock fence: it
+        refuses to sleep past ``timeout * _TOTAL_ELAPSED_TIMEOUT_MULTIPLIER``
+        in cumulative elapsed time since ``_request`` was entered. The
+        tenacity loop is bounded by ``max_retries`` x ``wait_exponential(max=10)``
+        on its own. Without the 429 fence a pathological controller that
+        alternates between transient failures and 429s can chain both
         budgets and produce single-tool calls that block for minutes. See
         #151.
         """
@@ -279,7 +281,7 @@ class BaseUniFiClient(ABC):
         if method_upper in ("GET", "HEAD"):
             retry_on = (httpx.ConnectError, httpx.TimeoutException)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         start = loop.time()
         total_budget = float(self._timeout * _TOTAL_ELAPSED_TIMEOUT_MULTIPLIER)
 
