@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context, redact_secrets, reject_dangerous_keys
+from unifi_mcp.tools._common import JsonObject, get_server_context, redact_secrets, reject_dangerous_keys, validate_id
 
 
 def register_network_config_tools(mcp: FastMCP) -> None:
@@ -43,6 +43,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
             The upstream API response with sensitive fields redacted.
         """
         try:
+            validate_id(network_id, field="network_id")
             context = get_server_context(ctx)
             return redact_secrets(await context.clients["network"].get_network(network_id))
         except Exception as e:
@@ -94,6 +95,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_id(network_id, field="network_id")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot update network in read-only mode")
@@ -113,6 +115,7 @@ def register_network_config_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_id(network_id, field="network_id")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot delete network in read-only mode")

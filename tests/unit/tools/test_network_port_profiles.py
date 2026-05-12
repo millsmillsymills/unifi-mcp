@@ -215,7 +215,7 @@ class TestAssignHandlerPlumbing:
         ctx = _ctx(_config(UniFiMode.READONLY), network=client)
         tool = await server.get_tool("unifi_network_assign_port_profile")
         with pytest.raises(ToolError, match="read-only mode"):
-            await tool.fn(ctx, mac="aa", port_idx=1, profile_id="p-1")
+            await tool.fn(ctx, mac="aa:bb:cc:dd:ee:ff", port_idx=1, profile_id="p-1")
         client.assign_port_profile.assert_not_awaited()
 
     async def test_readwrite_forwards_args(self):
@@ -225,6 +225,6 @@ class TestAssignHandlerPlumbing:
         client.assign_port_profile.return_value = {"ok": True}
         ctx = _ctx(_config(UniFiMode.READWRITE), network=client)
         tool = await server.get_tool("unifi_network_assign_port_profile")
-        result = await tool.fn(ctx, mac="aa", port_idx=7, profile_id="p-7")
+        result = await tool.fn(ctx, mac="aa:bb:cc:dd:ee:ff", port_idx=7, profile_id="p-7")
         assert result == {"ok": True}
-        client.assign_port_profile.assert_awaited_once_with("aa", 7, "p-7")
+        client.assign_port_profile.assert_awaited_once_with("aa:bb:cc:dd:ee:ff", 7, "p-7")

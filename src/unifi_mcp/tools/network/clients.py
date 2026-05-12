@@ -29,6 +29,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             The upstream API response with sensitive fields redacted.
         """
         try:
+            validate_mac(mac, field="mac")
             context = get_server_context(ctx)
             result = await context.clients["network"].list_active_clients()
             clients: list[dict[str, Any]] = result.get("data", [])
@@ -71,6 +72,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_mac(mac, field="mac")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot unblock client in read-only mode")
@@ -89,6 +91,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_mac(mac, field="mac")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot kick client in read-only mode")
@@ -108,6 +111,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_mac(mac, field="mac")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot authorize guest in read-only mode")
