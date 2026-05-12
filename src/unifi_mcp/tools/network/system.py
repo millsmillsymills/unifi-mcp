@@ -7,7 +7,36 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context, redact_secrets, reject_dangerous_keys
+from unifi_mcp.tools._common import (
+    JsonObject,
+    build_named_arg_body,
+    get_server_context,
+    redact_secrets,
+    reject_dangerous_keys,
+)
+
+# ── Option-1 allowlist for unifi_network_update_settings (#202) ────────────
+#
+# A flat scalar -> nested-dict path. Each entry tells the named-arg builder
+# where to place the value in the outgoing ``rest/setting`` PUT body. The
+# named-arg surface IS the allowlist — anything not listed here cannot be
+# set via the named API.
+#
+# Conservatively scoped to fields that:
+#   - are name-only / identity-style settings (no auth, no callbacks),
+#   - do not collide with the dangerous-key denylist (``super_*``,
+#     ``radius_*``, ``*_url``, ``*_command``, ``mac_filter_*``, admin
+#     role flags, command verbs all stay out),
+#   - have an obvious, stable destination on the Network controller.
+#
+# Easier to expand later than to retract. Adding a new safe field is one
+# line here plus one kwarg on the tool signature.
+_SETTINGS_FIELD_PATHS: dict[str, tuple[str, ...]] = {
+    "mgmt_timezone": ("mgmt", "timezone"),
+    "locale_country": ("locale", "country"),
+    "ntp_server_1": ("ntp", "ntp_server_1"),
+    "ntp_server_2": ("ntp", "ntp_server_2"),
+}
 
 
 def register_system_tools(mcp: FastMCP) -> None:
@@ -35,11 +64,37 @@ def register_system_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def unifi_network_update_settings(ctx: Context, data: JsonObject) -> dict[str, Any]:
-        """Update controller settings. Pass only fields to change.
+    async def unifi_network_update_settings(
+        ctx: Context,
+        *,
+        mgmt_timezone: str | None = None,
+        locale_country: str | None = None,
+        ntp_server_1: str | None = None,
+        ntp_server_2: str | None = None,
+        data: JsonObject | None = None,
+    ) -> dict[str, Any]:
+        """Update controller settings using named scalar args.
+
+        Pass only the fields to change. Sections that handle authentication,
+        callbacks, or admin escalation (``super_*``, ``radius_*``,
+        ``mac_filter_*``, ``auto_upgrade``, ``*_url``, ``*_command``,
+        admin role flags) are intentionally NOT exposed here — they have
+        dedicated tools or stay behind the dangerous-key denylist.
 
         Args:
-            data: Settings fields to update.
+            ctx: FastMCP request context.
+            mgmt_timezone: IANA timezone string (``mgmt.timezone``), e.g.
+                ``"America/Los_Angeles"``.
+            locale_country: ISO country code for the controller locale
+                (``locale.country``), e.g. ``"US"``.
+            ntp_server_1: Primary NTP server hostname or IP
+                (``ntp.ntp_server_1``).
+            ntp_server_2: Secondary NTP server hostname or IP
+                (``ntp.ntp_server_2``).
+            data: DEPRECATED — raw settings dict. Kept for back-compat
+                with existing agents; prefer the named scalar args above.
+                Still passes through the dangerous-key denylist. Cannot
+                be combined with any named arg.
 
         Returns:
             The upstream API response.
@@ -48,8 +103,19 @@ def register_system_tools(mcp: FastMCP) -> None:
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot update settings in read-only mode")
-            reject_dangerous_keys(data, tool_name="unifi_network_update_settings")
-            return await context.clients["network"].update_settings(data)
+            body = build_named_arg_body(
+                tool_name="unifi_network_update_settings",
+                field_paths=_SETTINGS_FIELD_PATHS,
+                named_values={
+                    "mgmt_timezone": mgmt_timezone,
+                    "locale_country": locale_country,
+                    "ntp_server_1": ntp_server_1,
+                    "ntp_server_2": ntp_server_2,
+                },
+                data=data,
+            )
+            reject_dangerous_keys(body, tool_name="unifi_network_update_settings")
+            return await context.clients["network"].update_settings(body)
         except Exception as e:
             handle_client_error(e)
 
