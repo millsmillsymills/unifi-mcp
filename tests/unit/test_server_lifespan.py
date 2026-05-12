@@ -576,6 +576,42 @@ class TestCreateServer:
         assert server.name == "unifi-mcp"
 
 
+# ── Explicit guards survive python -O (asserts stripped) ───────────────────
+
+
+class TestEnabledWithoutKeyGuards:
+    """Replaces the previous ``assert config.unifi_*_api is not None`` checks.
+
+    The ``*_enabled`` properties read the same field, so in normal use these
+    branches are unreachable. Under ``python -O`` an ``assert`` would vanish
+    and the lifespan would dereference ``None`` deep inside the client
+    constructor; the explicit ``RuntimeError`` keeps the failure mode loud.
+    """
+
+    @pytest.mark.parametrize(
+        ("api", "env_var"),
+        [
+            ("network", "UNIFI_NETWORK_API"),
+            ("protect", "UNIFI_PROTECT_API"),
+            ("site_manager", "UNIFI_SITE_MANAGER_API"),
+        ],
+    )
+    async def test_runtime_error_when_enabled_but_key_missing(self, monkeypatch, tmp_path, api, env_var):
+        from unifi_mcp.config import UniFiConfig
+
+        _setup_env_for_lifespan(monkeypatch, tmp_path)
+        monkeypatch.delenv(env_var, raising=False)
+
+        property_name = f"{api}_enabled"
+        monkeypatch.setattr(UniFiConfig, property_name, property(lambda _self: True))
+
+        expected = f"unifi_{api}_api must be set when {api}_enabled is True"
+        gen = server_lifespan._fn(None)
+        async with aclosing(gen):
+            with pytest.raises(RuntimeError, match=expected):
+                await gen.__anext__()
+
+
 # ── Guard against accidental .env dependence during tests ──────────────────
 
 

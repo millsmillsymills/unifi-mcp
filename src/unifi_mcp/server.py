@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any, TypedDict
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+    from pydantic import SecretStr
+
     from unifi_mcp.clients.base import BaseUniFiClient
     from unifi_mcp.clients.network import NetworkClient
     from unifi_mcp.clients.protect import ProtectClient
@@ -22,6 +24,19 @@ from unifi_mcp.config import UniFiConfig, get_config
 from unifi_mcp.errors import UniFiError
 
 logger = logging.getLogger(__name__)
+
+
+def _require_api_key(api_name: str, secret: SecretStr | None) -> str:
+    """Return the plaintext API key, raising if absent.
+
+    The matching ``*_enabled`` property already guarantees the key is set, so
+    this is a ``python -O``-proof guard rather than a user-facing error: under
+    ``-O`` the previous ``assert`` would vanish and the lifespan would crash
+    deep inside the client constructor on a ``None`` attribute access.
+    """
+    if secret is None:
+        raise RuntimeError(f"unifi_{api_name}_api must be set when {api_name}_enabled is True")
+    return secret.get_secret_value()
 
 
 class APIClients(TypedDict, total=False):
@@ -106,14 +121,12 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
     failures: dict[str, BaseException | None] = {}
 
     if config.network_enabled:
-        # network_enabled guarantees unifi_network_api is not None.
-        assert config.unifi_network_api is not None
         failures["network"] = await _register_client(
             context,
             "network",
             NetworkClient(
                 base_url=config.network_base_url,
-                api_key=config.unifi_network_api.get_secret_value(),
+                api_key=_require_api_key("network", config.unifi_network_api),
                 site=config.unifi_network_site,
                 verify_ssl=config.unifi_network_verify_ssl,
                 cert_fingerprint=config.unifi_network_cert_fingerprint,
@@ -123,13 +136,12 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
         )
 
     if config.protect_enabled:
-        assert config.unifi_protect_api is not None
         failures["protect"] = await _register_client(
             context,
             "protect",
             ProtectClient(
                 base_url=config.protect_base_url,
-                api_key=config.unifi_protect_api.get_secret_value(),
+                api_key=_require_api_key("protect", config.unifi_protect_api),
                 verify_ssl=config.unifi_protect_verify_ssl,
                 cert_fingerprint=config.unifi_protect_cert_fingerprint,
                 timeout=config.unifi_request_timeout,
@@ -138,12 +150,11 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[ServerContext]:
         )
 
     if config.site_manager_enabled:
-        assert config.unifi_site_manager_api is not None
         failures["site_manager"] = await _register_client(
             context,
             "site_manager",
             SiteManagerClient(
-                api_key=config.unifi_site_manager_api.get_secret_value(),
+                api_key=_require_api_key("site_manager", config.unifi_site_manager_api),
                 timeout=config.unifi_request_timeout,
                 max_retries=config.unifi_max_retries,
             ),

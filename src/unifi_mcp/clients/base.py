@@ -76,7 +76,6 @@ class BaseUniFiClient(ABC):
         timeout: int = 30,
         max_retries: int = 3,
     ) -> None:
-        self._api_key = api_key
         self._max_retries = max_retries
         self._timeout = timeout
         # Multi-phase timeout: short connect/pool waits keep startup snappy
