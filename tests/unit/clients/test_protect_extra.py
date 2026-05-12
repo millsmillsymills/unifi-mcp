@@ -19,11 +19,6 @@ def client() -> ProtectClient:
 
 class TestReadMethods:
     @respx.mock
-    async def test_get_bootstrap(self, client):
-        respx.get(f"{API_PREFIX}bootstrap").mock(return_value=httpx.Response(200, json={"nvr": {}, "cameras": []}))
-        assert await client.get_bootstrap() == {"nvr": {}, "cameras": []}
-
-    @respx.mock
     async def test_list_chimes(self, client):
         respx.get(f"{API_PREFIX}chimes").mock(return_value=httpx.Response(200, json=[{"id": "chime-1"}]))
         assert await client.list_chimes() == [{"id": "chime-1"}]

@@ -1,4 +1,4 @@
-"""Protect NVR tools (2 read + 1 write)."""
+"""Protect NVR tools (1 read + 1 write)."""
 
 from __future__ import annotations
 
@@ -12,22 +12,6 @@ from unifi_mcp.tools._common import JsonObject, get_server_context
 
 def register_nvr_tools(mcp: FastMCP) -> None:
     """Register NVR tools."""
-
-    @mcp.tool(tags={"protect"})
-    async def unifi_protect_get_bootstrap(ctx: Context) -> dict[str, Any]:
-        """Get the full Protect bootstrap data (NVR, cameras, users, groups).
-
-        Args:
-            ctx: FastMCP request context.
-
-        Returns:
-            The upstream API response.
-        """
-        try:
-            context = get_server_context(ctx)
-            return await context.clients["protect"].get_bootstrap()
-        except Exception as e:
-            handle_client_error(e)
 
     @mcp.tool(tags={"protect"})
     async def unifi_protect_get_nvr(ctx: Context) -> dict[str, Any]:

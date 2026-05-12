@@ -18,8 +18,6 @@ class ProtectClient(BaseUniFiClient):
 
     Uses ``/proxy/protect/integration/v1/`` (X-API-Key compatible). The
     legacy ``/proxy/protect/api/`` path only accepts session-cookie auth.
-    Note: ``get_bootstrap`` and ``list_events`` have no integration-v1
-    equivalent; they 404 with ``Entity 'endpoint' not found`` (see #130).
     """
 
     def __init__(
@@ -44,11 +42,6 @@ class ProtectClient(BaseUniFiClient):
 
     # -- Read methods -------------------------------------------------------
 
-    async def get_bootstrap(self) -> dict[str, Any]:
-        """Get full NVR bootstrap data."""
-        result: dict[str, Any] = await self.get("bootstrap")
-        return result
-
     async def list_cameras(self) -> list[dict[str, Any]]:
         """List all cameras."""
         result: list[dict[str, Any]] = await self.get("cameras")
@@ -57,42 +50,6 @@ class ProtectClient(BaseUniFiClient):
     async def get_camera(self, camera_id: str) -> dict[str, Any]:
         """Get a specific camera by ID."""
         result: dict[str, Any] = await self.get(f"cameras/{camera_id}")
-        return result
-
-    async def list_events(
-        self,
-        start: str | None = None,
-        end: str | None = None,
-        camera_ids: list[str] | None = None,
-        types: list[str] | None = None,
-        smart_detect_types: list[str] | None = None,
-        limit: int = 30,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        """List events with optional filters.
-
-        Args:
-            start: Start timestamp for the query range.
-            end: End timestamp for the query range.
-            camera_ids: Filter by camera IDs (comma-separated in query).
-            types: Filter by event types (comma-separated in query).
-            smart_detect_types: Filter by smart detection types (comma-separated in query).
-            limit: Maximum number of events to return.
-            offset: Number of events to skip.
-        """
-        params: dict[str, str | int] = {"limit": limit, "offset": offset}
-        if start is not None:
-            params["start"] = start
-        if end is not None:
-            params["end"] = end
-        if camera_ids is not None:
-            params["cameras"] = ",".join(camera_ids)
-        if types is not None:
-            params["types"] = ",".join(types)
-        if smart_detect_types is not None:
-            params["smartDetectTypes"] = ",".join(smart_detect_types)
-
-        result: list[dict[str, Any]] = await self.get("events", params=params)
         return result
 
     async def get_nvr(self) -> dict[str, Any]:

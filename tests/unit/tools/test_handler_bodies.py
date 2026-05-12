@@ -30,7 +30,6 @@ from unifi_mcp.tools.network.system import register_system_tools
 from unifi_mcp.tools.network.wlan import register_wlan_tools
 from unifi_mcp.tools.protect.cameras import register_camera_tools
 from unifi_mcp.tools.protect.devices import register_protect_device_tools
-from unifi_mcp.tools.protect.events import register_event_tools
 from unifi_mcp.tools.protect.media import register_media_tools
 from unifi_mcp.tools.protect.nvr import register_nvr_tools
 
@@ -279,17 +278,6 @@ class TestProtectHandlers:
         ctx = _fake_ctx(_readonly_config(), protect=client)
         result = await _call(s, "unifi_protect_list_chimes", ctx)
         assert result == [{"id": "c-1"}]
-
-    async def test_list_events_passes_filters(self):
-        s = FastMCP(name="t")
-        register_event_tools(s)
-        client = AsyncMock()
-        client.list_events.return_value = []
-        ctx = _fake_ctx(_readonly_config(), protect=client)
-        await _call(s, "unifi_protect_list_events", ctx, camera_ids=["cam-1"], limit=10)
-        _, kwargs = client.list_events.call_args
-        assert kwargs["camera_ids"] == ["cam-1"]
-        assert kwargs["limit"] == 10
 
     async def test_get_nvr_delegates(self):
         s = FastMCP(name="t")

@@ -57,10 +57,7 @@ src/unifi_mcp/
 │   └── site_manager.py  # Site Manager API client
 └── tools/               # MCP tool definitions
     ├── network/         # 26 read + 40 write tools (66 total)
-    ├── protect/         # 11 read + 4 write tools (15 total, includes 2 media read tools)
-    │                    # NOTE: 2 of 11 read tools (unifi_protect_get_bootstrap,
-    │                    # unifi_protect_list_events) always return 404 against the
-    │                    # integration API. Tracked in #130.
+    ├── protect/         # 9 read + 4 write tools (13 total, includes 2 media read tools)
     └── site_manager/    # 3 read-only tools
 ```
 
@@ -102,7 +99,6 @@ if config.protect_enabled:
 
 - **Protect host must be set on split deployments (#107)**: If Protect runs on a separate UCK/NVR from the gateway, `UNIFI_PROTECT_HOST` must be set explicitly. The default inherits `UNIFI_NETWORK_HOST`, `validate_connection` fails at startup, and every Protect tool deregisters with a single WARN line.
 - **API keys are service-scoped (#131)**: A Network-scoped key returns 401 on `/proxy/protect/...`. `UNIFI_NETWORK_API` and `UNIFI_PROTECT_API` must be issued under their respective services in UniFi OS.
-- **Protect bootstrap/events endpoints (#130)**: `unifi_protect_get_bootstrap` and `unifi_protect_list_events` always return 404 against the v1 integration API — left registered for parity but non-functional.
 - **No Pydantic validation layer between clients and tools**: An earlier `src/unifi_mcp/models/` layer was abandoned; clients pass raw `dict[str, Any]` straight to tools. Don't reintroduce one without a clear motivating constraint.
 
 ## CI/CD

@@ -44,21 +44,6 @@ async def test_get_snapshot_returns_jpeg(protect_live_client):
     assert len(snapshot) > 1024, "Snapshot suspiciously small"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "#130 — the integration API at /proxy/protect/integration/v1/ does not "
-        "expose an events endpoint (returns 404 NOT_FOUND). Flip this xfail to "
-        "a plain test when #130 ships either the removal or a WebSocket-based "
-        "replacement. Note: silently skips when UNIFI_PROTECT_API is unset; the "
-        "strict marker only fires on live manual runs, not in CI."
-    ),
-)
-async def test_list_events_returns_list(protect_live_client):
-    events = await protect_live_client.list_events(limit=1)
-    assert isinstance(events, list)
-
-
 async def test_export_video_returns_data(protect_live_client):
     """Export a 5-second window from ~30s ago. Asserts non-empty bytes; size
     sanity check guards against the controller returning an empty/0-byte

@@ -30,7 +30,6 @@ from unifi_mcp.tools.network.system import register_system_tools
 from unifi_mcp.tools.network.wlan import register_wlan_tools
 from unifi_mcp.tools.protect.cameras import register_camera_tools
 from unifi_mcp.tools.protect.devices import register_protect_device_tools
-from unifi_mcp.tools.protect.events import register_event_tools
 from unifi_mcp.tools.protect.media import register_media_tools
 from unifi_mcp.tools.protect.nvr import register_nvr_tools
 from unifi_mcp.tools.site_manager.discovery import register_site_manager_tools
@@ -237,8 +236,6 @@ ERROR_PATH_CASES: list[tuple[Any, str, str, str, dict[str, Any]]] = [
     (register_protect_device_tools, "unifi_protect_list_lights", "list_lights", "protect", {}),
     (register_protect_device_tools, "unifi_protect_list_sensors", "list_sensors", "protect", {}),
     (register_protect_device_tools, "unifi_protect_list_viewers", "list_viewers", "protect", {}),
-    (register_event_tools, "unifi_protect_list_events", "list_events", "protect", {}),
-    (register_nvr_tools, "unifi_protect_get_bootstrap", "get_bootstrap", "protect", {}),
     (register_nvr_tools, "unifi_protect_get_nvr", "get_nvr", "protect", {}),
     (register_nvr_tools, "unifi_protect_update_nvr", "update_nvr", "protect", {"data": {}}),
     (register_media_tools, "unifi_protect_get_snapshot", "get_snapshot", "protect", {"camera_id": "c"}),
