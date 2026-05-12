@@ -129,6 +129,17 @@ XFAIL_NO_ARG_READ_TOOLS = {
     "unifi_network_list_events": "#138 — list/alarm 404s on current UCG Ultra firmware",
 }
 
+# Protect write tools that 404 with `Entity 'endpoint' not found` against the
+# integration v1 API on UCK-G2-Plus (Protect 7.0.107). `recording_mode` works on
+# the same `PUT cameras/{id}` path while these three do not — same envelope as
+# the missing reads tracked in #130. Strict xfail flips to a hard failure when a
+# fix lands, forcing the marker (and this comment) to be removed.
+XFAIL_PROTECT_WRITE_TOOLS = {
+    "unifi_protect_set_smart_detection": "#139 — PUT cameras/{id} smartDetectSettings 404 on integration v1",
+    "unifi_protect_update_camera": "#139 — PUT cameras/{id} arbitrary body 404 on integration v1",
+    "unifi_protect_update_nvr": "#139 — PUT nvrs path missing on integration v1 (see TODO in clients/protect.py)",
+}
+
 # Read tools that take required args; covered via the detail-fetch harness.
 DETAIL_READ_TOOLS = {
     "unifi_network_get_device": ("unifi_network_list_devices", "mac", "mac"),
@@ -401,6 +412,7 @@ class TestProtectWriteRoundtrips:
             )
             artifacts.dump("recording_mode_restored", {"restored_mode": original_mode})
 
+    @pytest.mark.xfail(strict=True, reason=XFAIL_PROTECT_WRITE_TOOLS["unifi_protect_set_smart_detection"])
     async def test_smart_detection_roundtrip(self, live_client, artifacts):
         """Capture current smartDetectSettings.objectTypes, set ['person'],
         read back, then restore.
@@ -442,6 +454,7 @@ class TestProtectWriteRoundtrips:
             )
             artifacts.dump("smart_detection_restored", {"restored": original})
 
+    @pytest.mark.xfail(strict=True, reason=XFAIL_PROTECT_WRITE_TOOLS["unifi_protect_update_camera"])
     async def test_update_camera_roundtrip(self, live_client, artifacts):
         """Round-trip a string field (name) and a nested settings field
         (ledSettings.isEnabled) via unifi_protect_update_camera. Exercises both
@@ -504,6 +517,7 @@ class TestProtectWriteRoundtrips:
                 {"restored_name": original_name, "restored_led": original_led},
             )
 
+    @pytest.mark.xfail(strict=True, reason=XFAIL_PROTECT_WRITE_TOOLS["unifi_protect_update_nvr"])
     async def test_update_nvr_roundtrip(self, live_client, artifacts):
         """Round-trip the NVR name via unifi_protect_update_nvr. First live-hardware
         validation of PUT /nvrs on integration v1 — see TODO(#130) in
