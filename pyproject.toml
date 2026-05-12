@@ -86,8 +86,6 @@ select = [
     "TID",  # flake8-tidy-imports
 ]
 ignore = [
-    "S101",    # assert used — fine in tests
-    "S603",    # subprocess call — not relevant for MCP server
     "PLR0913", # too many function arguments — tool functions need many params
     "PLR0915", # too many statements — registration functions register many tools
     "PLR2004", # magic value comparison — acceptable in tests
