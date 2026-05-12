@@ -49,12 +49,28 @@ _DENYLIST_KEY_PREFIXES: tuple[str, ...] = ("super_", "radius_")
 _DENYLIST_KEY_SUFFIXES: tuple[str, ...] = ("_url", "_command")
 
 
+def _normalize_key(key: str) -> str:
+    """Lowercase + strip underscores so the denylist catches both snake_case
+    (``super_mgmt_url``) and camelCase (``superMgmtUrl``, ``webhookUrl``)
+    variants of the same key. UniFi Network APIs use snake_case but Protect
+    APIs use camelCase, so a single denylist pattern must cover both.
+    """
+    return key.lower().replace("_", "")
+
+
+# Normalized forms of the patterns above — built once at import time.
+_NORM_EXACT_KEYS: frozenset[str] = frozenset(_normalize_key(k) for k in _DENYLIST_EXACT_KEYS)
+_NORM_PREFIXES: tuple[str, ...] = tuple(_normalize_key(p) for p in _DENYLIST_KEY_PREFIXES)
+_NORM_SUFFIXES: tuple[str, ...] = tuple(_normalize_key(s) for s in _DENYLIST_KEY_SUFFIXES)
+
+
 def _is_dangerous_key(key: str) -> bool:
-    if key in _DENYLIST_EXACT_KEYS:
+    normalized = _normalize_key(key)
+    if normalized in _NORM_EXACT_KEYS:
         return True
-    if any(key.startswith(p) for p in _DENYLIST_KEY_PREFIXES):
+    if any(normalized.startswith(p) for p in _NORM_PREFIXES):
         return True
-    return any(key.endswith(s) for s in _DENYLIST_KEY_SUFFIXES)
+    return any(normalized.endswith(s) for s in _NORM_SUFFIXES)
 
 
 def _walk(value: Any, path: str, *, tool_name: str) -> None:
@@ -76,11 +92,11 @@ def _walk(value: Any, path: str, *, tool_name: str) -> None:
 def reject_dangerous_keys(data: Any, *, tool_name: str) -> None:
     """Raise ``UniFiBadRequestError`` if ``data`` contains a smuggling key.
 
-    Walks dicts and lists recursively. Keys are matched case-sensitively
-    against the module-level denylist (UniFi APIs use camelCase / snake_case
-    so case-insensitive matching is not required). Designed to be called at
-    the top of every ``dict[str, Any]`` write tool, after the
-    ``writes_enabled`` mode gate, before the client call.
+    Walks dicts and lists recursively. Keys are matched after a normalize
+    step (lowercase + strip underscores) so the same rule catches both
+    snake_case (Network APIs) and camelCase (Protect APIs) variants.
+    Designed to be called at the top of every ``dict[str, Any]`` write
+    tool, after the ``writes_enabled`` mode gate, before the client call.
 
     Args:
         data: Request body to inspect — typically a top-level ``dict``.

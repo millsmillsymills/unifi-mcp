@@ -96,16 +96,45 @@ class TestRejectDangerousKeysRecursion:
         reject_dangerous_keys({"name": "g", "x_passphrase": "ok-pw"}, tool_name="t")
 
 
-class TestRejectDangerousKeysCaseSensitivity:
-    """UniFi keys are camelCase / snake_case — we don't try to match
-    CamelCase-of-denylist-entries because the upstream API doesn't use
-    those forms. Confirm the helper is case-sensitive."""
+class TestRejectDangerousKeysNormalization:
+    """Keys are normalized (lowercase + strip underscores) before matching
+    so the same denylist catches snake_case (Network) and camelCase
+    (Protect) variants."""
 
-    def test_uppercase_radius_does_not_match_prefix(self):
-        reject_dangerous_keys({"RADIUS_secret": "v"}, tool_name="t")
+    @pytest.mark.parametrize(
+        "key",
+        ["RADIUS_secret", "Radius_Servers", "radiusServers", "RadiusServers"],
+    )
+    def test_radius_prefix_case_and_form_insensitive(self, key):
+        with pytest.raises(UniFiBadRequestError):
+            reject_dangerous_keys({key: "v"}, tool_name="t")
 
-    def test_capitalized_cmd_does_not_match_exact(self):
-        reject_dangerous_keys({"Cmd": "v"}, tool_name="t")
+    @pytest.mark.parametrize("key", ["Cmd", "CMD", "isAdmin", "is_Admin"])
+    def test_exact_keys_case_and_form_insensitive(self, key):
+        with pytest.raises(UniFiBadRequestError):
+            reject_dangerous_keys({key: "v"}, tool_name="t")
+
+    @pytest.mark.parametrize(
+        "key",
+        ["callbackUrl", "webhookUrl", "smtpUrl", "callbackURL"],
+    )
+    def test_camelcase_url_suffix_caught(self, key):
+        with pytest.raises(UniFiBadRequestError) as exc:
+            reject_dangerous_keys({key: "v"}, tool_name="t")
+        assert key in str(exc.value)
+
+    @pytest.mark.parametrize("key", ["xCommand", "shutdownCommand", "bootCommand"])
+    def test_camelcase_command_suffix_caught(self, key):
+        with pytest.raises(UniFiBadRequestError):
+            reject_dangerous_keys({key: "v"}, tool_name="t")
+
+    @pytest.mark.parametrize("key", ["superMgmtUrl", "superSmtpPassword"])
+    def test_camelcase_super_pattern_caught(self, key):
+        # `superMgmtUrl` normalizes to `supermgmturl` which starts with `super`
+        # (the normalized prefix) — caught by the prefix rule, no special case
+        # needed.
+        with pytest.raises(UniFiBadRequestError):
+            reject_dangerous_keys({key: "v"}, tool_name="t")
 
 
 # ── Per-tool integration: guard runs before client ─────────────────────────
