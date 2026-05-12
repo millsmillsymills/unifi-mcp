@@ -5,7 +5,9 @@ Completes the option-1 rollout from #202 for the Network controller-wide
 - supplying named args builds the correct nested body server-side,
 - supplying neither named args nor ``data=`` raises BadRequest,
 - mixing named args with ``data=`` raises BadRequest,
-- the legacy ``data=`` path still trips the dangerous-key denylist.
+- the legacy ``data=`` path still trips the dangerous-key denylist,
+- the shared ``build_named_arg_body`` helper rejects path collisions
+  (locks in the contract for future allowlist additions).
 
 All HTTP is mocked with ``respx``; nothing reaches real hardware.
 """
@@ -25,6 +27,8 @@ from fastmcp.exceptions import ToolError
 
 from unifi_mcp.clients.network import NetworkClient
 from unifi_mcp.config import UniFiConfig, UniFiMode
+from unifi_mcp.errors import UniFiBadRequestError
+from unifi_mcp.tools._common import build_named_arg_body
 from unifi_mcp.tools.network.system import register_system_tools
 
 BASE_URL = "https://10.0.0.1:443"
@@ -203,3 +207,50 @@ class TestUpdateSettingsNamedArgs:
                 data={"radius_secret": "x"},
             )
         assert "radius_secret" in str(exc.value)
+
+
+# ── build_named_arg_body contract ──────────────────────────────────────────
+#
+# Lock in the helper's path-collision branch before any future allowlist
+# addition can trip it silently. ``_SETTINGS_FIELD_PATHS`` is the first
+# allowlist with nested paths long enough to make collisions conceivable
+# (a section root + a leaf under the same section). PR #205 review called
+# this out as the right home for the test.
+
+
+class TestBuildNamedArgBodyContract:
+    def test_path_collision_between_scalar_and_nested_field_raises(self):
+        # Two kwargs target the same section: one as a leaf (mgmt = scalar),
+        # one as a nested child (mgmt.timezone). The first write puts a
+        # scalar at ``body["mgmt"]``; the second tries to descend into it.
+        field_paths: dict[str, tuple[str, ...]] = {
+            "mgmt": ("mgmt",),
+            "mgmt_timezone": ("mgmt", "timezone"),
+        }
+        with pytest.raises(UniFiBadRequestError) as exc:
+            build_named_arg_body(
+                tool_name="test_tool",
+                field_paths=field_paths,
+                named_values={"mgmt": "scalar", "mgmt_timezone": "UTC"},
+                data=None,
+            )
+        assert "path collision" in str(exc.value)
+        assert "mgmt" in str(exc.value)
+
+    def test_no_collision_when_paths_share_only_a_dict_parent(self):
+        # Two leaves under the same dict parent must coexist without
+        # raising — this is the legitimate ``ntp.ntp_server_1`` +
+        # ``ntp.ntp_server_2`` shape exercised by the integration test
+        # above; tested here at the helper level to guard against an
+        # over-aggressive collision check.
+        field_paths: dict[str, tuple[str, ...]] = {
+            "a": ("section", "a"),
+            "b": ("section", "b"),
+        }
+        body = build_named_arg_body(
+            tool_name="test_tool",
+            field_paths=field_paths,
+            named_values={"a": 1, "b": 2},
+            data=None,
+        )
+        assert body == {"section": {"a": 1, "b": 2}}
