@@ -9,11 +9,12 @@ These cycle tests assert the post-state observably matches the intended effect.
 Required env vars:
 
 - ``UNIFI_NETWORK_API`` — Network-scoped API key (live controller).
-- ``UNIFI_TEST_CLIENT_MAC`` — MAC of a client that is *currently active* on the
-  controller and that may safely be blocked / unblocked / authorized.
+- ``UNIFI_MCP_TEST_CLIENT_MAC`` — MAC of a client that is *currently active* on
+  the controller and that may safely be blocked / unblocked / authorized.
+  Consumed via the existing ``test_client_mac`` fixture in ``conftest.py``.
 
 WARNING: blocking a MAC at the controller cuts that client's path through the
-gateway. Do NOT set ``UNIFI_TEST_CLIENT_MAC`` to the wired MAC of the host
+gateway. Do NOT set ``UNIFI_MCP_TEST_CLIENT_MAC`` to the wired MAC of the host
 running pytest unless that host has an alternate path (e.g. WiFi) back to the
 controller — otherwise the test will block its own runner mid-cycle and the
 final cleanup unblock may not reach the controller. Prefer a different device's
@@ -21,7 +22,7 @@ MAC, or a host with a WiFi fallback.
 
 Run manually:
 
-    UNIFI_TEST_CLIENT_MAC=aa:bb:cc:dd:ee:ff \
+    UNIFI_MCP_TEST_CLIENT_MAC=aa:bb:cc:dd:ee:ff \
         uv run pytest tests/integration/test_network_clients_live.py -v -m integration
 """
 
@@ -29,7 +30,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 
 import pytest
 
@@ -42,13 +42,6 @@ _BLOCK_APPLY_DELAY_S = 2.0
 _UNBLOCK_POLL_TIMEOUT_S = 15.0
 _UNBLOCK_POLL_INTERVAL_S = 1.0
 _AUTHORIZE_APPLY_DELAY_S = 2.0
-
-
-def _target_mac_or_skip() -> str:
-    mac = os.environ.get("UNIFI_TEST_CLIENT_MAC", "").strip().lower()
-    if not mac:
-        pytest.skip("UNIFI_TEST_CLIENT_MAC not set; skipping block/unblock cycle test")
-    return mac
 
 
 def _active_macs(active_response: dict) -> set[str]:
@@ -81,8 +74,8 @@ class TestBlockUnblockCycle:
     bugs where the API ack is fine but no state change occurred.
     """
 
-    async def test_block_unblock_cycle(self, network_live_client):
-        mac = _target_mac_or_skip()
+    async def test_block_unblock_cycle(self, network_live_client, test_client_mac):
+        mac = test_client_mac
 
         actives = await network_live_client.list_active_clients()
         if mac not in _active_macs(actives):
@@ -147,8 +140,8 @@ class TestAuthorizeUnauthorizeCycle:
     read surface is uninformative.
     """
 
-    async def test_authorize_unauthorize_cycle(self, network_live_client):
-        mac = _target_mac_or_skip()
+    async def test_authorize_unauthorize_cycle(self, network_live_client, test_client_mac):
+        mac = test_client_mac
 
         actives = await network_live_client.list_active_clients()
         if mac not in _active_macs(actives):
