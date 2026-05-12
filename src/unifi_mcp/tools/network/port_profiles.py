@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context
+from unifi_mcp.tools._common import JsonObject, get_server_context, reject_dangerous_keys
 
 
 def register_port_profile_tools(mcp: FastMCP) -> None:
@@ -67,6 +67,7 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot create port profile in read-only mode")
+            reject_dangerous_keys(data, tool_name="unifi_network_create_port_profile")
             return await context.clients["network"].create_port_profile(data)
         except Exception as e:
             handle_client_error(e)
@@ -86,6 +87,7 @@ def register_port_profile_tools(mcp: FastMCP) -> None:
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot update port profile in read-only mode")
+            reject_dangerous_keys(data, tool_name="unifi_network_update_port_profile")
             return await context.clients["network"].update_port_profile(profile_id, data)
         except Exception as e:
             handle_client_error(e)
