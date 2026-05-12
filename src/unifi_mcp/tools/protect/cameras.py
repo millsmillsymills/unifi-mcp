@@ -13,6 +13,7 @@ from unifi_mcp.tools._common import (
     get_server_context,
     redact_secrets,
     reject_dangerous_keys,
+    validate_id,
 )
 
 # ── Option-1 allowlist for unifi_protect_update_camera (#202) ──────────────
@@ -66,6 +67,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
             The upstream API response with sensitive fields redacted.
         """
         try:
+            validate_id(camera_id, field="camera_id")
             context = get_server_context(ctx)
             return redact_secrets(await context.clients["protect"].get_camera(camera_id))
         except Exception as e:
@@ -113,6 +115,7 @@ def register_camera_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_id(camera_id, field="camera_id")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot update camera in read-only mode")

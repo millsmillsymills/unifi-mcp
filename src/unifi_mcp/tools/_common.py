@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any, cast
 
 from unifi_mcp._redaction import redact_secrets
@@ -20,6 +21,8 @@ __all__ = [
     "get_server_context",
     "redact_secrets",
     "reject_dangerous_keys",
+    "validate_id",
+    "validate_mac",
 ]
 
 
@@ -114,6 +117,57 @@ def reject_dangerous_keys(data: Any, *, tool_name: str) -> None:
             path locating it in the payload.
     """
     _walk(data, "", tool_name=tool_name)
+
+
+# ── Path-segment input validation (#145) ───────────────────────────────────
+#
+# ``BaseUniFiClient._segment`` is the last-line defense — it percent-encodes
+# whatever it receives so a traversal payload cannot escape ``_path_prefix``.
+# These tool-layer validators reject the same payloads earlier, with a
+# clearer error message (``invalid id format`` vs. the encoded surface),
+# and prevent surprising IDs from reaching the controller in the first
+# place. Patterns intentionally narrow — UniFi IDs are mongo ObjectIds or
+# similar short tokens, never URL-shaped.
+
+_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_MAC_RE = re.compile(r"^[0-9a-fA-F:.-]{12,17}$")
+
+
+def validate_id(value: str, *, field: str) -> None:
+    """Validate that ``value`` looks like a UniFi resource ID.
+
+    Accepts 1-64 chars from ``[A-Za-z0-9_-]``. Anything outside that set —
+    notably ``/``, ``?``, ``#``, ``..``, or whitespace — is rejected.
+    See #145 for the path-traversal motivation.
+
+    Args:
+        value: The candidate ID string from a tool argument.
+        field: Name of the tool argument, used to make the error specific.
+
+    Raises:
+        UniFiBadRequestError: If ``value`` doesn't match the ID pattern.
+    """
+    if not isinstance(value, str) or not _ID_RE.match(value):
+        raise UniFiBadRequestError(f"{field}: invalid id format")
+
+
+def validate_mac(value: str, *, field: str) -> None:
+    """Validate that ``value`` looks like a MAC address.
+
+    Accepts the common representations (``aa:bb:cc:dd:ee:ff``,
+    ``aabbccddeeff``, ``aa-bb-cc-dd-ee-ff``, ``aabb.ccdd.eeff``). Strict
+    canonicalization is left to the upstream controller; this is just
+    a path-injection gate.
+
+    Args:
+        value: The candidate MAC string from a tool argument.
+        field: Name of the tool argument, used to make the error specific.
+
+    Raises:
+        UniFiBadRequestError: If ``value`` doesn't match the MAC pattern.
+    """
+    if not isinstance(value, str) or not _MAC_RE.match(value):
+        raise UniFiBadRequestError(f"{field}: invalid mac format")
 
 
 # ── Option-1 named-arg builder (#202) ──────────────────────────────────────

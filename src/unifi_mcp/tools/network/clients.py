@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiNotFoundError, UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import get_server_context, redact_secrets
+from unifi_mcp.tools._common import get_server_context, redact_secrets, validate_mac
 
 
 def register_client_tools(mcp: FastMCP) -> None:
@@ -52,6 +52,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_mac(mac, field="mac")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot block client in read-only mode")

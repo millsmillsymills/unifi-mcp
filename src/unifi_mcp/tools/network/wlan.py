@@ -7,7 +7,13 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context, redact_secrets, reject_dangerous_keys
+from unifi_mcp.tools._common import (
+    JsonObject,
+    get_server_context,
+    redact_secrets,
+    reject_dangerous_keys,
+    validate_id,
+)
 
 
 def register_wlan_tools(mcp: FastMCP) -> None:
@@ -50,6 +56,7 @@ def register_wlan_tools(mcp: FastMCP) -> None:
             The upstream API response with sensitive fields redacted.
         """
         try:
+            validate_id(wlan_id, field="wlan_id")
             context = get_server_context(ctx)
             return redact_secrets(await context.clients["network"].get_wlan(wlan_id))
         except Exception as e:
@@ -105,6 +112,7 @@ def register_wlan_tools(mcp: FastMCP) -> None:
             The upstream API response.
         """
         try:
+            validate_id(wlan_id, field="wlan_id")
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot update WLAN in read-only mode")

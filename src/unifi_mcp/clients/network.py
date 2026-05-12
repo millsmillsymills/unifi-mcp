@@ -103,7 +103,7 @@ class NetworkClient(BaseUniFiClient):
 
     async def get_wlan(self, wlan_id: str) -> dict[str, Any]:
         """Get a specific WLAN configuration."""
-        result: dict[str, Any] = await self.get(f"rest/wlanconf/{wlan_id}")
+        result: dict[str, Any] = await self.get(f"rest/wlanconf/{self._segment(wlan_id)}")
         return result
 
     async def list_networks(self) -> dict[str, Any]:
@@ -113,7 +113,7 @@ class NetworkClient(BaseUniFiClient):
 
     async def get_network(self, network_id: str) -> dict[str, Any]:
         """Get a specific network configuration."""
-        result: dict[str, Any] = await self.get(f"rest/networkconf/{network_id}")
+        result: dict[str, Any] = await self.get(f"rest/networkconf/{self._segment(network_id)}")
         return result
 
     async def list_firewall_rules(self) -> dict[str, Any]:
@@ -123,7 +123,7 @@ class NetworkClient(BaseUniFiClient):
 
     async def get_firewall_rule(self, rule_id: str) -> dict[str, Any]:
         """Get a specific firewall rule."""
-        result: dict[str, Any] = await self.get(f"rest/firewallrule/{rule_id}")
+        result: dict[str, Any] = await self.get(f"rest/firewallrule/{self._segment(rule_id)}")
         return result
 
     async def list_firewall_groups(self) -> dict[str, Any]:
@@ -133,7 +133,7 @@ class NetworkClient(BaseUniFiClient):
 
     async def get_firewall_group(self, group_id: str) -> dict[str, Any]:
         """Get a specific firewall group."""
-        result: dict[str, Any] = await self.get(f"rest/firewallgroup/{group_id}")
+        result: dict[str, Any] = await self.get(f"rest/firewallgroup/{self._segment(group_id)}")
         return result
 
     async def list_port_forwards(self) -> dict[str, Any]:
@@ -143,7 +143,7 @@ class NetworkClient(BaseUniFiClient):
 
     async def get_port_forward(self, pf_id: str) -> dict[str, Any]:
         """Get a specific port forwarding rule."""
-        result: dict[str, Any] = await self.get(f"rest/portforward/{pf_id}")
+        result: dict[str, Any] = await self.get(f"rest/portforward/{self._segment(pf_id)}")
         return result
 
     async def list_routes(self) -> dict[str, Any]:
@@ -153,7 +153,7 @@ class NetworkClient(BaseUniFiClient):
 
     async def get_route(self, route_id: str) -> dict[str, Any]:
         """Get a specific static route."""
-        result: dict[str, Any] = await self.get(f"rest/routing/{route_id}")
+        result: dict[str, Any] = await self.get(f"rest/routing/{self._segment(route_id)}")
         return result
 
     async def get_settings(self) -> dict[str, Any]:
@@ -170,12 +170,12 @@ class NetworkClient(BaseUniFiClient):
 
     async def update_wlan(self, wlan_id: str, data: dict[str, Any]) -> dict[str, Any]:
         """Update an existing WLAN configuration."""
-        result: dict[str, Any] = await self.put(f"rest/wlanconf/{wlan_id}", json=data)
+        result: dict[str, Any] = await self.put(f"rest/wlanconf/{self._segment(wlan_id)}", json=data)
         return result
 
     async def delete_wlan(self, wlan_id: str) -> dict[str, Any]:
         """Delete a WLAN configuration."""
-        result: dict[str, Any] = await self.delete(f"rest/wlanconf/{wlan_id}")
+        result: dict[str, Any] = await self.delete(f"rest/wlanconf/{self._segment(wlan_id)}")
         return result
 
     async def create_network(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -185,12 +185,12 @@ class NetworkClient(BaseUniFiClient):
 
     async def update_network(self, network_id: str, data: dict[str, Any]) -> dict[str, Any]:
         """Update an existing network configuration."""
-        result: dict[str, Any] = await self.put(f"rest/networkconf/{network_id}", json=data)
+        result: dict[str, Any] = await self.put(f"rest/networkconf/{self._segment(network_id)}", json=data)
         return result
 
     async def delete_network(self, network_id: str) -> dict[str, Any]:
         """Delete a network configuration."""
-        result: dict[str, Any] = await self.delete(f"rest/networkconf/{network_id}")
+        result: dict[str, Any] = await self.delete(f"rest/networkconf/{self._segment(network_id)}")
         return result
 
     async def create_firewall_rule(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -200,12 +200,12 @@ class NetworkClient(BaseUniFiClient):
 
     async def update_firewall_rule(self, rule_id: str, data: dict[str, Any]) -> dict[str, Any]:
         """Update an existing firewall rule."""
-        result: dict[str, Any] = await self.put(f"rest/firewallrule/{rule_id}", json=data)
+        result: dict[str, Any] = await self.put(f"rest/firewallrule/{self._segment(rule_id)}", json=data)
         return result
 
     async def delete_firewall_rule(self, rule_id: str) -> dict[str, Any]:
         """Delete a firewall rule."""
-        result: dict[str, Any] = await self.delete(f"rest/firewallrule/{rule_id}")
+        result: dict[str, Any] = await self.delete(f"rest/firewallrule/{self._segment(rule_id)}")
         return result
 
     async def create_firewall_group(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -215,12 +215,12 @@ class NetworkClient(BaseUniFiClient):
 
     async def update_firewall_group(self, group_id: str, data: dict[str, Any]) -> dict[str, Any]:
         """Update an existing firewall group."""
-        result: dict[str, Any] = await self.put(f"rest/firewallgroup/{group_id}", json=data)
+        result: dict[str, Any] = await self.put(f"rest/firewallgroup/{self._segment(group_id)}", json=data)
         return result
 
     async def delete_firewall_group(self, group_id: str) -> dict[str, Any]:
         """Delete a firewall group."""
-        result: dict[str, Any] = await self.delete(f"rest/firewallgroup/{group_id}")
+        result: dict[str, Any] = await self.delete(f"rest/firewallgroup/{self._segment(group_id)}")
         return result
 
     async def create_port_forward(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -230,12 +230,12 @@ class NetworkClient(BaseUniFiClient):
 
     async def update_port_forward(self, pf_id: str, data: dict[str, Any]) -> dict[str, Any]:
         """Update an existing port forwarding rule."""
-        result: dict[str, Any] = await self.put(f"rest/portforward/{pf_id}", json=data)
+        result: dict[str, Any] = await self.put(f"rest/portforward/{self._segment(pf_id)}", json=data)
         return result
 
     async def delete_port_forward(self, pf_id: str) -> dict[str, Any]:
         """Delete a port forwarding rule."""
-        result: dict[str, Any] = await self.delete(f"rest/portforward/{pf_id}")
+        result: dict[str, Any] = await self.delete(f"rest/portforward/{self._segment(pf_id)}")
         return result
 
     async def create_route(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -245,12 +245,12 @@ class NetworkClient(BaseUniFiClient):
 
     async def update_route(self, route_id: str, data: dict[str, Any]) -> dict[str, Any]:
         """Update an existing static route."""
-        result: dict[str, Any] = await self.put(f"rest/routing/{route_id}", json=data)
+        result: dict[str, Any] = await self.put(f"rest/routing/{self._segment(route_id)}", json=data)
         return result
 
     async def delete_route(self, route_id: str) -> dict[str, Any]:
         """Delete a static route."""
-        result: dict[str, Any] = await self.delete(f"rest/routing/{route_id}")
+        result: dict[str, Any] = await self.delete(f"rest/routing/{self._segment(route_id)}")
         return result
 
     async def update_settings(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -267,7 +267,7 @@ class NetworkClient(BaseUniFiClient):
 
     async def get_port_profile(self, profile_id: str) -> dict[str, Any]:
         """Get a specific switch-port profile by id."""
-        result: dict[str, Any] = await self.get(f"rest/portconf/{profile_id}")
+        result: dict[str, Any] = await self.get(f"rest/portconf/{self._segment(profile_id)}")
         return result
 
     async def create_port_profile(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -282,12 +282,12 @@ class NetworkClient(BaseUniFiClient):
 
     async def update_port_profile(self, profile_id: str, data: dict[str, Any]) -> dict[str, Any]:
         """Update a switch-port profile."""
-        result: dict[str, Any] = await self.put(f"rest/portconf/{profile_id}", json=data)
+        result: dict[str, Any] = await self.put(f"rest/portconf/{self._segment(profile_id)}", json=data)
         return result
 
     async def delete_port_profile(self, profile_id: str) -> dict[str, Any]:
         """Delete a switch-port profile."""
-        result: dict[str, Any] = await self.delete(f"rest/portconf/{profile_id}")
+        result: dict[str, Any] = await self.delete(f"rest/portconf/{self._segment(profile_id)}")
         return result
 
     async def assign_port_profile(self, mac: str, port_idx: int, profile_id: str) -> dict[str, Any]:
@@ -313,7 +313,9 @@ class NetworkClient(BaseUniFiClient):
         existing: list[dict[str, Any]] = list(match.get("port_overrides", []))
         overrides = [entry for entry in existing if entry.get("port_idx") != port_idx]
         overrides.append({"port_idx": port_idx, "portconf_id": profile_id})
-        result: dict[str, Any] = await self.put(f"rest/device/{device_id}", json={"port_overrides": overrides})
+        result: dict[str, Any] = await self.put(
+            f"rest/device/{self._segment(device_id)}", json={"port_overrides": overrides}
+        )
         return result
 
     # ── Write methods: commands ────────────────────────────────────────
