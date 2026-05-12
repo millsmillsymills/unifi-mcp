@@ -223,7 +223,7 @@ class TestHandleClientError:
             handle_client_error(UniFiError("Something went wrong", status_code=500))
 
     def test_unexpected_error_mapping(self):
-        with pytest.raises(Exception, match="Unexpected error"):
+        with pytest.raises(Exception, match="Unexpected internal error"):
             handle_client_error(RuntimeError("Boom"))
 
     def test_cancelled_error_is_reraised_not_wrapped(self):
@@ -297,7 +297,7 @@ class TestHandleClientError:
 
     def test_unexpected_error_has_no_status_code_prefix(self):
         """Non-UniFi exceptions don't have status_code; no prefix."""
-        with pytest.raises(Exception, match="Unexpected error") as exc_info:
+        with pytest.raises(Exception, match="Unexpected internal error") as exc_info:
             handle_client_error(RuntimeError("boom"))
         assert "[HTTP" not in str(exc_info.value)
 

@@ -203,42 +203,111 @@ class TestErrorBodyExtraction:
         assert "internal failure" in str(exc_info.value)
 
     @respx.mock
-    async def test_unrecognized_json_falls_back_to_raw_text_truncated(self, client):
-        """JSON that doesn't match any known envelope falls back to the
-        200-char truncation of response.text — never empty, never None.
+    async def test_unrecognized_json_yields_opaque_hint(self, client):
+        """JSON that doesn't match any known envelope returns the opaque
+        ``<unparseable body, see DEBUG log>`` hint rather than slicing the
+        raw response — protects against reflected secrets (#148).
         """
         respx.get(f"{BASE_URL}/test").mock(
             return_value=httpx.Response(500, json={"weird_shape": [1, 2, 3], "other_field": "data"}),
         )
         with pytest.raises(UniFiServerError) as exc_info:
             await client.get("/test")
-        # Fallback surfaces the raw body, so the operator sees something.
         msg = str(exc_info.value)
-        assert msg  # non-empty
         assert "HTTP 500" in msg
+        assert "<unparseable body, see DEBUG log>" in msg
+        assert "weird_shape" not in msg
 
     @respx.mock
-    async def test_non_json_body_falls_back_to_raw_text(self, client):
-        """Plain-text error body — unchanged behavior, still truncated at 200."""
+    async def test_non_json_body_yields_opaque_hint(self, client):
+        """Plain-text error body is opaque-hint by default — the raw bytes
+        are only available via the opt-in raw-bodies DEBUG log.
+        """
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(503, text="Service Unavailable"))
         with pytest.raises(UniFiServerError) as exc_info:
             await client.get("/test")
-        assert "Service Unavailable" in str(exc_info.value)
+        msg = str(exc_info.value)
+        assert "HTTP 503" in msg
+        assert "<unparseable body, see DEBUG log>" in msg
+        assert "Service Unavailable" not in msg
 
     @respx.mock
-    async def test_full_body_logged_at_debug(self, client, caplog):
-        """The full body is always logged at DEBUG so truncation never loses
-        information that's needed for post-hoc debugging.
+    async def test_raw_body_debug_log_suppressed_by_default(self, client, caplog, monkeypatch):
+        """Without ``UNIFI_LOG_RAW_BODIES=1`` the full body never reaches the
+        DEBUG log — the redacted/summary form goes out instead.
         """
         import logging
 
-        huge_body = "x" * 500  # well above the 200-char truncation
+        monkeypatch.delenv("UNIFI_LOG_RAW_BODIES", raising=False)
+        huge_body = "x" * 500
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(500, text=huge_body))
         with caplog.at_level(logging.DEBUG, logger="unifi_mcp.clients.base"), pytest.raises(UniFiServerError):
             await client.get("/test")
-        assert any("Error response body" in r.getMessage() and huge_body in r.getMessage() for r in caplog.records), (
-            f"expected DEBUG log with full body; got {[r.getMessage() for r in caplog.records]!r}"
+        for record in caplog.records:
+            assert huge_body not in record.getMessage()
+
+    @respx.mock
+    async def test_raw_body_debug_log_emitted_with_opt_in(self, client, caplog, monkeypatch):
+        """``UNIFI_LOG_RAW_BODIES=1`` restores the untouched-body DEBUG log."""
+        import logging
+
+        monkeypatch.setenv("UNIFI_LOG_RAW_BODIES", "1")
+        huge_body = "x" * 500
+        respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(500, text=huge_body))
+        with caplog.at_level(logging.DEBUG, logger="unifi_mcp.clients.base"), pytest.raises(UniFiServerError):
+            await client.get("/test")
+        assert any(huge_body in r.getMessage() for r in caplog.records), (
+            f"expected raw body in DEBUG log; got {[r.getMessage() for r in caplog.records]!r}"
         )
+
+    @respx.mock
+    async def test_sensitive_keys_redacted_in_message(self, client):
+        """``x_passphrase``, ``radius_secret``, and similar keys are masked
+        before any error string is built — even when the controller echoes
+        the submitted payload back in a 400 response.
+        """
+        respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(
+                400,
+                json={
+                    "meta": {"rc": "error", "msg": "api.err.InvalidPayload"},
+                    "data": [
+                        {
+                            "x_passphrase": "hunter2",
+                            "radius_secret": "shared-key",
+                            "nested": {"password": "p@ss", "api_key": "key-123"},
+                        }
+                    ],
+                },
+            )
+        )
+        with pytest.raises(UniFiBadRequestError) as exc_info:
+            await client.get("/test")
+        msg = str(exc_info.value)
+        assert "api.err.InvalidPayload" in msg
+        # Sensitive values must never appear in the exception text.
+        for secret in ("hunter2", "shared-key", "p@ss", "key-123"):
+            assert secret not in msg, f"secret {secret!r} leaked into error message"
+
+    @respx.mock
+    async def test_sensitive_keys_redacted_in_debug_log(self, client, caplog, monkeypatch):
+        """The default DEBUG body log carries the masked structure, not the
+        raw secrets — only the opt-in raw log would expose them.
+        """
+        import logging
+
+        monkeypatch.delenv("UNIFI_LOG_RAW_BODIES", raising=False)
+        respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(
+                400,
+                json={"meta": {"rc": "error", "msg": "api.err.X"}, "x_passphrase": "hunter2"},
+            )
+        )
+        with caplog.at_level(logging.DEBUG, logger="unifi_mcp.clients.base"), pytest.raises(UniFiBadRequestError):
+            await client.get("/test")
+        for record in caplog.records:
+            assert "hunter2" not in record.getMessage()
+        assert any("REDACTED" in r.getMessage() for r in caplog.records)
 
     @respx.mock
     async def test_empty_body_401_yields_empty_body_hint(self, client):

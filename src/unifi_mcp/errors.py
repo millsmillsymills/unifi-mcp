@@ -128,6 +128,8 @@ def handle_client_error(error: BaseException) -> NoReturn:
         raise ToolError(f"Device already adopted: {error}") from error
     if isinstance(error, UniFiError):
         raise ToolError(f"{tag}UniFi API error: {error}") from error
-    # Unexpected errors
+    # Unexpected errors — do NOT echo str(error) to the agent. The original
+    # exception is preserved via ``from error`` so server logs (logger.exception
+    # above) still capture full context for the operator.
     logger.exception("Unexpected error in tool execution")
-    raise ToolError(f"Unexpected error: {error}") from error
+    raise ToolError("Unexpected internal error; check server logs") from error

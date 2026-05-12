@@ -81,6 +81,11 @@ class UniFiConfig(BaseSettings):
     # single MB), so they get independent caps.
     unifi_max_export_bytes: int = Field(default=500 * 1024 * 1024, gt=0)
     unifi_max_snapshot_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
+    # When true, full untouched HTTP error bodies are logged at DEBUG. The
+    # default redacts sensitive keys (passphrases, secrets, tokens) before
+    # logging so a DEBUG-level sink doesn't capture reflected credentials.
+    # See #148.
+    unifi_log_raw_bodies: bool = False
 
     @field_validator("unifi_network_cert_fingerprint", "unifi_protect_cert_fingerprint", mode="before")
     @classmethod

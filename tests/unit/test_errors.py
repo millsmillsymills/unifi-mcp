@@ -95,9 +95,20 @@ class TestHandleClientError:
         with pytest.raises(ToolError, match="UniFi API error"):
             handle_client_error(UniFiError("generic", status_code=418))
 
-    def test_unexpected_error_maps(self):
-        with pytest.raises(ToolError, match="Unexpected error"):
-            handle_client_error(RuntimeError("surprise"))
+    def test_unexpected_error_maps_to_safe_message(self):
+        """Unexpected errors must not echo ``str(error)`` to the agent —
+        otherwise programmer bugs that build context-rich exceptions leak
+        details into agent transcripts (#148).
+        """
+        sensitive_context = "sensitive-context-from-bug"
+        with pytest.raises(ToolError) as exc_info:
+            handle_client_error(RuntimeError(sensitive_context))
+        msg = str(exc_info.value)
+        assert "Unexpected internal error" in msg
+        assert sensitive_context not in msg
+        # The original exception is preserved on __cause__ for operator logs.
+        assert isinstance(exc_info.value.__cause__, RuntimeError)
+        assert str(exc_info.value.__cause__) == sensitive_context
 
     def test_error_chain_preserved(self):
         original = UniFiAuthError("bad key", status_code=401)
