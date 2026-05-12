@@ -30,16 +30,11 @@ class _ConcreteClient(BaseUniFiClient):
 
 @pytest.fixture
 def client():
-    # ``timeout=10`` keeps the wall-clock retry budget at 50s, comfortably
-    # above ``_MAX_RETRY_AFTER_SECONDS=30`` so a single legitimate 429 sleep
-    # fits inside one ``_request`` call's budget. The dedicated
-    # ``TestTotalElapsedBudget`` suite uses a smaller timeout to exercise
-    # the budget-exhaustion path directly.
     return _ConcreteClient(
         base_url=BASE_URL,
         api_key="test-api-key",
         verify_ssl=False,
-        timeout=10,
+        timeout=5,
         max_retries=2,
     )
 
@@ -536,9 +531,19 @@ class TestRateLimitRetry:
     async def test_429_retry_after_is_capped(self, client, monkeypatch):
         """An unreasonably large Retry-After must be capped so a single
         tool call doesn't block for many minutes."""
+        import asyncio as _aio
+
         from unifi_mcp.clients.base import _MAX_RETRY_AFTER_SECONDS
 
         slept: list[float] = []
+
+        # Freeze the loop clock and widen the wall-clock retry budget so
+        # this test isolates the ``_MAX_RETRY_AFTER_SECONDS`` cap from the
+        # elapsed-time fence. The fence has its own ``TestTotalElapsedBudget``
+        # suite; here we just need a budget large enough to admit the capped
+        # sleep at the fixture's ``timeout=5``.
+        monkeypatch.setattr(_aio.get_running_loop(), "time", lambda: 0.0)
+        monkeypatch.setattr("unifi_mcp.clients.base._TOTAL_ELAPSED_TIMEOUT_MULTIPLIER", 100)
 
         async def fake_sleep(seconds: float) -> None:
             slept.append(seconds)

@@ -254,3 +254,28 @@ class TestBuildNamedArgBodyContract:
             data=None,
         )
         assert body == {"section": {"a": 1, "b": 2}}
+
+    def test_empty_data_dict_is_rejected_like_no_args(self):
+        # ``data={}`` previously slipped past the "at least one field"
+        # guard via the ``data is not None`` check. After #212 the helper
+        # treats an empty dict the same as ``None`` so the empty-update
+        # contract is symmetric across the legacy-dict and named-arg
+        # surfaces.
+        field_paths: dict[str, tuple[str, ...]] = {"x": ("x",)}
+        with pytest.raises(UniFiBadRequestError, match="at least one field"):
+            build_named_arg_body(
+                tool_name="test_tool",
+                field_paths=field_paths,
+                named_values={"x": None},
+                data={},
+            )
+
+    def test_non_empty_data_dict_passes_through(self):
+        field_paths: dict[str, tuple[str, ...]] = {"x": ("x",)}
+        body = build_named_arg_body(
+            tool_name="test_tool",
+            field_paths=field_paths,
+            named_values={"x": None},
+            data={"raw": 1},
+        )
+        assert body == {"raw": 1}

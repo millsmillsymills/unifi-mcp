@@ -85,6 +85,11 @@ class TestValidateMac:
             "aa:bb:cc:dd:ee:ff:gg",  # too long
             "ggggggggggggg",  # non-hex
             "aa bb cc dd ee ff",  # space
+            "aa:bb-cc.dd:ee.ff",  # mixed separators
+            "aa-bb:cc-dd:ee-ff",  # mixed colon/dash
+            "aabb.ccdd:eeff",  # dot + colon
+            "aa:bb:cc:dd:ee",  # 5 colon groups
+            "aabb.ccdd.eeff.0011",  # 4 dotted quads
         ],
     )
     def test_invalid_macs_rejected(self, value: str) -> None:
