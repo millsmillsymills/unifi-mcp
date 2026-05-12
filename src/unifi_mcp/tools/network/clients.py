@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiNotFoundError, UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import get_server_context
+from unifi_mcp.tools._common import get_server_context, redact_secrets
 
 
 def register_client_tools(mcp: FastMCP) -> None:
@@ -19,11 +19,14 @@ def register_client_tools(mcp: FastMCP) -> None:
     async def unifi_network_get_client(ctx: Context, mac: str) -> dict[str, Any]:
         """Get detailed info for a specific client by MAC address.
 
+        Portal credential fields and other secret keys are redacted before
+        the response leaves this tool — see ``unifi_mcp._redaction`` (#146).
+
         Args:
             mac: MAC address of the client.
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
@@ -31,7 +34,7 @@ def register_client_tools(mcp: FastMCP) -> None:
             clients: list[dict[str, Any]] = result.get("data", [])
             for client in clients:
                 if client.get("mac", "").lower() == mac.lower():
-                    return client
+                    return redact_secrets(client)
             raise UniFiNotFoundError(f"Client with MAC {mac} not found among active clients")
         except Exception as e:
             handle_client_error(e)
