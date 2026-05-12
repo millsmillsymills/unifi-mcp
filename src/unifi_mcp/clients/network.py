@@ -267,6 +267,13 @@ class NetworkClient(BaseUniFiClient):
         map to dict values are dispatched one PUT per section; the response
         from the last section is returned (final read-back is the caller's
         responsibility). See #211 for the live evidence.
+
+        Not atomic across sections. If the body covers multiple sections and
+        section N's PUT fails, sections 1..N-1 have already been applied; the
+        caller sees the failure but the controller state is partially mutated.
+        There is no UCG primitive for rollback. If order matters, the caller
+        should re-read state after a failure or pass a single section per
+        call. See #225.
         """
         section_responses: list[dict[str, Any]] = []
         for key, value in data.items():

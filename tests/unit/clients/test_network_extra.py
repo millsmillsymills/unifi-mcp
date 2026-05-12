@@ -172,6 +172,30 @@ class TestCrudMethods:
         assert ntp_route.call_count == 1
         assert mgmt_route.call_count == 1
 
+    @respx.mock
+    async def test_update_settings_partial_failure_does_not_rollback(self, client):
+        """If section N's PUT fails, sections 1..N-1 stay applied (#225).
+
+        Regression guard for the documented atomicity gap. The test relies on
+        dict insertion-order iteration (Python 3.7+) to guarantee ``ntp`` is
+        dispatched before ``mgmt`` — a future Python upgrade must preserve
+        this property or this test (and the underlying contract) needs
+        revisiting.
+        """
+        ntp_route = respx.put(f"{API_PREFIX}rest/setting/ntp").mock(
+            return_value=httpx.Response(200, json={"meta": {"rc": "ok"}}),
+        )
+        mgmt_route = respx.put(f"{API_PREFIX}rest/setting/mgmt").mock(
+            return_value=httpx.Response(500, json={"meta": {"rc": "error"}}),
+        )
+
+        from unifi_mcp.errors import UniFiServerError
+
+        with pytest.raises(UniFiServerError):
+            await client.update_settings({"ntp": {"ntp_server_1": "x"}, "mgmt": {"led_enabled": False}})
+        assert ntp_route.call_count == 1, "first section must have been applied before the second failed"
+        assert mgmt_route.call_count >= 1
+
 
 class TestCommandMethods:
     @pytest.mark.parametrize(
