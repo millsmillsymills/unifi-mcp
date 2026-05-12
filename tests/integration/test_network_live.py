@@ -47,9 +47,18 @@ async def test_get_sysinfo_has_version(network_live_client):
     assert any("version" in entry for entry in data)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "#138 — `list/alarm` also returns api.err.NotFound on UCG Ultra firmware. "
+        "Flip this xfail to a plain test when either the new path is identified "
+        "or the client method is retired. Silently skips when UNIFI_NETWORK_API "
+        "is unset; the strict marker only fires on live manual runs, not in CI."
+    ),
+)
 async def test_list_events_returns_shape(network_live_client):
-    # Regression test for #86: `stat/event` was 404 on current controllers; we
-    # now hit `stat/alarm`. Assert the tool returns the standard UniFi envelope.
+    # Originally added as a #86 regression test (stat/event → stat/alarm → list/alarm).
+    # Now also covers #138 — list/alarm itself 404s on UCG Ultra.
     result = await network_live_client.list_events(limit=1)
     assert "data" in result
     assert isinstance(result["data"], list)

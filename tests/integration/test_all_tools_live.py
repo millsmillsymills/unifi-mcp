@@ -215,12 +215,14 @@ class TestReadTools:
         ],
     )
     async def test_xfail_no_arg_read_tool(self, live_client, artifacts, tool_name):
-        """Tools that should fail today per #130. Strict xfail flips to a hard
-        failure if Ubiquiti adds these endpoints back, signaling #130 can close.
+        """Tools that should fail today per their tracking issue (see the
+        ``XFAIL_NO_ARG_READ_TOOLS`` reason strings). Strict xfail flips to a
+        hard failure if Ubiquiti restores the endpoint, signaling that the
+        tracking issue can close.
         """
         tool_defs = {t.name for t in await live_client.list_tools()}
         if tool_name not in tool_defs:
-            pytest.skip(f"{tool_name} not registered (Protect API not configured?)")
+            pytest.skip(f"{tool_name} not registered (API not configured?)")
         payload = await _invoke(live_client, tool_name)
         # If we got here, the integration API now exposes this endpoint —
         # capture the payload so the operator can confirm the new shape.
