@@ -78,41 +78,41 @@ async def _call(server: FastMCP, tool_name: str, ctx: AsyncMock, **kwargs: Any) 
 
 class TestUpdateSettingsNamedArgs:
     @respx.mock
-    async def test_single_named_arg_routes_to_mgmt_timezone(self):
+    async def test_single_named_arg_routes_to_ntp_section_via_per_section_put(self):
         server = FastMCP(name="t")
         register_system_tools(server)
         ctx, _ = _ctx_with_network_client()
-        route = respx.put(f"{SITE_PREFIX}/rest/setting").mock(return_value=httpx.Response(200, json={"ok": True}))
+        route = respx.put(f"{SITE_PREFIX}/rest/setting/ntp").mock(return_value=httpx.Response(200, json={"ok": True}))
 
         result = await _call(
             server,
             "unifi_network_update_settings",
             ctx,
-            mgmt_timezone="America/Los_Angeles",
+            ntp_server_1="time.example.com",
         )
 
         assert result == {"ok": True}
         sent = json.loads(route.calls[0].request.content)
-        assert sent == {"mgmt": {"timezone": "America/Los_Angeles"}}
+        assert sent == {"ntp_server_1": "time.example.com"}
 
     @respx.mock
-    async def test_locale_country_routes_to_locale_section(self):
+    async def test_mgmt_led_enabled_routes_to_mgmt_section(self):
         server = FastMCP(name="t")
         register_system_tools(server)
         ctx, _ = _ctx_with_network_client()
-        route = respx.put(f"{SITE_PREFIX}/rest/setting").mock(return_value=httpx.Response(200, json={}))
+        route = respx.put(f"{SITE_PREFIX}/rest/setting/mgmt").mock(return_value=httpx.Response(200, json={}))
 
-        await _call(server, "unifi_network_update_settings", ctx, locale_country="US")
+        await _call(server, "unifi_network_update_settings", ctx, mgmt_led_enabled=False)
 
         sent = json.loads(route.calls[0].request.content)
-        assert sent == {"locale": {"country": "US"}}
+        assert sent == {"led_enabled": False}
 
     @respx.mock
-    async def test_both_ntp_servers_merge_under_ntp_section(self):
+    async def test_both_ntp_servers_merge_under_one_section_put(self):
         server = FastMCP(name="t")
         register_system_tools(server)
         ctx, _ = _ctx_with_network_client()
-        route = respx.put(f"{SITE_PREFIX}/rest/setting").mock(return_value=httpx.Response(200, json={}))
+        route = respx.put(f"{SITE_PREFIX}/rest/setting/ntp").mock(return_value=httpx.Response(200, json={}))
 
         await _call(
             server,
@@ -122,36 +122,30 @@ class TestUpdateSettingsNamedArgs:
             ntp_server_2="time2.example.com",
         )
 
+        assert route.call_count == 1
         sent = json.loads(route.calls[0].request.content)
-        assert sent == {
-            "ntp": {
-                "ntp_server_1": "time.example.com",
-                "ntp_server_2": "time2.example.com",
-            }
-        }
+        assert sent == {"ntp_server_1": "time.example.com", "ntp_server_2": "time2.example.com"}
 
     @respx.mock
-    async def test_mixed_sections_combine_into_one_body(self):
+    async def test_mixed_sections_dispatch_one_put_per_section(self):
         server = FastMCP(name="t")
         register_system_tools(server)
         ctx, _ = _ctx_with_network_client()
-        route = respx.put(f"{SITE_PREFIX}/rest/setting").mock(return_value=httpx.Response(200, json={}))
+        ntp_route = respx.put(f"{SITE_PREFIX}/rest/setting/ntp").mock(return_value=httpx.Response(200, json={}))
+        mgmt_route = respx.put(f"{SITE_PREFIX}/rest/setting/mgmt").mock(return_value=httpx.Response(200, json={}))
 
         await _call(
             server,
             "unifi_network_update_settings",
             ctx,
-            mgmt_timezone="UTC",
-            locale_country="GB",
             ntp_server_1="0.uk.pool.ntp.org",
+            mgmt_led_enabled=True,
         )
 
-        sent = json.loads(route.calls[0].request.content)
-        assert sent == {
-            "mgmt": {"timezone": "UTC"},
-            "locale": {"country": "GB"},
-            "ntp": {"ntp_server_1": "0.uk.pool.ntp.org"},
-        }
+        assert ntp_route.call_count == 1
+        assert mgmt_route.call_count == 1
+        assert json.loads(ntp_route.calls[0].request.content) == {"ntp_server_1": "0.uk.pool.ntp.org"}
+        assert json.loads(mgmt_route.calls[0].request.content) == {"led_enabled": True}
 
     async def test_no_args_raises_bad_request(self):
         server = FastMCP(name="t")
@@ -172,27 +166,28 @@ class TestUpdateSettingsNamedArgs:
                 server,
                 "unifi_network_update_settings",
                 ctx,
-                mgmt_timezone="UTC",
-                data={"foo": 1},
+                ntp_server_1="0.pool.ntp.org",
+                data={"foo": {"bar": 1}},
             )
         assert "cannot mix" in str(exc.value).lower()
 
     @respx.mock
-    async def test_legacy_data_dict_still_passes_through(self):
+    async def test_legacy_data_dict_dispatches_per_section(self):
         server = FastMCP(name="t")
         register_system_tools(server)
         ctx, _ = _ctx_with_network_client()
-        route = respx.put(f"{SITE_PREFIX}/rest/setting").mock(return_value=httpx.Response(200, json={}))
+        route = respx.put(f"{SITE_PREFIX}/rest/setting/ntp").mock(return_value=httpx.Response(200, json={}))
 
         await _call(
             server,
             "unifi_network_update_settings",
             ctx,
-            data={"mgmt": {"timezone": "UTC"}},
+            data={"ntp": {"ntp_server_1": "time.example.com"}},
         )
 
+        assert route.call_count == 1
         sent = json.loads(route.calls[0].request.content)
-        assert sent == {"mgmt": {"timezone": "UTC"}}
+        assert sent == {"ntp_server_1": "time.example.com"}
 
     async def test_legacy_data_dict_still_hits_denylist(self):
         server = FastMCP(name="t")
@@ -204,7 +199,7 @@ class TestUpdateSettingsNamedArgs:
                 server,
                 "unifi_network_update_settings",
                 ctx,
-                data={"radius_secret": "x"},
+                data={"ntp": {"radius_secret": "x"}},
             )
         assert "radius_secret" in str(exc.value)
 
@@ -220,22 +215,22 @@ class TestUpdateSettingsNamedArgs:
 
 class TestBuildNamedArgBodyContract:
     def test_path_collision_between_scalar_and_nested_field_raises(self):
-        # Two kwargs target the same section: one as a leaf (mgmt = scalar),
-        # one as a nested child (mgmt.timezone). The first write puts a
-        # scalar at ``body["mgmt"]``; the second tries to descend into it.
+        # Two kwargs target the same section: one as a leaf (ntp = scalar),
+        # one as a nested child (ntp.ntp_server_1). The first write puts a
+        # scalar at ``body["ntp"]``; the second tries to descend into it.
         field_paths: dict[str, tuple[str, ...]] = {
-            "mgmt": ("mgmt",),
-            "mgmt_timezone": ("mgmt", "timezone"),
+            "ntp": ("ntp",),
+            "ntp_server_1": ("ntp", "ntp_server_1"),
         }
         with pytest.raises(UniFiBadRequestError) as exc:
             build_named_arg_body(
                 tool_name="test_tool",
                 field_paths=field_paths,
-                named_values={"mgmt": "scalar", "mgmt_timezone": "UTC"},
+                named_values={"ntp": "scalar", "ntp_server_1": "time.example.com"},
                 data=None,
             )
         assert "path collision" in str(exc.value)
-        assert "mgmt" in str(exc.value)
+        assert "ntp" in str(exc.value)
 
     def test_no_collision_when_paths_share_only_a_dict_parent(self):
         # Two leaves under the same dict parent must coexist without

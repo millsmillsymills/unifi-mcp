@@ -33,10 +33,9 @@ from unifi_mcp.tools._common import (
 # Easier to expand later than to retract. Adding a new safe field is one
 # line here plus one kwarg on the tool signature.
 _SETTINGS_FIELD_PATHS: dict[str, tuple[str, ...]] = {
-    "mgmt_timezone": ("mgmt", "timezone"),
-    "locale_country": ("locale", "country"),
     "ntp_server_1": ("ntp", "ntp_server_1"),
     "ntp_server_2": ("ntp", "ntp_server_2"),
+    "mgmt_led_enabled": ("mgmt", "led_enabled"),
 }
 
 # UniFi switches expose ports indexed 1..N starting at 1. The largest stock SKU
@@ -81,10 +80,9 @@ def register_system_tools(mcp: FastMCP) -> None:
     async def unifi_network_update_settings(
         ctx: Context,
         *,
-        mgmt_timezone: str | None = None,
-        locale_country: str | None = None,
         ntp_server_1: str | None = None,
         ntp_server_2: str | None = None,
+        mgmt_led_enabled: bool | None = None,
         data: JsonObject | None = None,
     ) -> dict[str, Any]:
         """Update controller settings using named scalar args.
@@ -95,23 +93,28 @@ def register_system_tools(mcp: FastMCP) -> None:
         admin role flags) are intentionally NOT exposed here — they have
         dedicated tools or stay behind the dangerous-key denylist.
 
+        The named scalars target sections that the integration API key is
+        actually allowed to edit on current UCG firmware. ``locale`` and
+        ``country`` are read-only via this surface (controller responds
+        ``api.err.NoEdit``) and so timezone / country-code args were
+        dropped — set them through the UniFi console or a dedicated
+        privileged credential instead. See #211.
+
         Args:
             ctx: FastMCP request context.
-            mgmt_timezone: IANA timezone string (``mgmt.timezone``), e.g.
-                ``"America/Los_Angeles"``.
-            locale_country: ISO country code for the controller locale
-                (``locale.country``), e.g. ``"US"``.
             ntp_server_1: Primary NTP server hostname or IP
                 (``ntp.ntp_server_1``).
             ntp_server_2: Secondary NTP server hostname or IP
                 (``ntp.ntp_server_2``).
+            mgmt_led_enabled: Whether device status LEDs are illuminated
+                (``mgmt.led_enabled``).
             data: DEPRECATED — raw settings dict. Kept for back-compat
                 with existing agents; prefer the named scalar args above.
                 Still passes through the dangerous-key denylist. Cannot
                 be combined with any named arg.
 
         Returns:
-            The upstream API response.
+            The upstream API response from the last section PUT.
         """
         try:
             context = get_server_context(ctx)
@@ -121,10 +124,9 @@ def register_system_tools(mcp: FastMCP) -> None:
                 tool_name="unifi_network_update_settings",
                 field_paths=_SETTINGS_FIELD_PATHS,
                 named_values={
-                    "mgmt_timezone": mgmt_timezone,
-                    "locale_country": locale_country,
                     "ntp_server_1": ntp_server_1,
                     "ntp_server_2": ntp_server_2,
+                    "mgmt_led_enabled": mgmt_led_enabled,
                 },
                 data=data,
             )

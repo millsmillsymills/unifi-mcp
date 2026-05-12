@@ -1,17 +1,25 @@
 """Live round-trip for ``unifi_network_update_settings`` named-arg paths (#211).
 
-PR #208 (issue #202) introduced four named scalar args that lower to nested
-fields under ``PUT /rest/setting``:
+PR #208 (issue #202) introduced named scalar args for ``update_settings``.
+The original mappings shipped against ``respx`` mocks only — live testing
+on the UCG Ultra surfaced three issues that the named-arg surface now
+reflects (see PR for #211 for the full evidence):
 
-* ``mgmt_timezone``   → ``mgmt.timezone``
-* ``locale_country``  → ``locale.country``
-* ``ntp_server_1``    → ``ntp.ntp_server_1``
-* ``ntp_server_2``    → ``ntp.ntp_server_2``
+1. The bare ``PUT /rest/setting`` rejects multi-section bodies (HTTP 500).
+   Correct shape is ``PUT /rest/setting/<section_key>`` with the section's
+   partial body; the client now dispatches one PUT per top-level section.
+2. ``locale.timezone`` and ``country.code`` are locked behind the
+   integration API key — controller responds ``api.err.NoEdit``. The
+   corresponding named args (``locale_timezone``, ``country_code``) were
+   never functional and have been dropped from the tool signature.
+3. ``ntp.ntp_server_1`` and ``ntp.ntp_server_2`` round-trip cleanly, as
+   does ``mgmt.led_enabled``.
 
-Those wire paths were verified against ``respx`` mocks only. This module
-drives the full named-arg → builder → client → controller path through the
-MCP tool boundary on real hardware so the controller's acceptance of each
-path is observable.
+Surviving named args this test exercises:
+
+* ``ntp_server_1``     → ``PUT /rest/setting/ntp`` with ``ntp_server_1``
+* ``ntp_server_2``     → ``PUT /rest/setting/ntp`` with ``ntp_server_2``
+* ``mgmt_led_enabled`` → ``PUT /rest/setting/mgmt`` with ``led_enabled``
 
 Run manually::
 
@@ -93,11 +101,10 @@ def _keys(sections: list[dict[str, Any]]) -> list[str]:
     return [s.get("key", "?") for s in sections if isinstance(s, dict)]
 
 
-_FIELD_CASES: tuple[tuple[str, str, str, str, str], ...] = (
-    ("mgmt_timezone", "mgmt", "timezone", "UTC", "America/New_York"),
-    ("locale_country", "locale", "country", "US", "GB"),
-    ("ntp_server_1", "ntp", "ntp_server_1", "pool.ntp.org", "time.google.com"),
-    ("ntp_server_2", "ntp", "ntp_server_2", "time.nist.gov", "time.cloudflare.com"),
+_FIELD_CASES: tuple[tuple[str, str, str, Any, Any], ...] = (
+    ("ntp_server_1", "ntp", "ntp_server_1", "0.pool.ntp.org", "time.google.com"),
+    ("ntp_server_2", "ntp", "ntp_server_2", "1.pool.ntp.org", "time.cloudflare.com"),
+    ("mgmt_led_enabled", "mgmt", "led_enabled", True, False),
 )
 
 
@@ -122,8 +129,8 @@ class TestUpdateSettingsRoundTrip:
         named_arg: str,
         section_key: str,
         field: str,
-        option_a: str,
-        option_b: str,
+        option_a: Any,
+        option_b: Any,
     ) -> None:
         before = await _invoke(live_client, "unifi_network_get_settings")
         section = _extract_section(before, section_key)
