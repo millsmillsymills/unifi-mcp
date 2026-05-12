@@ -7,7 +7,30 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context, redact_secrets, reject_dangerous_keys
+from unifi_mcp.tools._common import (
+    JsonObject,
+    build_named_arg_body,
+    get_server_context,
+    redact_secrets,
+    reject_dangerous_keys,
+)
+
+# ── Option-1 allowlist for unifi_protect_update_camera (#202) ──────────────
+#
+# A flat scalar -> nested-dict path. Each entry tells the named-arg builder
+# where to place the value in the outgoing Protect body. Adding a new safe
+# camera field is a one-line change here plus the matching kwarg on the
+# tool signature; the deliberately-omitted families (recordingSettings,
+# smartDetectSettings, talkbackSettings) stay outside this allowlist so the
+# named API can never set them — they have dedicated tools instead.
+_CAMERA_FIELD_PATHS: dict[str, tuple[str, ...]] = {
+    "name": ("name",),
+    "led_settings_is_enabled": ("ledSettings", "isEnabled"),
+    "osd_settings_is_name_enabled": ("osdSettings", "isNameEnabled"),
+    "osd_settings_is_date_enabled": ("osdSettings", "isDateEnabled"),
+    "osd_settings_is_logo_enabled": ("osdSettings", "isLogoEnabled"),
+    "osd_settings_is_debug_enabled": ("osdSettings", "isDebugEnabled"),
+}
 
 
 def register_camera_tools(mcp: FastMCP) -> None:
@@ -49,12 +72,42 @@ def register_camera_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "protect"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-    async def unifi_protect_update_camera(ctx: Context, camera_id: str, data: JsonObject) -> dict[str, Any]:
-        """Update camera settings. Pass only fields to change.
+    async def unifi_protect_update_camera(
+        ctx: Context,
+        camera_id: str,
+        *,
+        name: str | None = None,
+        led_settings_is_enabled: bool | None = None,
+        osd_settings_is_name_enabled: bool | None = None,
+        osd_settings_is_date_enabled: bool | None = None,
+        osd_settings_is_logo_enabled: bool | None = None,
+        osd_settings_is_debug_enabled: bool | None = None,
+        data: JsonObject | None = None,
+    ) -> dict[str, Any]:
+        """Update camera settings using named scalar args.
+
+        Pass only the fields to change. ``recordingSettings``,
+        ``smartDetectSettings``, and ``talkbackSettings`` are intentionally
+        not exposed here — they have dedicated tools (e.g.,
+        ``unifi_protect_set_recording_mode``,
+        ``unifi_protect_set_smart_detection``).
 
         Args:
             camera_id: The camera ID.
-            data: Camera settings to update (e.g., {"name": "Front Door", "ledSettings": {"isEnabled": true}}).
+            name: Camera display name.
+            led_settings_is_enabled: Toggle the status LED (``ledSettings.isEnabled``).
+            osd_settings_is_name_enabled: Show camera name in the OSD
+                (``osdSettings.isNameEnabled``).
+            osd_settings_is_date_enabled: Show date in the OSD
+                (``osdSettings.isDateEnabled``).
+            osd_settings_is_logo_enabled: Show logo in the OSD
+                (``osdSettings.isLogoEnabled``).
+            osd_settings_is_debug_enabled: Show debug overlay in the OSD
+                (``osdSettings.isDebugEnabled``).
+            data: DEPRECATED — raw camera settings dict. Kept for
+                back-compat with existing agents; prefer the named scalar
+                args above. Still passes through the dangerous-key
+                denylist. Cannot be combined with any named arg.
 
         Returns:
             The upstream API response.
@@ -63,8 +116,21 @@ def register_camera_tools(mcp: FastMCP) -> None:
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot update camera in read-only mode")
-            reject_dangerous_keys(data, tool_name="unifi_protect_update_camera")
-            return await context.clients["protect"].update_camera(camera_id, data)
+            body = build_named_arg_body(
+                tool_name="unifi_protect_update_camera",
+                field_paths=_CAMERA_FIELD_PATHS,
+                named_values={
+                    "name": name,
+                    "led_settings_is_enabled": led_settings_is_enabled,
+                    "osd_settings_is_name_enabled": osd_settings_is_name_enabled,
+                    "osd_settings_is_date_enabled": osd_settings_is_date_enabled,
+                    "osd_settings_is_logo_enabled": osd_settings_is_logo_enabled,
+                    "osd_settings_is_debug_enabled": osd_settings_is_debug_enabled,
+                },
+                data=data,
+            )
+            reject_dangerous_keys(body, tool_name="unifi_protect_update_camera")
+            return await context.clients["protect"].update_camera(camera_id, body)
         except Exception as e:
             handle_client_error(e)
 
