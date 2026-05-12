@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context, reject_dangerous_keys
+from unifi_mcp.tools._common import JsonObject, get_server_context, redact_secrets, reject_dangerous_keys
 
 
 def register_wlan_tools(mcp: FastMCP) -> None:
@@ -19,15 +19,19 @@ def register_wlan_tools(mcp: FastMCP) -> None:
     async def unifi_network_list_wlans(ctx: Context) -> dict[str, Any]:
         """List all WLAN (Wi-Fi network) configurations.
 
+        Wi-Fi PSKs (``x_passphrase``), RADIUS shared secrets, and other
+        credential fields are redacted before the response leaves this
+        tool — see ``unifi_mcp._redaction`` (#146).
+
         Args:
             ctx: FastMCP request context.
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].list_wlans()
+            return redact_secrets(await context.clients["network"].list_wlans())
         except Exception as e:
             handle_client_error(e)
 
@@ -35,15 +39,19 @@ def register_wlan_tools(mcp: FastMCP) -> None:
     async def unifi_network_get_wlan(ctx: Context, wlan_id: str) -> dict[str, Any]:
         """Get a specific WLAN configuration by ID.
 
+        Wi-Fi PSKs (``x_passphrase``), RADIUS shared secrets, and other
+        credential fields are redacted before the response leaves this
+        tool — see ``unifi_mcp._redaction`` (#146).
+
         Args:
             wlan_id: The WLAN configuration ID.
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].get_wlan(wlan_id)
+            return redact_secrets(await context.clients["network"].get_wlan(wlan_id))
         except Exception as e:
             handle_client_error(e)
 

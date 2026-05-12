@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from unifi_mcp._redaction import redact_secrets
 from unifi_mcp.errors import UniFiBadRequestError
 
 if TYPE_CHECKING:
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
 
 type JsonObject = dict[str, Any]
 
-__all__ = ["JsonObject", "get_server_context", "reject_dangerous_keys"]
+__all__ = ["JsonObject", "get_server_context", "redact_secrets", "reject_dangerous_keys"]
 
 
 def get_server_context(ctx: Context) -> ServerContext:

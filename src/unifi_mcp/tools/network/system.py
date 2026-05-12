@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import JsonObject, get_server_context, reject_dangerous_keys
+from unifi_mcp.tools._common import JsonObject, get_server_context, redact_secrets, reject_dangerous_keys
 
 
 def register_system_tools(mcp: FastMCP) -> None:
@@ -17,15 +17,20 @@ def register_system_tools(mcp: FastMCP) -> None:
     async def unifi_network_get_settings(ctx: Context) -> dict[str, Any]:
         """Get controller settings.
 
+        SMTP credentials, RADIUS shared secrets, ``super_*_password`` /
+        ``super_*_url`` callback fields, and other credential keys are
+        redacted before the response leaves this tool — see
+        ``unifi_mcp._redaction`` (#146).
+
         Args:
             ctx: FastMCP request context.
 
         Returns:
-            The upstream API response.
+            The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
-            return await context.clients["network"].get_settings()
+            return redact_secrets(await context.clients["network"].get_settings())
         except Exception as e:
             handle_client_error(e)
 
