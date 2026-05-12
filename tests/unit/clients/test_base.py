@@ -1,5 +1,6 @@
 """Tests for the base UniFi API client."""
 
+import asyncio
 import logging
 
 import httpx
@@ -871,3 +872,36 @@ class TestClose:
     async def test_close_calls_aclose(self, client):
         await client.close()
         assert client._client.is_closed
+
+
+class TestConcurrentRequests:
+    """``BaseUniFiClient`` holds one ``httpx.AsyncClient`` per service for the
+    process lifetime. Two simultaneous tool calls against the same client share
+    that pool; these tests prove the shared pool services concurrent requests
+    correctly without swapping responses, re-creating the client, or deadlocking.
+    """
+
+    @respx.mock
+    async def test_two_distinct_concurrent_gets_return_independent_responses(self, client):
+        respx.get(f"{BASE_URL}/test-a").mock(return_value=httpx.Response(200, json={"which": "a"}))
+        respx.get(f"{BASE_URL}/test-b").mock(return_value=httpx.Response(200, json={"which": "b"}))
+        client_id_before = id(client._client)
+
+        result_a, result_b = await asyncio.gather(client.get("test-a"), client.get("test-b"))
+
+        assert result_a == {"which": "a"}
+        assert result_b == {"which": "b"}
+        assert id(client._client) == client_id_before
+        assert respx.calls.call_count == 2
+
+    @respx.mock
+    async def test_ten_concurrent_gets_same_path_all_complete(self, client):
+        respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(200, json={"ok": True}))
+        client_id_before = id(client._client)
+
+        results = await asyncio.gather(*[client.get("test") for _ in range(10)])
+
+        assert len(results) == 10
+        assert all(r == {"ok": True} for r in results)
+        assert respx.calls.call_count == 10
+        assert id(client._client) == client_id_before
