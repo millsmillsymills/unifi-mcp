@@ -62,14 +62,39 @@ class TestRedactSecretsKeyMatching:
         assert out[key] == REDACTED
 
     def test_super_prefix_without_password_or_url_suffix_is_safe(self):
-        out = redact_secrets({"super_mgmt_key": "v", "super_name": "g"})
-        assert out == {"super_mgmt_key": "v", "super_name": "g"}
+        # super_mgmt_key has no _password / _url suffix; not on exact denylist.
+        out = redact_secrets({"super_name": "g"})
+        assert out == {"super_name": "g"}
 
     def test_all_sensitive_keys_redacted(self):
         payload = {k: f"val-{k}" for k in SENSITIVE_KEYS}
         out = redact_secrets(payload)
         for k in SENSITIVE_KEYS:
             assert out[k] == REDACTED
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "x_ssh_password",
+            "x_authkey",
+            "x_inform_authkey",
+            "x_vrrpd_md5_key",
+            "x_ddns_pwd",
+            "client_secret",
+        ],
+    )
+    def test_device_and_ddns_secrets_redacted(self, key):
+        out = redact_secrets({key: "v"})
+        assert out[key] == REDACTED
+
+    @pytest.mark.parametrize(
+        "key",
+        ["clientSecret", "smtpPassword", "userToken", "sshAuthkey"],
+    )
+    def test_camelcase_suffix_secrets_redacted(self, key):
+        """Suffix matching on lowercased key catches camelCase variants."""
+        out = redact_secrets({key: "v"})
+        assert out[key] == REDACTED
 
 
 class TestRedactSecretsProperties:

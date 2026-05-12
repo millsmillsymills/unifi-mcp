@@ -13,12 +13,21 @@ from typing import Any
 
 SENSITIVE_KEYS: frozenset[str] = frozenset(
     {
+        # Wi-Fi / RADIUS / portal credentials
         "x_passphrase",
         "x_password",
         "password",
         "passphrase",
         "radius_secret",
         "wpa_psk",
+        # Device-level credentials (SSH / inform / VRRP)
+        "x_ssh_password",
+        "x_authkey",
+        "x_inform_authkey",
+        "x_vrrpd_md5_key",
+        # Dynamic-DNS credentials
+        "x_ddns_pwd",
+        # Generic credential keys
         "private_key",
         "ssotoken",
         "bearer",
@@ -26,31 +35,52 @@ SENSITIVE_KEYS: frozenset[str] = frozenset(
         "api_key",
         "apikey",
         "secret",
+        "client_secret",
     }
 )
 
 REDACTED = "***REDACTED***"
 
 
-def _is_sensitive_key(lowered: str) -> bool:
-    if lowered in SENSITIVE_KEYS:
+def _normalize(key: str) -> str:
+    """Lowercase + strip underscores so snake_case and camelCase forms of the
+    same key (`client_secret` and `clientSecret`) collapse to one identity.
+    """
+    return key.lower().replace("_", "")
+
+
+# Normalized denylist — matched against the normalized key.
+_NORMALIZED_KEYS: frozenset[str] = frozenset(_normalize(k) for k in SENSITIVE_KEYS)
+
+# Suffix patterns — match the **normalized** end of a key, so the same rule
+# catches `x_ssh_password`, `xSshPassword`, and `sshPassword`.
+_NORMALIZED_SUFFIXES: tuple[str, ...] = ("password", "secret", "authkey", "token", "passwd")
+
+
+def _is_sensitive_key(key: str) -> bool:
+    normalized = _normalize(key)
+    if normalized in _NORMALIZED_KEYS:
         return True
-    return lowered.startswith("super_") and (lowered.endswith("_password") or lowered.endswith("_url"))
+    if normalized.startswith("super") and (normalized.endswith("password") or normalized.endswith("url")):
+        return True
+    return any(normalized.endswith(suffix) for suffix in _NORMALIZED_SUFFIXES)
 
 
 def redact_secrets(value: Any) -> Any:
     """Return a deep copy of ``value`` with sensitive keys replaced.
 
-    Recursively walks dicts and lists. Dict-key match is case-insensitive.
-    Also matches ``super_*_password`` and ``super_*_url`` callback keys
-    that have historically leaked controller config. Non-container values
-    pass through untouched. Input is not mutated.
+    Recursively walks dicts and lists. Dict-key matching is case-insensitive
+    and underscore-insensitive (so ``client_secret`` and ``clientSecret`` are
+    both caught). Also matches ``super_*_password`` / ``super_*_url`` callback
+    keys that have historically leaked controller config, plus the credential
+    suffixes ``password`` / ``secret`` / ``authkey`` / ``token`` / ``passwd``.
+    Non-container values pass through untouched. Input is not mutated.
     """
     if isinstance(value, dict):
         redacted: dict[str, Any] = {}
         for key, sub in value.items():
             key_str = str(key)
-            if _is_sensitive_key(key_str.lower()):
+            if _is_sensitive_key(key_str):
                 redacted[key_str] = REDACTED
             else:
                 redacted[key_str] = redact_secrets(sub)

@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from unifi_mcp.errors import UniFiNotFoundError, UniFiReadOnlyError, handle_client_error
-from unifi_mcp.tools._common import get_server_context
+from unifi_mcp.tools._common import get_server_context, redact_secrets
 
 
 def register_device_tools(mcp: FastMCP) -> None:
@@ -31,7 +31,7 @@ def register_device_tools(mcp: FastMCP) -> None:
             devices: list[dict[str, Any]] = result.get("data", [])
             for device in devices:
                 if device.get("mac", "").lower() == mac.lower():
-                    return device
+                    return redact_secrets(device)
             raise UniFiNotFoundError(f"Device with MAC {mac} not found")
         except Exception as e:
             handle_client_error(e)
