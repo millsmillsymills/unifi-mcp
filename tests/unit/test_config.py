@@ -6,7 +6,7 @@ import socket
 import pytest
 from pydantic import ValidationError
 
-from unifi_mcp.config import UniFiConfig, UniFiMode
+from unifi_mcp.config import UniFiConfig, UniFiMode, get_config
 from unifi_mcp.errors import (
     UniFiAuthError,
     UniFiConnectionError,
@@ -441,6 +441,25 @@ class TestVerifySSLAudit:
         messages = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
         assert any("verify_ssl=False for Protect" in m for m in messages), messages
         assert any("for Protect" in m and "non-private host" in m for m in messages), messages
+
+    def test_get_config_caches_singleton_and_audits_once(self, caplog, monkeypatch):
+        """#190: ``get_config`` returns the same instance and the TLS audit
+        WARN fires exactly once per process, not once per ``UniFiConfig()``
+        call.
+        """
+        monkeypatch.setattr(socket, "gethostbyname", lambda _h: "10.0.0.1")
+        monkeypatch.setenv("UNIFI_NETWORK_HOST", "10.0.0.1")
+        monkeypatch.setenv("UNIFI_NETWORK_API", "k")
+        get_config.cache_clear()
+        try:
+            with caplog.at_level(logging.WARNING, logger="unifi_mcp.config"):
+                first = get_config()
+                second = get_config()
+            assert first is second
+            warns = [r.getMessage() for r in caplog.records if "verify_ssl=False for Network" in r.getMessage()]
+            assert len(warns) == 1, warns
+        finally:
+            get_config.cache_clear()
 
     def test_pin_suppresses_verify_ssl_warns(self, caplog, monkeypatch):
         """Item 3: pinning provides identity, so the verify_ssl WARNs should
