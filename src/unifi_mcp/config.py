@@ -81,6 +81,16 @@ class UniFiConfig(BaseSettings):
     # General
     unifi_request_timeout: int = Field(default=30, gt=0)
     unifi_max_retries: int = Field(default=3, ge=0)
+    # Hard ceiling on ``limit`` for any list tool that accepts one. Caps both
+    # the upstream payload size and the agent context the response will
+    # consume. Default matches the largest practical page size on UniFi
+    # controllers; operators can lower it but not silently raise it past a
+    # tool's own per-call validation. See #151.
+    unifi_max_list_items: int = Field(default=1000, gt=0)
+    # Hard ceiling on ``offset`` for paginated list tools. Stops an agent (or
+    # a prompt-injected one) from issuing requests that walk an unbounded
+    # cursor space on a controller whose data set is far smaller. See #151.
+    unifi_max_list_offset: int = Field(default=100_000, ge=0)
     # Cap raw-byte responses to keep a malicious or misconfigured request
     # from OOMing the server. Video exports and snapshots have very different
     # expected-size distributions (exports: tens to hundreds of MB; snapshots:

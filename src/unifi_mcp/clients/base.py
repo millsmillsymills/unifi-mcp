@@ -37,6 +37,15 @@ logger = logging.getLogger(__name__)
 # generous values; capping keeps a single tool call bounded.
 _MAX_RETRY_AFTER_SECONDS = 30
 
+# Multiplier applied to ``timeout`` for the per-request total elapsed budget.
+# The tenacity transient-error budget and the 429 retry budget run in
+# independent loops, so a pathological controller can chain them and exceed
+# the documented ``_MAX_RETRY_AFTER_SECONDS`` cap. This wall-clock fence is
+# the final gate: once the cumulative sleep+request time for one ``_request``
+# call exceeds ``timeout * _TOTAL_ELAPSED_TIMEOUT_MULTIPLIER`` we refuse to
+# retry further and raise. See #151.
+_TOTAL_ELAPSED_TIMEOUT_MULTIPLIER = 5
+
 
 def _log_raw_bodies_enabled() -> bool:
     """Whether the operator opted into untouched-body DEBUG logging.
@@ -69,10 +78,15 @@ class BaseUniFiClient(ABC):
     ) -> None:
         self._api_key = api_key
         self._max_retries = max_retries
+        self._timeout = timeout
+        # Multi-phase timeout: short connect/pool waits keep startup snappy
+        # against unreachable hosts while leaving the operator-configured
+        # ``timeout`` to bound the read/write phases (the slow ones on UniFi
+        # APIs — e.g. backup exports). See #151.
         client_kwargs: dict[str, Any] = {
             "base_url": base_url,
             "headers": {"X-API-Key": api_key},
-            "timeout": httpx.Timeout(timeout),
+            "timeout": httpx.Timeout(connect=5.0, read=float(timeout), write=float(timeout), pool=5.0),
         }
         if cert_fingerprint is not None:
             # Pinning takes precedence over verify_ssl: chain/hostname checks
@@ -91,7 +105,26 @@ class BaseUniFiClient(ABC):
     # ── HTTP helpers ────────────────────────────────────────────────────
 
     def _url(self, path: str) -> str:
-        """Build full path with prefix."""
+        """Build full path with prefix.
+
+        Refuses paths that could override ``base_url`` after concatenation:
+
+        - Leading ``/`` would route past ``_path_prefix`` entirely.
+        - ``http://`` / ``https://`` get parsed as absolute URLs by httpx,
+          pivoting the request off the configured controller.
+        - Protocol-relative ``//host`` is parsed as a network-path reference
+          and pivots to a different host on the same scheme.
+
+        Defense-in-depth on top of ``_segment`` (#145): an agent-controlled
+        ID still goes through that helper, but any path-shaped value that
+        slips past the tool-layer ID/MAC validators meets this gate too.
+        Production client methods all use bare relative paths
+        (``stat/device``, ``rest/wlanconf/{id}``); a leading-slash path
+        would be a bug — fail fast rather than silently rewrite the URL.
+        See #151.
+        """
+        if not isinstance(path, str) or path.startswith(("/", "http://", "https://")):
+            raise UniFiBadRequestError(f"invalid request path: {path!r}")
         return f"{self._path_prefix}{path}"
 
     @staticmethod
@@ -232,11 +265,23 @@ class BaseUniFiClient(ABC):
         HTTP 429 is retried for idempotent methods (GET/HEAD), sleeping for
         the ``Retry-After`` duration (capped at ``_MAX_RETRY_AFTER_SECONDS``)
         or 1 second if the header is absent. Bounded by ``self._max_retries``.
+
+        Two retry budgets share a wall-clock fence: the tenacity transient-
+        error budget and the explicit 429-loop run independently, so we
+        refuse to sleep past ``timeout * _TOTAL_ELAPSED_TIMEOUT_MULTIPLIER``
+        in cumulative time. Without this fence a pathological controller
+        that alternates between transient failures and 429s can chain both
+        budgets and produce single-tool calls that block for minutes. See
+        #151.
         """
         method_upper = method.upper()
         retry_on: tuple[type[BaseException], ...] = (httpx.ConnectError,)
         if method_upper in ("GET", "HEAD"):
             retry_on = (httpx.ConnectError, httpx.TimeoutException)
+
+        loop = asyncio.get_event_loop()
+        start = loop.time()
+        total_budget = float(self._timeout * _TOTAL_ELAPSED_TIMEOUT_MULTIPLIER)
 
         @retry(
             stop=stop_after_attempt(self._max_retries),
@@ -268,6 +313,18 @@ class BaseUniFiClient(ABC):
                 if rate_limit_attempts >= self._max_retries:
                     raise
                 sleep_seconds = min(exc.retry_after or 1, _MAX_RETRY_AFTER_SECONDS)
+                elapsed = loop.time() - start
+                if elapsed + sleep_seconds > total_budget:
+                    logger.warning(
+                        "Rate-limit retry budget exhausted on %s %s "
+                        "(elapsed=%.1fs + sleep=%ds > budget=%.1fs); surfacing 429.",
+                        method_upper,
+                        path,
+                        elapsed,
+                        sleep_seconds,
+                        total_budget,
+                    )
+                    raise
                 rate_limit_attempts += 1
                 logger.warning(
                     "Rate limited (429) on %s %s; sleeping %ds before retry %d/%d",
@@ -369,8 +426,14 @@ class BaseUniFiClient(ABC):
             Transport errors raised in here bubble out of the context manager
             and are caught by tenacity for retry. Mapped UniFi errors bubble
             unchanged (they aren't in ``retry_on``).
+
+            Defensive copy of ``kwargs`` per attempt: httpx is free to mutate
+            mutable values (a streaming-body iterator would be exhausted on
+            the first try) and a future caller passing such a value should
+            not silently diverge between retries. See #151.
             """
-            async with self._client.stream("GET", url, **kwargs) as response:
+            attempt_kwargs = dict(kwargs)
+            async with self._client.stream("GET", url, **attempt_kwargs) as response:
                 if not response.is_success:
                     # _raise_for_status reads response.text, which on a
                     # streaming response requires the body to be loaded first.

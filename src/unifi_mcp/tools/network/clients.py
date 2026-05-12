@@ -6,8 +6,17 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
-from unifi_mcp.errors import UniFiNotFoundError, UniFiReadOnlyError, handle_client_error
+from unifi_mcp.errors import UniFiBadRequestError, UniFiNotFoundError, UniFiReadOnlyError, handle_client_error
 from unifi_mcp.tools._common import get_server_context, redact_secrets, validate_mac
+
+# UniFi controllers accept guest authorization durations in minutes. Capping
+# at 30 days (43200 min) prevents prompt-injection from stamping an effectively
+# permanent guest session — anything longer should go through an MDM-shaped
+# tool, not the freeform agent surface. Lower bound of 1 rejects zero/negative
+# values that the legacy API silently accepts as "permanent" on some firmwares.
+# See #151.
+_AUTHORIZE_GUEST_MIN_MINUTES = 1
+_AUTHORIZE_GUEST_MAX_MINUTES = 43200
 
 
 def register_client_tools(mcp: FastMCP) -> None:
@@ -106,12 +115,24 @@ def register_client_tools(mcp: FastMCP) -> None:
         Args:
             mac: MAC address of the guest client.
             minutes: Duration of authorization in minutes (default: 60).
+                Bounded to ``1..43200`` (30 days); values outside this range
+                raise ``UniFiBadRequestError``.
 
         Returns:
             The upstream API response.
         """
         try:
             validate_mac(mac, field="mac")
+<<<<<<< HEAD
+=======
+            if not isinstance(minutes, int) or not (
+                _AUTHORIZE_GUEST_MIN_MINUTES <= minutes <= _AUTHORIZE_GUEST_MAX_MINUTES
+            ):
+                raise UniFiBadRequestError(
+                    f"minutes must be between {_AUTHORIZE_GUEST_MIN_MINUTES} and "
+                    f"{_AUTHORIZE_GUEST_MAX_MINUTES} (got {minutes!r})"
+                )
+>>>>>>> f47c62a (fix(security): bound retry budget, list params, and base client phases (#151))
             context = get_server_context(ctx)
             if not context.config.writes_enabled:
                 raise UniFiReadOnlyError("Cannot authorize guest in read-only mode")

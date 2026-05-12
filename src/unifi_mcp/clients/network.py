@@ -349,6 +349,14 @@ class NetworkClient(BaseUniFiClient):
         "MAC unknown to controller" at the raw API level. Pre-check against
         ``list_devices`` so already-adopted devices surface a typed
         ``UniFiDeviceAlreadyAdoptedError`` that agents can branch on (#93).
+
+        NOTE: not atomic. The pre-check and the ``cmd/devmgr`` POST are two
+        separate requests; a concurrent adoption between them races. The
+        legacy ``cmd/*`` endpoints offer no compare-and-set, so closing this
+        TOCTOU window would require an unsafe assumption (treat any conflict
+        as success) or an API the controller does not expose. Callers must
+        tolerate a small chance of ``UniFiDeviceAlreadyAdoptedError`` being
+        raised after a successful concurrent adopt. See #151.
         """
         existing = await self.list_devices()
         for device in existing.get("data", []):
@@ -372,6 +380,11 @@ class NetworkClient(BaseUniFiClient):
 
         Pre-checks against ``list_devices`` and raises ``UniFiNotFoundError``
         when the MAC isn't adopted by this controller. See #93.
+
+        NOTE: not atomic. Same TOCTOU caveat as ``adopt_device``: the
+        ``list_devices`` pre-check and the ``cmd/sitemgr`` POST run as
+        separate requests, and a concurrent forget/re-adopt between them
+        races. The legacy ``cmd/*`` API offers no compare-and-set. See #151.
         """
         devices = await self.list_devices()
         known = {entry.get("mac", "").lower() for entry in devices.get("data", [])}
@@ -407,6 +420,13 @@ class NetworkClient(BaseUniFiClient):
         silent no-op on a typo. Pre-check against ``list_all_clients``
         (active + historical) to surface a typed 404-style error instead.
         See #96.
+
+        NOTE: not atomic. The pre-check and the subsequent ``cmd/stamgr``
+        POST run as separate requests. A client that connects between the
+        two will still be blocked/authorized; a client that disconnects
+        between them may be acted on after its session ends. This is a
+        legacy ``cmd/*`` API limitation — there is no compare-and-set
+        primitive. See #151.
         """
         response = await self.list_all_clients()
         known = {entry.get("mac", "").lower() for entry in response.get("data", [])}

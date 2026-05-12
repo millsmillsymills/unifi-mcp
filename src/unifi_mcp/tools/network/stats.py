@@ -6,7 +6,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
-from unifi_mcp.errors import handle_client_error
+from unifi_mcp.errors import UniFiBadRequestError, handle_client_error
 from unifi_mcp.tools._common import get_server_context, redact_secrets
 
 
@@ -34,13 +34,17 @@ def register_stats_tools(mcp: FastMCP) -> None:
         """List recent network events and alerts.
 
         Args:
-            limit: Maximum number of events to return (default: 100).
+            limit: Maximum number of events to return (default: 100). Capped
+                by ``unifi_max_list_items`` (default 1000).
 
         Returns:
             The upstream API response with sensitive fields redacted.
         """
         try:
             context = get_server_context(ctx)
+            max_items = context.config.unifi_max_list_items
+            if not isinstance(limit, int) or limit < 1 or limit > max_items:
+                raise UniFiBadRequestError(f"limit must be between 1 and {max_items} (got {limit!r})")
             return redact_secrets(await context.clients["network"].list_events(limit=limit))
         except Exception as e:
             handle_client_error(e)

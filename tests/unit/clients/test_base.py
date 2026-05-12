@@ -30,11 +30,16 @@ class _ConcreteClient(BaseUniFiClient):
 
 @pytest.fixture
 def client():
+    # ``timeout=10`` keeps the wall-clock retry budget at 50s, comfortably
+    # above ``_MAX_RETRY_AFTER_SECONDS=30`` so a single legitimate 429 sleep
+    # fits inside one ``_request`` call's budget. The dedicated
+    # ``TestTotalElapsedBudget`` suite uses a smaller timeout to exercise
+    # the budget-exhaustion path directly.
     return _ConcreteClient(
         base_url=BASE_URL,
         api_key="test-api-key",
         verify_ssl=False,
-        timeout=5,
+        timeout=10,
         max_retries=2,
     )
 
@@ -43,13 +48,13 @@ class TestGetRequest:
     @respx.mock
     async def test_get_returns_json(self, client):
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(200, json={"data": [{"id": "1"}]}))
-        result = await client.get("/test")
+        result = await client.get("test")
         assert result == {"data": [{"id": "1"}]}
 
     @respx.mock
     async def test_api_key_header_included(self, client):
         route = respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(200, json={}))
-        await client.get("/test")
+        await client.get("test")
         assert route.calls[0].request.headers["X-API-Key"] == "test-api-key"
 
 
@@ -57,13 +62,13 @@ class TestPostRequest:
     @respx.mock
     async def test_post_returns_json(self, client):
         respx.post(f"{BASE_URL}/test").mock(return_value=httpx.Response(200, json={"meta": {"rc": "ok"}}))
-        result = await client.post("/test", json={"name": "foo"})
+        result = await client.post("test", json={"name": "foo"})
         assert result == {"meta": {"rc": "ok"}}
 
     @respx.mock
     async def test_post_204_returns_empty_dict(self, client):
         respx.post(f"{BASE_URL}/test").mock(return_value=httpx.Response(204))
-        result = await client.post("/test")
+        result = await client.post("test")
         assert result == {}
 
 
@@ -71,19 +76,19 @@ class TestPutRequest:
     @respx.mock
     async def test_put_returns_json(self, client):
         respx.put(f"{BASE_URL}/test/123").mock(return_value=httpx.Response(200, json={"data": [{"_id": "123"}]}))
-        result = await client.put("/test/123", json={"name": "updated"})
+        result = await client.put("test/123", json={"name": "updated"})
         assert result == {"data": [{"_id": "123"}]}
 
     @respx.mock
     async def test_put_204_returns_empty_dict(self, client):
         respx.put(f"{BASE_URL}/test/123").mock(return_value=httpx.Response(204))
-        result = await client.put("/test/123", json={"name": "updated"})
+        result = await client.put("test/123", json={"name": "updated"})
         assert result == {}
 
     @respx.mock
     async def test_put_empty_body_returns_empty_dict(self, client):
         respx.put(f"{BASE_URL}/test/123").mock(return_value=httpx.Response(200, content=b""))
-        result = await client.put("/test/123", json={})
+        result = await client.put("test/123", json={})
         assert result == {}
 
 
@@ -91,13 +96,13 @@ class TestDeleteRequest:
     @respx.mock
     async def test_delete_204_returns_empty_dict(self, client):
         respx.delete(f"{BASE_URL}/test/123").mock(return_value=httpx.Response(204))
-        result = await client.delete("/test/123")
+        result = await client.delete("test/123")
         assert result == {}
 
     @respx.mock
     async def test_delete_returns_json_body_when_present(self, client):
         respx.delete(f"{BASE_URL}/test/123").mock(return_value=httpx.Response(200, json={"meta": {"rc": "ok"}}))
-        result = await client.delete("/test/123")
+        result = await client.delete("test/123")
         assert result == {"meta": {"rc": "ok"}}
 
 
@@ -106,50 +111,50 @@ class TestErrorMapping:
     async def test_401_raises_auth_error(self, client):
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(401, text="Unauthorized"))
         with pytest.raises(UniFiAuthError, match="401"):
-            await client.get("/test")
+            await client.get("test")
 
     @respx.mock
     async def test_403_raises_auth_error(self, client):
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(403, text="Forbidden"))
         with pytest.raises(UniFiAuthError, match="403"):
-            await client.get("/test")
+            await client.get("test")
 
     @respx.mock
     async def test_404_raises_not_found(self, client):
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(404, text="Not Found"))
         with pytest.raises(UniFiNotFoundError, match="404"):
-            await client.get("/test")
+            await client.get("test")
 
     @respx.mock
     async def test_429_raises_rate_limit(self, client):
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(429, text="Too Many Requests"))
         with pytest.raises(UniFiRateLimitError, match="429"):
-            await client.get("/test")
+            await client.get("test")
 
     @respx.mock
     async def test_400_raises_bad_request(self, client):
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(400, text="Bad Request"))
         with pytest.raises(UniFiBadRequestError, match="400"):
-            await client.get("/test")
+            await client.get("test")
 
     @respx.mock
     async def test_500_raises_server_error(self, client):
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(500, text="Internal Server Error"))
         with pytest.raises(UniFiServerError, match="500"):
-            await client.get("/test")
+            await client.get("test")
         # Still a UniFiError subclass, so existing catchers keep working.
 
     @respx.mock
     async def test_502_raises_server_error(self, client):
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(502, text="Bad Gateway"))
         with pytest.raises(UniFiServerError, match="502"):
-            await client.get("/test")
+            await client.get("test")
 
     @respx.mock
     async def test_418_raises_generic_unifi_error(self, client):
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(418, text="I'm a teapot"))
         with pytest.raises(UniFiError, match="418"):
-            await client.get("/test")
+            await client.get("test")
 
 
 class TestErrorBodyExtraction:
@@ -166,7 +171,7 @@ class TestErrorBodyExtraction:
             )
         )
         with pytest.raises(UniFiBadRequestError) as exc_info:
-            await client.get("/test")
+            await client.get("test")
         assert "api.err.FirewallRuleFieldsRequired" in str(exc_info.value)
         # Raw JSON should NOT appear in the final message.
         assert '"meta":' not in str(exc_info.value)
@@ -180,7 +185,7 @@ class TestErrorBodyExtraction:
             )
         )
         with pytest.raises(UniFiAuthError) as exc_info:
-            await client.get("/test")
+            await client.get("test")
         assert "Unauthorized: invalid API key" in str(exc_info.value)
         assert '"error":' not in str(exc_info.value)
 
@@ -190,7 +195,7 @@ class TestErrorBodyExtraction:
             return_value=httpx.Response(404, json={"error": "device not found"}),
         )
         with pytest.raises(UniFiNotFoundError) as exc_info:
-            await client.get("/test")
+            await client.get("test")
         assert "device not found" in str(exc_info.value)
 
     @respx.mock
@@ -199,7 +204,7 @@ class TestErrorBodyExtraction:
             return_value=httpx.Response(500, json={"message": "internal failure"}),
         )
         with pytest.raises(UniFiServerError) as exc_info:
-            await client.get("/test")
+            await client.get("test")
         assert "internal failure" in str(exc_info.value)
 
     @respx.mock
@@ -212,7 +217,7 @@ class TestErrorBodyExtraction:
             return_value=httpx.Response(500, json={"weird_shape": [1, 2, 3], "other_field": "data"}),
         )
         with pytest.raises(UniFiServerError) as exc_info:
-            await client.get("/test")
+            await client.get("test")
         msg = str(exc_info.value)
         assert "HTTP 500" in msg
         assert "<unparseable body, see DEBUG log>" in msg
@@ -225,7 +230,7 @@ class TestErrorBodyExtraction:
         """
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(503, text="Service Unavailable"))
         with pytest.raises(UniFiServerError) as exc_info:
-            await client.get("/test")
+            await client.get("test")
         msg = str(exc_info.value)
         assert "HTTP 503" in msg
         assert "<unparseable body, see DEBUG log>" in msg
@@ -242,7 +247,7 @@ class TestErrorBodyExtraction:
         huge_body = "x" * 500
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(500, text=huge_body))
         with caplog.at_level(logging.DEBUG, logger="unifi_mcp.clients.base"), pytest.raises(UniFiServerError):
-            await client.get("/test")
+            await client.get("test")
         for record in caplog.records:
             assert huge_body not in record.getMessage()
 
@@ -255,7 +260,7 @@ class TestErrorBodyExtraction:
         huge_body = "x" * 500
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(500, text=huge_body))
         with caplog.at_level(logging.DEBUG, logger="unifi_mcp.clients.base"), pytest.raises(UniFiServerError):
-            await client.get("/test")
+            await client.get("test")
         assert any(huge_body in r.getMessage() for r in caplog.records), (
             f"expected raw body in DEBUG log; got {[r.getMessage() for r in caplog.records]!r}"
         )
@@ -282,7 +287,7 @@ class TestErrorBodyExtraction:
             )
         )
         with pytest.raises(UniFiBadRequestError) as exc_info:
-            await client.get("/test")
+            await client.get("test")
         msg = str(exc_info.value)
         assert "api.err.InvalidPayload" in msg
         # Sensitive values must never appear in the exception text.
@@ -304,7 +309,7 @@ class TestErrorBodyExtraction:
             )
         )
         with caplog.at_level(logging.DEBUG, logger="unifi_mcp.clients.base"), pytest.raises(UniFiBadRequestError):
-            await client.get("/test")
+            await client.get("test")
         for record in caplog.records:
             assert "hunter2" not in record.getMessage()
         assert any("REDACTED" in r.getMessage() for r in caplog.records)
@@ -316,7 +321,7 @@ class TestErrorBodyExtraction:
         """
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(401, text=""))
         with pytest.raises(UniFiAuthError) as exc_info:
-            await client.get("/test")
+            await client.get("test")
         msg = str(exc_info.value)
         assert "(empty body)" in msg
         assert not msg.rstrip().endswith(":")
@@ -330,7 +335,7 @@ class TestErrorBodyExtraction:
             return_value=httpx.Response(401, text="", headers={"WWW-Authenticate": "Bearer"})
         )
         with pytest.raises(UniFiAuthError) as exc_info:
-            await client.get("/test")
+            await client.get("test")
         assert "(empty body; WWW-Authenticate: Bearer)" in str(exc_info.value)
 
     @respx.mock
@@ -340,7 +345,7 @@ class TestErrorBodyExtraction:
         """
         respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(401, text="   \n\t  "))
         with pytest.raises(UniFiAuthError) as exc_info:
-            await client.get("/test")
+            await client.get("test")
         assert "(empty body)" in str(exc_info.value)
 
 
@@ -351,7 +356,7 @@ class TestMalformedJson:
             return_value=httpx.Response(200, content=b"not json", headers={"content-type": "application/json"})
         )
         with pytest.raises(UniFiError, match="Invalid JSON") as exc_info:
-            await client.get("/test")
+            await client.get("test")
         assert exc_info.value.status_code is None
 
     @respx.mock
@@ -360,7 +365,7 @@ class TestMalformedJson:
             return_value=httpx.Response(200, content=b"", headers={"content-type": "application/json"})
         )
         with pytest.raises(UniFiError, match="Invalid JSON") as exc_info:
-            await client.get("/test")
+            await client.get("test")
         assert exc_info.value.status_code is None
 
     @respx.mock
@@ -375,7 +380,7 @@ class TestMalformedJson:
             return_value=httpx.Response(200, content=html_portal, headers={"content-type": "text/html; charset=utf-8"})
         )
         with pytest.raises(UniFiAuthError, match="HTML instead of JSON") as exc_info:
-            await client.get("/test")
+            await client.get("test")
         assert exc_info.value.status_code == 200
         assert "auth/path mismatch" in str(exc_info.value)
 
@@ -386,7 +391,7 @@ class TestMalformedJson:
             return_value=httpx.Response(200, content=b"<!DOCTYPE html>", headers={"content-type": "TEXT/HTML"})
         )
         with pytest.raises(UniFiAuthError):
-            await client.get("/test")
+            await client.get("test")
 
 
 class TestRetry:
@@ -397,7 +402,7 @@ class TestRetry:
             httpx.ConnectError("Connection refused"),
             httpx.Response(200, json={"ok": True}),
         ]
-        result = await client.get("/test")
+        result = await client.get("test")
         assert result == {"ok": True}
         assert route.call_count == 2
 
@@ -405,13 +410,13 @@ class TestRetry:
     async def test_raises_connection_error_after_retries_exhausted(self, client):
         respx.get(f"{BASE_URL}/test").mock(side_effect=httpx.ConnectError("Connection refused"))
         with pytest.raises(UniFiConnectionError, match="Connection refused"):
-            await client.get("/test")
+            await client.get("test")
 
     @respx.mock
     async def test_no_retry_on_auth_error(self, client):
         route = respx.get(f"{BASE_URL}/test").mock(return_value=httpx.Response(401, text="Unauthorized"))
         with pytest.raises(UniFiAuthError):
-            await client.get("/test")
+            await client.get("test")
         assert route.call_count == 1
 
     @respx.mock
@@ -422,7 +427,7 @@ class TestRetry:
             httpx.ReadTimeout("slow"),
             httpx.Response(200, json={"ok": True}),
         ]
-        result = await client.get("/test")
+        result = await client.get("test")
         assert result == {"ok": True}
         assert route.call_count == 2
 
@@ -432,21 +437,21 @@ class TestRetry:
         # may have processed the write before the response was lost.
         route = respx.post(f"{BASE_URL}/test").mock(side_effect=httpx.ReadTimeout("slow"))
         with pytest.raises(UniFiTimeoutError):
-            await client.post("/test", json={"x": 1})
+            await client.post("test", json={"x": 1})
         assert route.call_count == 1
 
     @respx.mock
     async def test_timeout_on_put_is_not_retried(self, client):
         route = respx.put(f"{BASE_URL}/test/1").mock(side_effect=httpx.ReadTimeout("slow"))
         with pytest.raises(UniFiTimeoutError):
-            await client.put("/test/1", json={"x": 1})
+            await client.put("test/1", json={"x": 1})
         assert route.call_count == 1
 
     @respx.mock
     async def test_timeout_on_delete_is_not_retried(self, client):
         route = respx.delete(f"{BASE_URL}/test/1").mock(side_effect=httpx.ReadTimeout("slow"))
         with pytest.raises(UniFiTimeoutError):
-            await client.delete("/test/1")
+            await client.delete("test/1")
         assert route.call_count == 1
 
     @respx.mock
@@ -457,7 +462,7 @@ class TestRetry:
             httpx.ConnectError("refused"),
             httpx.Response(200, json={"ok": True}),
         ]
-        result = await client.post("/test", json={"x": 1})
+        result = await client.post("test", json={"x": 1})
         assert result == {"ok": True}
         assert route.call_count == 2
 
@@ -473,7 +478,7 @@ class TestRetry:
             httpx.Response(200, json={"ok": True}),
         ]
         with caplog.at_level(logging.WARNING, logger="unifi_mcp.clients.base"):
-            result = await client.get("/test")
+            result = await client.get("test")
         assert result == {"ok": True}
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert warnings, f"expected WARNING-level before_sleep log; got {caplog.records!r}"
@@ -504,7 +509,7 @@ class TestRateLimitRetry:
             httpx.Response(429, text="rate limited", headers={"Retry-After": "2"}),
             httpx.Response(200, json={"ok": True}),
         ]
-        result = await client.get("/test")
+        result = await client.get("test")
         assert result == {"ok": True}
         assert route.call_count == 2
         assert slept == [2]
@@ -523,7 +528,7 @@ class TestRateLimitRetry:
             httpx.Response(429, text="rate limited"),
             httpx.Response(200, json={"ok": True}),
         ]
-        result = await client.get("/test")
+        result = await client.get("test")
         assert result == {"ok": True}
         assert slept == [1]
 
@@ -545,7 +550,7 @@ class TestRateLimitRetry:
             httpx.Response(429, text="rate limited", headers={"Retry-After": "3600"}),
             httpx.Response(200, json={"ok": True}),
         ]
-        await client.get("/test")
+        await client.get("test")
         assert slept == [_MAX_RETRY_AFTER_SECONDS]
 
     @respx.mock
@@ -559,7 +564,7 @@ class TestRateLimitRetry:
             return_value=httpx.Response(429, text="rate limited", headers={"Retry-After": "1"})
         )
         with pytest.raises(UniFiRateLimitError):
-            await client.post("/test", json={"x": 1})
+            await client.post("test", json={"x": 1})
         assert route.call_count == 1
 
     @respx.mock
@@ -568,7 +573,7 @@ class TestRateLimitRetry:
 
         route = respx.put(f"{BASE_URL}/test/1").mock(return_value=httpx.Response(429, text="rate limited"))
         with pytest.raises(UniFiRateLimitError):
-            await client.put("/test/1", json={"x": 1})
+            await client.put("test/1", json={"x": 1})
         assert route.call_count == 1
 
     @respx.mock
@@ -585,7 +590,7 @@ class TestRateLimitRetry:
             return_value=httpx.Response(429, text="rate limited", headers={"Retry-After": "1"})
         )
         with pytest.raises(UniFiRateLimitError, match="429"):
-            await client.get("/test")
+            await client.get("test")
         # Bounded: initial request + max_retries retries.
         assert route.call_count == 1 + client._max_retries
 
@@ -600,7 +605,7 @@ class TestRateLimitRetry:
             return_value=httpx.Response(429, text="rate limited", headers={"Retry-After": "42"})
         )
         with pytest.raises(UniFiRateLimitError) as exc_info:
-            await client.post("/test", json={"x": 1})
+            await client.post("test", json={"x": 1})
         assert exc_info.value.retry_after == 42
         assert exc_info.value.status_code == 429
 
@@ -633,14 +638,14 @@ class TestGetRaw:
     @respx.mock
     async def test_get_raw_returns_bytes(self, client):
         respx.get(f"{BASE_URL}/snap").mock(return_value=httpx.Response(200, content=b"\xff\xd8\xff\xe0"))
-        result = await client.get_raw("/snap")
+        result = await client.get_raw("snap")
         assert result == b"\xff\xd8\xff\xe0"
 
     @respx.mock
     async def test_get_raw_with_max_bytes_under_cap_returns_full_body(self, client):
         payload = b"x" * 1024
         respx.get(f"{BASE_URL}/clip").mock(return_value=httpx.Response(200, content=payload))
-        result = await client.get_raw("/clip", max_bytes=2048)
+        result = await client.get_raw("clip", max_bytes=2048)
         assert result == payload
 
     @respx.mock
@@ -648,13 +653,13 @@ class TestGetRaw:
         payload = b"x" * 2048
         respx.get(f"{BASE_URL}/clip").mock(return_value=httpx.Response(200, content=payload))
         with pytest.raises(UniFiError, match="max_bytes=1024"):
-            await client.get_raw("/clip", max_bytes=1024)
+            await client.get_raw("clip", max_bytes=1024)
 
     @respx.mock
     async def test_get_raw_streamed_raises_on_http_error(self, client):
         respx.get(f"{BASE_URL}/clip").mock(return_value=httpx.Response(404, text="Not Found"))
         with pytest.raises(UniFiNotFoundError):
-            await client.get_raw("/clip", max_bytes=1024)
+            await client.get_raw("clip", max_bytes=1024)
 
     @respx.mock
     async def test_get_raw_streaming_retries_connect_error(self, client):
@@ -667,7 +672,7 @@ class TestGetRaw:
             httpx.ConnectError("refused"),
             httpx.Response(200, content=b"\xff\xd8\xff\xe0ok"),
         ]
-        result = await client.get_raw("/clip", max_bytes=1024)
+        result = await client.get_raw("clip", max_bytes=1024)
         assert result == b"\xff\xd8\xff\xe0ok"
         assert route.call_count == 2
 
@@ -679,14 +684,14 @@ class TestGetRaw:
         """
         respx.get(f"{BASE_URL}/clip").mock(side_effect=httpx.ConnectError("refused"))
         with pytest.raises(UniFiConnectionError, match="refused"):
-            await client.get_raw("/clip", max_bytes=1024)
+            await client.get_raw("clip", max_bytes=1024)
 
     @respx.mock
     async def test_get_raw_streaming_maps_timeout(self, client):
         """ReadTimeout in the streaming path must map to UniFiTimeoutError."""
         respx.get(f"{BASE_URL}/clip").mock(side_effect=httpx.ReadTimeout("slow"))
         with pytest.raises(UniFiTimeoutError, match="slow"):
-            await client.get_raw("/clip", max_bytes=1024)
+            await client.get_raw("clip", max_bytes=1024)
 
     @respx.mock
     async def test_get_raw_streaming_does_not_retry_max_bytes_exceeded(self, client):
@@ -696,8 +701,165 @@ class TestGetRaw:
         payload = b"x" * 4096
         route = respx.get(f"{BASE_URL}/clip").mock(return_value=httpx.Response(200, content=payload))
         with pytest.raises(UniFiError, match="max_bytes=1024"):
-            await client.get_raw("/clip", max_bytes=1024)
+            await client.get_raw("clip", max_bytes=1024)
         assert route.call_count == 1
+
+
+class TestUrlSchemeRejection:
+    """``_url`` refuses paths that could rewrite ``base_url`` after concat.
+
+    Defense-in-depth on top of ``_segment`` (#145): every production client
+    method uses a bare relative path (``stat/device``, ``rest/wlanconf/{id}``).
+    A leading slash, an absolute URL, or a protocol-relative form would let
+    a path argument pivot the request off the configured controller. See #151.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/test",
+            "//evil.example.com/path",
+            "http://evil.example.com/path",
+            "https://evil.example.com/path",
+        ],
+    )
+    def test_scheme_prefixed_paths_rejected(self, client, path):
+        with pytest.raises(UniFiBadRequestError, match="invalid request path"):
+            client._url(path)
+
+    def test_non_string_path_rejected(self, client):
+        with pytest.raises(UniFiBadRequestError, match="invalid request path"):
+            client._url(None)  # type: ignore[arg-type]
+
+    def test_relative_path_accepted(self, client):
+        assert client._url("stat/device") == "stat/device"
+
+    @respx.mock
+    async def test_get_rejects_leading_slash_before_request(self, client):
+        # No respx route registered — if the guard fails open, httpx would
+        # actually issue a request and respx would raise its own error.
+        with pytest.raises(UniFiBadRequestError, match="invalid request path"):
+            await client.get("/abs/path")
+
+    @respx.mock
+    async def test_get_raw_streaming_rejects_absolute_url(self, client):
+        with pytest.raises(UniFiBadRequestError, match="invalid request path"):
+            await client.get_raw("https://evil.example.com/clip", max_bytes=1024)
+
+
+class TestMultiPhaseTimeout:
+    """``httpx.Timeout`` is split: short connect/pool, operator timeout for read/write.
+
+    The original ``httpx.Timeout(timeout)`` collapsed all four phases onto the
+    same value, so a 30s read budget also meant 30s of patience for a TCP
+    connect to an unreachable host — making startup slow on misconfigured
+    deployments. See #151.
+    """
+
+    def test_connect_and_pool_pinned_short(self):
+        client = _ConcreteClient(base_url=BASE_URL, api_key="k", timeout=30)
+        timeout = client._client.timeout
+        assert timeout.connect == 5.0
+        assert timeout.pool == 5.0
+
+    def test_read_and_write_use_operator_timeout(self):
+        client = _ConcreteClient(base_url=BASE_URL, api_key="k", timeout=45)
+        timeout = client._client.timeout
+        assert timeout.read == 45.0
+        assert timeout.write == 45.0
+
+
+class TestStreamKwargsCopy:
+    """Each stream retry attempt gets its own ``kwargs`` snapshot.
+
+    The previous implementation closed over the caller's ``kwargs`` dict and
+    reused it across tenacity retries. Httpx is free to mutate values it
+    consumes (notably streaming bodies, file uploads), so a future caller
+    passing a mutable iterator would silently exhaust it on the first try.
+    The copy is cheap and removes the latent footgun. See #151.
+    """
+
+    @respx.mock
+    async def test_stream_kwargs_not_shared_between_attempts(self, client):
+        seen_param_lists: list[list[tuple[str, str]]] = []
+
+        def _record(request: httpx.Request) -> httpx.Response:
+            seen_param_lists.append(list(request.url.params.multi_items()))
+            if len(seen_param_lists) == 1:
+                raise httpx.ConnectError("refused")
+            return httpx.Response(200, content=b"ok")
+
+        respx.get(f"{BASE_URL}/clip").mock(side_effect=_record)
+        params = {"camera_id": "abc"}
+        result = await client.get_raw("clip", max_bytes=1024, params=params)
+        assert result == b"ok"
+        # Both attempts saw the same arguments — the copy never mutated the
+        # caller's dict.
+        assert params == {"camera_id": "abc"}
+        assert seen_param_lists[0] == seen_param_lists[1]
+
+
+class TestTotalElapsedBudget:
+    """A wall-clock fence stops the transient-error and 429 retry budgets from
+    chaining past ``5 * timeout`` seconds in a single ``_request`` call.
+
+    Without this fence, a controller that alternates between transient errors
+    (consumed by the tenacity decorator) and 429 responses (consumed by the
+    outer 429 loop) can extend a single tool call far past the documented
+    ``_MAX_RETRY_AFTER_SECONDS`` cap. See #151.
+    """
+
+    @respx.mock
+    async def test_repeated_429_capped_by_wall_clock_budget(self, monkeypatch):
+        # Small fixture so the budget (5 * timeout = 25s) is tight.
+        client = _ConcreteClient(base_url=BASE_URL, api_key="k", timeout=5, max_retries=10)
+        slept: list[float] = []
+
+        # Drive a fake clock so we don't depend on real time. ``loop.time``
+        # is captured at the start of ``_request``; each fake sleep advances it.
+        import asyncio as _aio
+
+        real_loop = _aio.get_event_loop()
+        fake_now = 0.0
+
+        def fake_time() -> float:
+            return fake_now
+
+        async def fake_sleep(seconds: float) -> None:
+            nonlocal fake_now
+            slept.append(seconds)
+            fake_now += seconds
+
+        monkeypatch.setattr(real_loop, "time", fake_time)
+        monkeypatch.setattr("unifi_mcp.clients.base.asyncio.sleep", fake_sleep)
+
+        respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(429, text="rate limited", headers={"Retry-After": "20"})
+        )
+        with pytest.raises(UniFiRateLimitError, match="429"):
+            await client.get("test")
+        # First sleep (20s) is inside the 25s budget; second sleep would push
+        # elapsed to 40s and is refused — the call raises instead.
+        assert slept == [20]
+
+    @respx.mock
+    async def test_single_legitimate_retry_fits_inside_budget(self, monkeypatch):
+        # Real-world: one 429 with a sane Retry-After succeeds.
+        client = _ConcreteClient(base_url=BASE_URL, api_key="k", timeout=30, max_retries=3)
+        slept: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            slept.append(seconds)
+
+        monkeypatch.setattr("unifi_mcp.clients.base.asyncio.sleep", fake_sleep)
+
+        route = respx.get(f"{BASE_URL}/test")
+        route.side_effect = [
+            httpx.Response(429, text="rate limited", headers={"Retry-After": "2"}),
+            httpx.Response(200, json={"ok": True}),
+        ]
+        assert await client.get("test") == {"ok": True}
+        assert slept == [2]
 
 
 class TestClose:
