@@ -235,7 +235,6 @@ PROTECT_HAPPY_PATHS = [
     (register_protect_device_tools, "unifi_protect_list_lights", "list_lights", {}),
     (register_protect_device_tools, "unifi_protect_list_sensors", "list_sensors", {}),
     (register_protect_device_tools, "unifi_protect_list_viewers", "list_viewers", {}),
-    (register_nvr_tools, "unifi_protect_get_bootstrap", "get_bootstrap", {}),
 ]
 
 

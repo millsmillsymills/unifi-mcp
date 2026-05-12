@@ -1,4 +1,4 @@
-"""Tests for Protect NVR MCP tools (2 read + 1 write)."""
+"""Tests for Protect NVR MCP tools (1 read + 1 write)."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from unifi_mcp.tools.protect.nvr import register_nvr_tools
 BASE_URL = "https://10.0.0.1:443"
 PROTECT_PREFIX = f"{BASE_URL}/proxy/protect/integration/v1"
 
-READ_TOOL_NAMES = {"unifi_protect_get_bootstrap", "unifi_protect_get_nvr"}
+READ_TOOL_NAMES = {"unifi_protect_get_nvr"}
 WRITE_TOOL_NAMES = {"unifi_protect_update_nvr"}
 
 
@@ -53,15 +53,9 @@ class TestNvrModeGating:
         names = {t.name for t in await server.list_tools()}
         assert "unifi_protect_update_nvr" not in names
         assert "unifi_protect_get_nvr" in names
-        assert "unifi_protect_get_bootstrap" in names
 
 
 class TestNvrClientEndpoints:
-    @respx.mock
-    async def test_get_bootstrap(self, protect_client_local):
-        respx.get(f"{PROTECT_PREFIX}/bootstrap").mock(return_value=httpx.Response(200, json={"nvr": {}}))
-        assert await protect_client_local.get_bootstrap() == {"nvr": {}}
-
     @respx.mock
     async def test_get_nvr(self, protect_client_local):
         respx.get(f"{PROTECT_PREFIX}/nvrs").mock(return_value=httpx.Response(200, json={"name": "nvr-1"}))

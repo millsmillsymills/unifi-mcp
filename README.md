@@ -12,7 +12,7 @@ Production-grade Python MCP server for UniFi Site Manager, Network, and Protect 
 
 ## Features
 
-- **84 MCP tools** covering UniFi Network (66), Protect (15), and Site Manager (3) APIs, all under the `unifi_*` namespace
+- **82 MCP tools** covering UniFi Network (66), Protect (13), and Site Manager (3) APIs, all under the `unifi_*` namespace
 - **Read/write mode separation** — write tools invisible in readonly mode
 - **Graceful per-API degradation** — only registers tools for configured APIs
 - **Typed, linted, tested** — strict `ty`, `ruff`, `pytest` with CI on Python 3.13
@@ -213,14 +213,6 @@ uv run pre-commit install
 ```
 
 ## Known Issues
-
-- **`unifi_protect_get_bootstrap` and `unifi_protect_list_events` always return 404** —
-  [#130](https://github.com/millsmillsymills/unifi-mcp/issues/130). The
-  Protect integration API at v1 does not expose `bootstrap` or `events`
-  REST endpoints (verified against Protect 7.0.107). The tools are
-  visible in the MCP tool list but every call returns
-  `Resource not found: Entity 'endpoint' not found`. Decision on
-  remove vs. WebSocket-based replacement tracked in #130.
 
 - **Protect on a separate device requires explicit `UNIFI_PROTECT_HOST`** —
   [#107](https://github.com/millsmillsymills/unifi-mcp/issues/107). If your

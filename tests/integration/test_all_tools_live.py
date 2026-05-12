@@ -123,14 +123,9 @@ NO_ARG_READ_TOOLS = {
 }
 
 # Read tools that exist in the registered set but always 404 against the
-# current UniFi APIs — either the integration-v1 surface never exposed them
-# (Protect bootstrap/events, #130) or the legacy Network endpoint has been
-# retired (network_list_events on UCG Ultra, #138). The strict xfail flips
-# to a hard failure if Ubiquiti adds them back, signaling the tracking
-# issue can close.
+# current UniFi APIs. The strict xfail flips to a hard failure if a tool
+# starts working again, signaling that its tracking issue can close.
 XFAIL_NO_ARG_READ_TOOLS = {
-    "unifi_protect_get_bootstrap": "#130 — integration/v1 has no bootstrap endpoint",
-    "unifi_protect_list_events": "#130 — integration/v1 has no events endpoint",
     "unifi_network_list_events": "#138 — list/alarm 404s on current UCG Ultra firmware",
 }
 

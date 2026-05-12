@@ -50,47 +50,6 @@ class TestGetCamera:
         assert result["name"] == "Front Door"
 
 
-class TestListEvents:
-    @respx.mock
-    async def test_list_events_with_filters_builds_correct_params(self, client):
-        route = respx.get(f"{API_PREFIX}events").mock(return_value=httpx.Response(200, json=FIXTURES["events"]))
-        result = await client.list_events(
-            start="1700000000000",
-            end="1700000010000",
-            camera_ids=["cam-1", "cam-2"],
-            types=["motion", "ring"],
-            smart_detect_types=["person", "vehicle"],
-            limit=50,
-            offset=10,
-        )
-        assert route.called
-        request = route.calls[0].request
-        assert "start=1700000000000" in str(request.url)
-        assert "end=1700000010000" in str(request.url)
-        assert "cameras=cam-1%2Ccam-2" in str(request.url) or "cameras=cam-1,cam-2" in str(request.url)
-        assert "types=motion%2Cring" in str(request.url) or "types=motion,ring" in str(request.url)
-        assert "smartDetectTypes=person%2Cvehicle" in str(request.url) or "smartDetectTypes=person,vehicle" in str(
-            request.url
-        )
-        assert "limit=50" in str(request.url)
-        assert "offset=10" in str(request.url)
-        assert result == FIXTURES["events"]
-
-    @respx.mock
-    async def test_list_events_with_no_filters_uses_defaults(self, client):
-        route = respx.get(f"{API_PREFIX}events").mock(return_value=httpx.Response(200, json=FIXTURES["events"]))
-        result = await client.list_events()
-        assert route.called
-        request = route.calls[0].request
-        assert "limit=30" in str(request.url)
-        assert "offset=0" in str(request.url)
-        # No optional params should be present
-        assert "start=" not in str(request.url)
-        assert "end=" not in str(request.url)
-        assert "cameras=" not in str(request.url)
-        assert result == FIXTURES["events"]
-
-
 class TestGetSnapshot:
     @respx.mock
     async def test_get_snapshot_returns_bytes(self, client):
