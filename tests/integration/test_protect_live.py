@@ -44,6 +44,10 @@ async def test_get_snapshot_returns_jpeg(protect_live_client):
     assert len(snapshot) > 1024, "Snapshot suspiciously small"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#227 — GET cameras/{id}/video/export 404s on Protect integration v1 (endpoint not exposed)",
+)
 async def test_export_video_returns_data(protect_live_client):
     """Export a 5-second window from ~30s ago. Asserts non-empty bytes; size
     sanity check guards against the controller returning an empty/0-byte
