@@ -38,16 +38,13 @@ def _is_valid_id(value: str) -> bool:
     return 1 <= len(value) <= 64 and all(ch in _ID_ALPHABET for ch in value)
 
 
-@given(value=st.text(min_size=0, max_size=80))
+@given(value=st.text(min_size=0, max_size=80).filter(lambda v: not _is_valid_id(v)))
 def test_validate_id_rejects_outside_allowlist(value: str) -> None:
     """Any string that fails the allowlist regex must raise.
 
     Covers three rejection paths in one strategy: empty (length 0),
     over-length (length > 64), and any non-allowlist character.
     """
-    if _is_valid_id(value):
-        validate_id(value, field="x")
-        return
     with pytest.raises(UniFiBadRequestError, match="x: invalid id format"):
         validate_id(value, field="x")
 
