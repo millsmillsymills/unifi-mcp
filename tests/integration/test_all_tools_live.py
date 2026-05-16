@@ -28,7 +28,6 @@ import base64
 import json
 import os
 import uuid
-from contextlib import aclosing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -716,15 +715,18 @@ class TestModeGatingLive:
 # ── §3d: live per-API degradation matrix ──────────────────────────────────
 
 
-# Combos enumerated in #97 §3d: per-API single configs, the two two-API
-# pairings called out in the issue, and the empty case. Each entry is
-# (combo_id, frozenset of API env vars that must be set for the combo).
+# Combos enumerated in #97 §3d plus the two completeness combos
+# (protect+site_manager, all_three) so a lifespan side-effect that only
+# manifests under specific multi-API interactions can't slip past.
+# Each entry is (combo_id, frozenset of API env vars that must be set).
 _DEGRADATION_MATRIX = [
     ("network_only", frozenset({"UNIFI_NETWORK_API"})),
     ("protect_only", frozenset({"UNIFI_PROTECT_API"})),
     ("site_manager_only", frozenset({"UNIFI_SITE_MANAGER_API"})),
     ("network_and_protect", frozenset({"UNIFI_NETWORK_API", "UNIFI_PROTECT_API"})),
     ("network_and_site_manager", frozenset({"UNIFI_NETWORK_API", "UNIFI_SITE_MANAGER_API"})),
+    ("protect_and_site_manager", frozenset({"UNIFI_PROTECT_API", "UNIFI_SITE_MANAGER_API"})),
+    ("all_three", frozenset({"UNIFI_NETWORK_API", "UNIFI_PROTECT_API", "UNIFI_SITE_MANAGER_API"})),
     ("none", frozenset()),
 ]
 
@@ -738,6 +740,15 @@ _API_ENV_TO_TOOL_PREFIX = {
     "UNIFI_NETWORK_API": "unifi_network_",
     "UNIFI_PROTECT_API": "unifi_protect_",
     "UNIFI_SITE_MANAGER_API": "unifi_site_manager_",
+}
+
+# Per-prefix subset of ``NO_ARG_READ_TOOLS`` (defined above): the minimum
+# set of read tools that MUST be registered when the API is enabled.
+# A regression that keeps one tool and drops the others would satisfy a
+# bare ``any(...)`` presence check, so the assertion below uses this floor.
+_NO_ARG_READS_BY_PREFIX = {
+    prefix: frozenset(n for n in NO_ARG_READ_TOOLS if n.startswith(prefix))
+    for prefix in _API_ENV_TO_TOOL_PREFIX.values()
 }
 
 
@@ -776,10 +787,7 @@ class TestDegradationMatrixLive:
         monkeypatch.chdir(tmp_path)
 
         server = create_server()
-        gen = server_lifespan._fn(server)
-        async with aclosing(gen):
-            ctx = await gen.__anext__()
-
+        async with server_lifespan(server) as ctx:
             expected_keys = {_API_ENV_TO_CLIENT_KEY[v] for v in env_vars}
             validated_keys = set(ctx.clients.keys())
             failed_to_validate = expected_keys - validated_keys
@@ -797,9 +805,10 @@ class TestDegradationMatrixLive:
             assert not leaks, f"{combo_id} leaks foreign-namespace tools: {leaks}"
 
             for prefix in expected_prefixes:
-                assert any(n.startswith(prefix) for n in tool_names), (
-                    f"{combo_id} expected to expose {prefix}* but no matching tools registered"
-                )
+                namespace_tools = {n for n in tool_names if n.startswith(prefix)}
+                expected_subset = _NO_ARG_READS_BY_PREFIX[prefix]
+                missing_reads = expected_subset - namespace_tools
+                assert not missing_reads, f"{combo_id}: expected reads under {prefix} missing: {sorted(missing_reads)}"
             if not expected_prefixes:
                 assert tool_names == [], f"none combo expected zero tools, got: {tool_names}"
 
@@ -812,9 +821,6 @@ class TestDegradationMatrixLive:
                     "tool_count": len(tool_names),
                 },
             )
-
-            with pytest.raises(StopAsyncIteration):
-                await gen.__anext__()
 
 
 # ── Smoke test that the harness itself doesn't need live hardware ─────────
