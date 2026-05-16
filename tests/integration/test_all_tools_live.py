@@ -751,6 +751,16 @@ _NO_ARG_READS_BY_PREFIX = {
     for prefix in _API_ENV_TO_TOOL_PREFIX.values()
 }
 
+# #240: session-level tracker for the degradation matrix. The matrix's
+# per-combo skip on ``validate_connection`` failure makes individual combos
+# look healthy when a backend regression nukes every combo containing the
+# affected API. The coverage test at the bottom of this class checks that
+# every API whose env key is set in the session validated at least once.
+_DEGRADATION_SESSION: dict[str, Any] = {
+    "validated_at_least_once": set(),
+    "combos_with_env_attempted": 0,
+}
+
 
 class TestDegradationMatrixLive:
     """#97 §3d live coverage. For each API-config combination, the
@@ -786,10 +796,18 @@ class TestDegradationMatrixLive:
         monkeypatch.setenv("UNIFI_MODE", "readonly")
         monkeypatch.chdir(tmp_path)
 
+        # Track session-wide coverage so the bottom-of-class test can flag
+        # an API that was configured but never validated in any combo
+        # (#240). Bumped only for combos with required env vars; the
+        # `none` combo doesn't contribute to coverage.
+        if env_vars:
+            _DEGRADATION_SESSION["combos_with_env_attempted"] += 1
+
         server = create_server()
         async with server_lifespan(server) as ctx:
             expected_keys = {_API_ENV_TO_CLIENT_KEY[v] for v in env_vars}
             validated_keys = set(ctx.clients.keys())
+            _DEGRADATION_SESSION["validated_at_least_once"].update(validated_keys)
             failed_to_validate = expected_keys - validated_keys
             if failed_to_validate:
                 pytest.skip(
@@ -821,6 +839,23 @@ class TestDegradationMatrixLive:
                     "tool_count": len(tool_names),
                 },
             )
+
+    def test_each_configured_api_validated_in_some_combo(self):
+        """#240: catch the case where every combo containing an API skipped
+        on ``validate_connection`` failure. A real client-layer regression
+        (broken auth, wrong URL, dropped header) hides behind the per-combo
+        "controller unreachable" skip otherwise.
+        """
+        configured = {_API_ENV_TO_CLIENT_KEY[env] for env in _API_ENV_TO_CLIENT_KEY if os.environ.get(env)}
+        if not configured:
+            pytest.skip("No UNIFI_*_API env vars set; matrix coverage not applicable")
+        if _DEGRADATION_SESSION["combos_with_env_attempted"] == 0:
+            pytest.skip("Degradation matrix combos didn't run (deselected?); coverage check N/A")
+        missing = configured - _DEGRADATION_SESSION["validated_at_least_once"]
+        assert not missing, (
+            f"#240: APIs {sorted(missing)} had env keys set but never validated in any combo. "
+            "A real validate_connection regression may be hiding behind per-combo skips."
+        )
 
 
 # ── Smoke test that the harness itself doesn't need live hardware ─────────
