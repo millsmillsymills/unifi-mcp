@@ -4,12 +4,17 @@ Exercises ``asyncio.gather`` over registered MCP tool handlers (one layer up
 from ``test_base.py``'s pool-level concurrency) to prove that:
 
 1. Independent tool invocations against the same client return independent
-   payloads (no response interleaving).
-2. The same tool invoked N times concurrently returns N coherent results.
+   payloads (routing per-call holds).
+2. The same tool invoked N times concurrently genuinely interleaves at the
+   event loop — a serialising regression (e.g. an accidental global lock
+   around the client call) would push max-in-flight to 1 and fail the test.
 3. Mixed-API concurrency (Network + Protect in the same ``gather``) returns
    coherent results when both clients are configured.
 4. A failing tool in a ``gather`` propagates its ``ToolError`` without
    corrupting sibling results (``return_exceptions=True``).
+5. ``redact_secrets`` is safe under concurrent invocation against a shared
+   upstream payload — every returned dict is redacted *and* the upstream
+   object the mock holds is left untouched (no aliasing / shared mutation).
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
+from unifi_mcp._redaction import REDACTED
 from unifi_mcp.config import UniFiConfig, UniFiMode
 from unifi_mcp.tools.network.devices import register_device_tools
 from unifi_mcp.tools.network.stats import register_stats_tools
@@ -95,11 +101,25 @@ class TestConcurrentToolCalls:
         network.list_events.assert_awaited_once_with(limit=5)
 
     async def test_same_tool_invoked_ten_times_concurrently(self, network_server):
-        """The same read tool dispatched N times concurrently must return N
-        coherent results — proving the handler is re-entrant under the
-        shared pooled ``AsyncClient``."""
+        """N=10 concurrent invocations must genuinely interleave at the event
+        loop. The mocked client yields with ``asyncio.sleep(0)`` so each call
+        parks before returning; a shared in-flight counter then proves all 10
+        coroutines were simultaneously past the suspension point. A handler
+        regression that serialises the client call (e.g. a global lock) would
+        cap ``max_in_flight`` at 1 and fail the assertion."""
+        in_flight = 0
+        max_in_flight = 0
+
+        async def _get_health_yielding() -> dict[str, str]:
+            nonlocal in_flight, max_in_flight
+            in_flight += 1
+            max_in_flight = max(max_in_flight, in_flight)
+            await asyncio.sleep(0)
+            in_flight -= 1
+            return {"data": "ok"}
+
         network = AsyncMock()
-        network.get_health.return_value = {"data": "ok"}
+        network.get_health.side_effect = _get_health_yielding
         ctx = _fake_ctx(_readonly_config(), network=network)
 
         results = await asyncio.gather(*[_call(network_server, "unifi_network_get_health", ctx) for _ in range(10)])
@@ -107,6 +127,8 @@ class TestConcurrentToolCalls:
         assert len(results) == 10
         assert all(r == {"data": "ok"} for r in results)
         assert network.get_health.await_count == 10
+        assert max_in_flight == 10, f"expected real concurrency; max_in_flight={max_in_flight}"
+        assert in_flight == 0
 
     async def test_mixed_network_and_protect_tools_concurrent(self, mixed_server):
         """A ``gather`` spanning Network + Protect tools must route each call
@@ -147,3 +169,31 @@ class TestConcurrentToolCalls:
         assert "not found" in str(bad).lower()
         network.get_health.assert_awaited_once()
         network.list_devices.assert_awaited_once()
+
+    async def test_redaction_under_concurrency_does_not_alias_upstream(self, mixed_server):
+        """``redact_secrets`` must produce independent, fully-redacted results
+        for every concurrent caller *without* mutating the upstream payload
+        the client holds. Each of N concurrent ``list_cameras`` calls receives
+        the same in-memory list-of-dicts; the test asserts (a) every returned
+        camera has its ``x_passphrase`` replaced with ``REDACTED``, and (b)
+        the original list the mock points at still carries the cleartext
+        secret — i.e. the redaction path deep-copies and does not alias."""
+        upstream_secret = "super-secret-psk"  # noqa: S105 — test fixture, not a real credential
+        cameras = [{"id": "cam-1", "x_passphrase": upstream_secret, "name": "front-door"}]
+        protect = AsyncMock()
+        protect.list_cameras.return_value = cameras
+        ctx = _fake_ctx(_readonly_config(), protect=protect)
+
+        results = await asyncio.gather(*[_call(mixed_server, "unifi_protect_list_cameras", ctx) for _ in range(5)])
+
+        assert len(results) == 5
+        for batch in results:
+            assert len(batch) == 1
+            cam = batch[0]
+            assert cam["x_passphrase"] == REDACTED
+            assert cam["id"] == "cam-1"
+            assert cam["name"] == "front-door"
+        assert cameras[0]["x_passphrase"] == upstream_secret, (
+            "redact_secrets aliased the upstream payload — concurrent callers can leak each other's mutations"
+        )
+        assert protect.list_cameras.await_count == 5
