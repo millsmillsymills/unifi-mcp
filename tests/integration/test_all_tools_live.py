@@ -128,11 +128,17 @@ NO_ARG_READ_TOOLS = {
 XFAIL_NO_ARG_READ_TOOLS: dict[str, str] = {}
 
 # Protect write tools that 404 with `Entity 'endpoint' not found` against the
-# integration v1 API on UCK-G2-Plus (Protect 7.0.107). `recording_mode` works on
-# the same `PUT cameras/{id}` path while these three do not — same envelope as
-# the missing reads tracked in #130. Strict xfail flips to a hard failure when a
-# fix lands, forcing the marker (and this comment) to be removed.
+# integration v1 API on UCK-G2-Plus (Protect 7.0.107). `set_recording_mode`
+# was the only Protect write that previously round-tripped (2026-04-27 probe),
+# but a direct PUT probe on 2026-05-16 against the G3 Flex returned the same
+# 404 envelope — see #237. Zero Protect writes now succeed on integration v1.
+# Strict xfail flips to a hard failure when a fix lands, forcing the marker
+# (and this comment) to be removed.
 XFAIL_PROTECT_WRITE_TOOLS = {
+    "unifi_protect_set_recording_mode": (
+        "#237 — PUT cameras/{id} recordingSettings 404 on integration v1 "
+        "(was working 2026-04-27, now Entity 'endpoint' not found)"
+    ),
     "unifi_protect_set_smart_detection": "#139 — PUT cameras/{id} smartDetectSettings 404 on integration v1",
     "unifi_protect_update_camera": "#139 — PUT cameras/{id} arbitrary body 404 on integration v1",
     "unifi_protect_update_nvr": "#139 — PUT nvrs path missing on integration v1 (see TODO in clients/protect.py)",
@@ -373,9 +379,18 @@ class TestProtectWriteRoundtrips:
     `finally` even on assertion failure.
     """
 
+    @pytest.mark.xfail(strict=True, reason=XFAIL_PROTECT_WRITE_TOOLS["unifi_protect_set_recording_mode"])
     async def test_recording_mode_roundtrip(self, live_client, artifacts):
         """Capture current recordingSettings.mode, set 'always', read back,
         then restore. The legal modes are always | motion | never | schedule.
+
+        Per #237, PUT cameras/{id} with recordingSettings now returns 404
+        Entity 'endpoint' not found on integration v1 (probed against G3 Flex
+        2026-05-16). The earlier capture step also returns no
+        ``recordingSettings`` field on the same camera, so the test was
+        previously skipping silently. Strict xfail makes the regression
+        explicit: when the integration v1 surface starts honoring this PUT
+        again, this test flips to hard-fail and the marker comes off.
         """
         camera_id = await _first_protect_camera_id(live_client)
 
@@ -385,10 +400,14 @@ class TestProtectWriteRoundtrips:
             "recording_mode_before",
             {"camera_id": camera_id, "original_mode": original_mode, "snapshot": before},
         )
-        if not original_mode:
-            pytest.skip(f"Could not read recordingSettings.mode from camera (got {before!r})")
-
-        target = "always" if original_mode != "always" else "motion"
+        # Integration v1 currently omits ``recordingSettings`` from GET, so
+        # ``original_mode`` is None. Pick a benign default for the PUT call —
+        # under the #237 regression the PUT 404s anyway and the strict-xfail
+        # marker consumes the failure. When the surface starts working again
+        # the marker comes off, this fallback gets revisited, and the restore
+        # path needs to be made faithful.
+        original_for_restore = original_mode or "never"
+        target = "always" if original_for_restore != "always" else "motion"
 
         try:
             applied = await _invoke(
@@ -403,12 +422,15 @@ class TestProtectWriteRoundtrips:
             artifacts.dump("recording_mode_readback", {"after_mode": after_mode, "snapshot": after})
             assert after_mode == target, f"Read-back mismatch: set {target!r}, read back {after_mode!r}"
         finally:
-            await _invoke(
-                live_client,
-                "unifi_protect_set_recording_mode",
-                {"camera_id": camera_id, "mode": original_mode},
-            )
-            artifacts.dump("recording_mode_restored", {"restored_mode": original_mode})
+            try:
+                await _invoke(
+                    live_client,
+                    "unifi_protect_set_recording_mode",
+                    {"camera_id": camera_id, "mode": original_for_restore},
+                )
+                artifacts.dump("recording_mode_restored", {"restored_mode": original_for_restore})
+            except ToolError as e:
+                artifacts.dump("recording_mode_restore_failed", {"error": str(e)})
 
     @pytest.mark.xfail(strict=True, reason=XFAIL_PROTECT_WRITE_TOOLS["unifi_protect_set_smart_detection"])
     async def test_smart_detection_roundtrip(self, live_client, artifacts):
