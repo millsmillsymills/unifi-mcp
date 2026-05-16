@@ -28,6 +28,7 @@ import base64
 import json
 import os
 import uuid
+from contextlib import aclosing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,7 +38,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from unifi_mcp.server import create_server
+from unifi_mcp.server import create_server, server_lifespan
 
 pytestmark = pytest.mark.integration
 
@@ -710,6 +711,110 @@ class TestModeGatingLive:
             "unifi_protect_update_camera",
         ):
             assert destructive not in tools, f"{destructive} is exposed in readonly mode — readonly gate is broken"
+
+
+# ── §3d: live per-API degradation matrix ──────────────────────────────────
+
+
+# Combos enumerated in #97 §3d: per-API single configs, the two two-API
+# pairings called out in the issue, and the empty case. Each entry is
+# (combo_id, frozenset of API env vars that must be set for the combo).
+_DEGRADATION_MATRIX = [
+    ("network_only", frozenset({"UNIFI_NETWORK_API"})),
+    ("protect_only", frozenset({"UNIFI_PROTECT_API"})),
+    ("site_manager_only", frozenset({"UNIFI_SITE_MANAGER_API"})),
+    ("network_and_protect", frozenset({"UNIFI_NETWORK_API", "UNIFI_PROTECT_API"})),
+    ("network_and_site_manager", frozenset({"UNIFI_NETWORK_API", "UNIFI_SITE_MANAGER_API"})),
+    ("none", frozenset()),
+]
+
+_API_ENV_TO_CLIENT_KEY = {
+    "UNIFI_NETWORK_API": "network",
+    "UNIFI_PROTECT_API": "protect",
+    "UNIFI_SITE_MANAGER_API": "site_manager",
+}
+
+_API_ENV_TO_TOOL_PREFIX = {
+    "UNIFI_NETWORK_API": "unifi_network_",
+    "UNIFI_PROTECT_API": "unifi_protect_",
+    "UNIFI_SITE_MANAGER_API": "unifi_site_manager_",
+}
+
+
+class TestDegradationMatrixLive:
+    """#97 §3d live coverage. For each API-config combination, the
+    lifespan walks real backends and ``list_tools()`` reflects exactly
+    the validated subset.
+
+    The unit-level mirror in ``tests/unit/test_audit_inventory.py`` covers
+    the same logic with stubbed clients; this class adds the missing
+    evidence that ``validate_connection`` against real UniFi backends lights
+    up exactly the expected tools — no namespace leakage, no orphans.
+    """
+
+    @pytest.mark.parametrize(
+        ("combo_id", "env_vars"),
+        _DEGRADATION_MATRIX,
+        ids=[c[0] for c in _DEGRADATION_MATRIX],
+    )
+    async def test_combo_exposes_only_validated_namespaces(self, combo_id, env_vars, monkeypatch, tmp_path, artifacts):
+        # Capture real keys before clearing — monkeypatch.delenv strips them
+        # from the process env, so we need their values first.
+        preserved = {var: os.environ.get(var) for var in env_vars}
+        missing = sorted(v for v, val in preserved.items() if not val)
+        if missing:
+            pytest.skip(f"{combo_id} requires {missing}; not configured in this env")
+
+        # Build a clean env slice: clear every API key, restore only the
+        # ones this combo asks for. Chdir to a tmp dir with no .env so the
+        # contributor's repo-root .env can't leak back in.
+        for var in _API_ENV_TO_CLIENT_KEY:
+            monkeypatch.delenv(var, raising=False)
+        for var, val in preserved.items():
+            monkeypatch.setenv(var, val)
+        monkeypatch.setenv("UNIFI_MODE", "readonly")
+        monkeypatch.chdir(tmp_path)
+
+        server = create_server()
+        gen = server_lifespan._fn(server)
+        async with aclosing(gen):
+            ctx = await gen.__anext__()
+
+            expected_keys = {_API_ENV_TO_CLIENT_KEY[v] for v in env_vars}
+            validated_keys = set(ctx.clients.keys())
+            failed_to_validate = expected_keys - validated_keys
+            if failed_to_validate:
+                pytest.skip(
+                    f"{combo_id}: lifespan could not validate {sorted(failed_to_validate)} "
+                    "against live backends; check controller reachability"
+                )
+
+            tool_names = sorted(t.name for t in await server.list_tools())
+            expected_prefixes = {_API_ENV_TO_TOOL_PREFIX[v] for v in env_vars}
+            foreign_prefixes = set(_API_ENV_TO_TOOL_PREFIX.values()) - expected_prefixes
+
+            leaks = sorted(n for n in tool_names if any(n.startswith(p) for p in foreign_prefixes))
+            assert not leaks, f"{combo_id} leaks foreign-namespace tools: {leaks}"
+
+            for prefix in expected_prefixes:
+                assert any(n.startswith(prefix) for n in tool_names), (
+                    f"{combo_id} expected to expose {prefix}* but no matching tools registered"
+                )
+            if not expected_prefixes:
+                assert tool_names == [], f"none combo expected zero tools, got: {tool_names}"
+
+            artifacts.dump(
+                f"degradation_{combo_id}",
+                {
+                    "ok": True,
+                    "configured": sorted(env_vars),
+                    "validated": sorted(validated_keys),
+                    "tool_count": len(tool_names),
+                },
+            )
+
+            with pytest.raises(StopAsyncIteration):
+                await gen.__anext__()
 
 
 # ── Smoke test that the harness itself doesn't need live hardware ─────────
