@@ -39,7 +39,7 @@ dev = [
     "ty>=0.0.34",
     "bandit[toml]>=1.9.4",
     "pre-commit>=4.6.0",
-    "hypothesis>=6.140.4",
+    "hypothesis>=6.152.6",
 ]
 
 [project.scripts]
