@@ -96,3 +96,23 @@ class TestModeGating:
         readwrite_tools = await server_rw.list_tools()
 
         assert len(readonly_tools) < len(readwrite_tools)
+
+    async def test_every_write_tagged_tool_is_gated_by_mode(self):
+        # Partition by the `write` tag and assert exhaustively that the gate
+        # neither leaks a write tool into readonly nor drops a read tool —
+        # named spot-checks above miss drift in either direction.
+        rw_server = create_server(_make_config(unifi_mode=UniFiMode.READWRITE))
+        rw_tools = await rw_server.list_tools()
+        write_tools = {t.name for t in rw_tools if "write" in (t.tags or set())}
+        read_tools = {t.name for t in rw_tools} - write_tools
+
+        assert write_tools, "Expected at least one write-tagged tool in readwrite mode"
+
+        ro_server = create_server(_make_config(unifi_mode=UniFiMode.READONLY))
+        readonly_names = {t.name for t in await ro_server.list_tools()}
+
+        leaked = write_tools & readonly_names
+        assert not leaked, f"Write tools visible in readonly mode: {sorted(leaked)}"
+
+        dropped = read_tools - readonly_names
+        assert not dropped, f"Read tools missing from readonly mode: {sorted(dropped)}"
