@@ -78,8 +78,18 @@ async def _collect_write_tools() -> list[tuple[str, dict[str, Any]]]:
 _WRITE_TOOLS: list[tuple[str, dict[str, Any]]] = asyncio.run(_collect_write_tools())
 
 
-def test_write_tool_inventory_non_empty() -> None:
-    assert _WRITE_TOOLS, "expected at least one write-tagged tool; tag wiring may be broken"
+# Floor catches silent tag-loss regressions: a refactor that drops `{"write"}`
+# from a handful of handlers would shrink the parametrize set silently without
+# the >=1 check noticing. Project docs (CLAUDE.md) document ~43 write tools;
+# 40 is the loosest floor that still trips on a meaningful regression.
+_WRITE_TOOLS_FLOOR = 40
+
+
+def test_write_tool_inventory_meets_floor() -> None:
+    assert len(_WRITE_TOOLS) >= _WRITE_TOOLS_FLOOR, (
+        f"expected >= {_WRITE_TOOLS_FLOOR} write-tagged tools, got {len(_WRITE_TOOLS)}; "
+        "tag wiring may be broken or write tools may have been silently removed"
+    )
 
 
 @pytest.mark.parametrize(
@@ -100,14 +110,17 @@ async def test_writes_enabled_gate_fires_in_readonly_mode(tool_name: str, schema
         with pytest.raises(ToolError) as excinfo:
             await client.call_tool(tool_name, args)
 
+    # fastmcp.Client re-raises ToolError from the wire format without preserving
+    # __cause__, so isinstance-on-cause is unavailable across the Client boundary
+    # — message-content is the only contract surfaced to the agent. Both literals
+    # come from handle_client_error's UniFiReadOnlyError branch (errors.py:125-126);
+    # mismatch means either the writes_enabled gate didn't fire or arg-level
+    # validation surfaced ahead of it (placeholder values may need updating).
     message = str(excinfo.value).lower()
     assert "read-only mode" in message, (
-        f"{tool_name}: expected ToolError surfacing the in-handler UniFiReadOnlyError; "
-        f"got {excinfo.value!r}. Either the writes_enabled gate is missing in this "
-        "handler, or arg-level validation is surfacing before it (test placeholder "
-        "values may need updating)."
+        f"{tool_name}: expected ToolError carrying the readonly suffix; got {excinfo.value!r}."
     )
     assert "write operation blocked" in message, (
-        f"{tool_name}: ToolError message did not carry the handle_client_error "
-        f"prefix for UniFiReadOnlyError; got {excinfo.value!r}."
+        f"{tool_name}: expected ToolError carrying the handle_client_error prefix "
+        f"for UniFiReadOnlyError; got {excinfo.value!r}."
     )
