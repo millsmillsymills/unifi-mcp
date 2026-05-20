@@ -331,6 +331,7 @@ class TestWriteRoundtrips:
     """
 
     async def test_firewall_group_crud(self, live_client, artifacts):
+        """Tool-boundary CRUD for firewall groups, including update."""
         suffix = uuid.uuid4().hex[:8]
         name = f"mcp-audit-fwg-{suffix}"
         created = await _invoke(
@@ -343,9 +344,24 @@ class TestWriteRoundtrips:
         assert items, f"Expected created firewall group in response: {created}"
         group_id = items[0]["_id"]
 
-        # Cleanup
-        deleted = await _invoke(live_client, "unifi_network_delete_firewall_group", {"group_id": group_id})
-        artifacts.dump(f"delete_firewall_group-{suffix}", {"ok": True, "payload": deleted})
+        try:
+            new_members = ["192.0.2.1", "192.0.2.2"]
+            updated = await _invoke(
+                live_client,
+                "unifi_network_update_firewall_group",
+                {"group_id": group_id, "data": {"group_members": new_members}},
+            )
+            artifacts.dump(f"update_firewall_group-{suffix}", {"ok": True, "payload": updated})
+
+            read_back = await _invoke(live_client, "unifi_network_get_firewall_group", {"group_id": group_id})
+            found = next((g for g in _unwrap_list(read_back) if g.get("_id") == group_id), None)
+            assert found is not None, f"Updated group {group_id} not found in get_firewall_group"
+            assert sorted(found.get("group_members") or []) == sorted(new_members), (
+                f"group_members read-back mismatch: set {new_members!r}, got {found.get('group_members')!r}"
+            )
+        finally:
+            deleted = await _invoke(live_client, "unifi_network_delete_firewall_group", {"group_id": group_id})
+            artifacts.dump(f"delete_firewall_group-{suffix}", {"ok": True, "payload": deleted})
 
     async def test_port_forward_crud(self, live_client, artifacts):
         suffix = uuid.uuid4().hex[:8]
@@ -367,8 +383,25 @@ class TestWriteRoundtrips:
         items = _unwrap_list(created)
         assert items, f"Expected created port forward in response: {created}"
         pf_id = items[0]["_id"]
-        deleted = await _invoke(live_client, "unifi_network_delete_port_forward", {"port_forward_id": pf_id})
-        artifacts.dump(f"delete_port_forward-{suffix}", {"ok": True, "payload": deleted})
+
+        try:
+            new_name = f"{name}-updated"
+            updated = await _invoke(
+                live_client,
+                "unifi_network_update_port_forward",
+                {"port_forward_id": pf_id, "data": {"name": new_name}},
+            )
+            artifacts.dump(f"update_port_forward-{suffix}", {"ok": True, "payload": updated})
+
+            read_back = await _invoke(live_client, "unifi_network_get_port_forward", {"port_forward_id": pf_id})
+            found = next((p for p in _unwrap_list(read_back) if p.get("_id") == pf_id), None)
+            assert found is not None, f"Updated port-forward {pf_id} not found"
+            assert found.get("name") == new_name, (
+                f"Read-back name mismatch: set {new_name!r}, got {found.get('name')!r}"
+            )
+        finally:
+            deleted = await _invoke(live_client, "unifi_network_delete_port_forward", {"port_forward_id": pf_id})
+            artifacts.dump(f"delete_port_forward-{suffix}", {"ok": True, "payload": deleted})
 
     async def test_route_crud(self, live_client, artifacts):
         """Tool-boundary CRUD for static routes. #257 was a tool-layer payload
@@ -821,6 +854,157 @@ class TestWriteRoundtrips:
         after = _unwrap_list(await _invoke(live_client, "unifi_network_list_wlans"))
         still_there = next((w for w in after if w.get("_id") == wlan_id), None)
         assert still_there is None, f"WLAN {wlan_id} ({name}) still present after delete_wlan: {still_there}"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "Tool-layer create_network doesn't forward vlan_enabled; controller rejects with "
+            "api.err.VlanUsed (misleading error name) whenever a VLAN ID is set. Same class as the "
+            "create_wlan tool-layer payload gap. Fix the tool to accept vlan_enabled (and ideally "
+            "expose a data: JsonObject escape hatch mirroring update_network) so VLAN-bearing "
+            "networks can be created through the MCP boundary. When fixed, this xfail flips red."
+        ),
+    )
+    async def test_network_crud_vlan(self, live_client, artifacts):
+        """Strict-xfail pinning the create_network VLAN payload gap.
+
+        Picks the lowest free VLAN in 80-89 (distinct from the conftest
+        ``test_vlan_id`` 90-99 range) and attempts a VLAN-backed network
+        create through the MCP tool boundary. The controller rejects today
+        with ``api.err.VlanUsed`` because ``vlan_enabled`` isn't forwarded;
+        ``conftest.py``'s ``test_vlan_id`` fixture works because it passes
+        the field via the client layer directly. When the tool surfaces
+        ``vlan_enabled`` (or a ``data`` arg), this test will pass and
+        strict-xfail will force the marker off.
+
+        The full create/update/delete dance is intentionally written out so
+        the marker can be removed cleanly when the fix lands.
+        """
+        existing_payload = await _invoke(live_client, "unifi_network_list_networks")
+        existing = _unwrap_list(existing_payload)
+        used_vlans = {n.get("vlan") for n in existing if isinstance(n, dict) and n.get("vlan")}
+        chosen_vlan = next((v for v in range(80, 90) if v not in used_vlans), None)
+        if chosen_vlan is None:
+            pytest.skip("VLAN IDs 80-89 are all in use; cannot attempt sandbox network create")
+
+        suffix = uuid.uuid4().hex[:8]
+        name = f"mcp-audit-net-{suffix}"
+        network_id: str | None = None
+        try:
+            created = await _invoke(
+                live_client,
+                "unifi_network_create_network",
+                {
+                    "name": name,
+                    "purpose": "corporate",
+                    "subnet": f"10.99.{chosen_vlan}.1/24",
+                    "vlan": chosen_vlan,
+                    "dhcpd_enabled": False,
+                },
+            )
+            items = _unwrap_list(created)
+            assert items, f"Expected created network in response: {created}"
+            network_id = items[0]["_id"]
+            artifacts.dump(
+                "create_network_xfail_unexpected_success",
+                {"vlan": chosen_vlan, "network_id": network_id},
+            )
+
+            new_name = f"{name}-updated"
+            await _invoke(
+                live_client,
+                "unifi_network_update_network",
+                {"network_id": network_id, "data": {"name": new_name}},
+            )
+
+            read_back = await _invoke(live_client, "unifi_network_get_network", {"network_id": network_id})
+            found = next((n for n in _unwrap_list(read_back) if n.get("_id") == network_id), None)
+            assert found is not None, f"Updated network {network_id} not found in get_network"
+            assert found.get("name") == new_name, (
+                f"Read-back name mismatch: set {new_name!r}, got {found.get('name')!r}"
+            )
+        finally:
+            if network_id is not None:
+                try:
+                    await _invoke(live_client, "unifi_network_delete_network", {"network_id": network_id})
+                except Exception as exc:
+                    artifacts.dump("create_network_xfail_cleanup_failed", {"error": str(exc)})
+
+    async def test_port_profile_crud(self, live_client, artifacts, test_vlan_id):
+        """Tool-boundary CRUD for switch port profiles.
+
+        Reuses the conftest ``test_vlan_id`` session-scoped sandbox VLAN
+        as the profile's ``native_networkconf_id`` (required for
+        ``forward=native``). The profile starts with ``poe_mode=off`` and
+        flips to ``auto`` during the update step.
+        """
+        suffix = uuid.uuid4().hex[:8]
+        name = f"mcp-audit-pp-{suffix}"
+        create_payload = {
+            "name": name,
+            "forward": "native",
+            "native_networkconf_id": test_vlan_id,
+            "poe_mode": "off",
+        }
+        created = await _invoke(
+            live_client,
+            "unifi_network_create_port_profile",
+            {"data": create_payload},
+        )
+        artifacts.dump(f"create_port_profile-{suffix}", {"ok": True, "payload": created})
+        items = _unwrap_list(created)
+        assert items, f"Expected created port profile in response: {created}"
+        profile_id = items[0]["_id"]
+
+        try:
+            updated = await _invoke(
+                live_client,
+                "unifi_network_update_port_profile",
+                {"profile_id": profile_id, "data": {"poe_mode": "auto"}},
+            )
+            artifacts.dump(f"update_port_profile-{suffix}", {"ok": True, "payload": updated})
+
+            read_back = await _invoke(live_client, "unifi_network_get_port_profile", {"profile_id": profile_id})
+            found = next((p for p in _unwrap_list(read_back) if p.get("_id") == profile_id), None)
+            assert found is not None, f"Updated port profile {profile_id} not found in get_port_profile"
+            assert found.get("poe_mode") == "auto", (
+                f"Read-back poe_mode mismatch: set 'auto', got {found.get('poe_mode')!r}"
+            )
+        finally:
+            deleted = await _invoke(live_client, "unifi_network_delete_port_profile", {"profile_id": profile_id})
+            artifacts.dump(f"delete_port_profile-{suffix}", {"ok": True, "payload": deleted})
+
+    async def test_provision_device_smoke(self, live_client, artifacts):
+        """Tool-boundary smoke for ``provision_device``.
+
+        Force-provisions an online AP that's NOT the primary WAP — pushes
+        the current config to it. Skips cleanly if no eligible non-protected
+        AP is online. Provisioning is normally non-disruptive (config push,
+        not reboot), but is gated by the regular write-test opt-in.
+        """
+        devices_payload = await _invoke(live_client, "unifi_network_list_devices")
+        devices = _unwrap_list(devices_payload)
+        protected_raw = os.environ.get("UNIFI_MCP_TEST_PROTECTED_MACS", "")
+        protected = {p.strip().lower() for p in protected_raw.split(",") if p.strip()}
+        target = next(
+            (
+                d
+                for d in devices
+                if isinstance(d, dict)
+                and d.get("state") == 1
+                and (d.get("mac") or "").lower() not in protected
+                and (d.get("type") or "").lower() == "uap"
+            ),
+            None,
+        )
+        if target is None:
+            pytest.skip("No online non-protected AP available for provision_device smoke")
+        mac = target["mac"]
+        artifacts.dump("provision_target", {"mac": mac, "model": target.get("model"), "name": target.get("name")})
+
+        resp = await _invoke(live_client, "unifi_network_provision_device", {"mac": mac})
+        assert isinstance(resp, dict), f"provision_device must return dict, got {type(resp).__name__}"
+        artifacts.dump("provision_response", {"ok": True, "mac": mac, "payload": resp})
 
 
 @pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
