@@ -1325,6 +1325,144 @@ class TestDestructive:
         payload = await _invoke(live_client, "unifi_network_create_backup")
         artifacts.dump("create_backup", {"ok": True, "payload": payload})
 
+    async def test_run_speedtest_smoke(self, live_client, artifacts):
+        """Tool-boundary smoke for ``run_speedtest``.
+
+        Runs a WAN speedtest from the controller — slow (~30-60s), kicks
+        off real traffic against speedtest.net. Asserts the tool returns a
+        dict; doesn't verify result fields since they're transient and
+        controller-version-dependent.
+        """
+        payload = await _invoke(live_client, "unifi_network_run_speedtest")
+        assert isinstance(payload, dict), f"run_speedtest must return dict, got {type(payload).__name__}"
+        artifacts.dump("run_speedtest", {"ok": True, "payload": payload})
+
+    async def test_restart_non_protected_ap(self, live_client, artifacts):
+        """Tool-boundary smoke for ``restart_device``.
+
+        Picks the first online AP whose MAC is NOT in
+        ``UNIFI_MCP_TEST_PROTECTED_MACS`` and whose ``num_sta`` is 0
+        (no associated clients), then issues a restart through the tool.
+        Skips if no such AP exists. The AP comes back online in ~60s; the
+        test doesn't wait for re-association — it just confirms the
+        controller accepted the restart command.
+        """
+        devices_payload = await _invoke(live_client, "unifi_network_list_devices")
+        devices = _unwrap_list(devices_payload)
+        protected_raw = os.environ.get("UNIFI_MCP_TEST_PROTECTED_MACS", "")
+        protected = {p.strip().lower() for p in protected_raw.split(",") if p.strip()}
+        target = next(
+            (
+                d
+                for d in devices
+                if isinstance(d, dict)
+                and d.get("state") == 1
+                and (d.get("type") or "").lower() == "uap"
+                and (d.get("mac") or "").lower() not in protected
+                and (d.get("num_sta") or 0) == 0
+            ),
+            None,
+        )
+        if target is None:
+            pytest.skip("No online non-protected AP with zero clients available for restart smoke")
+        mac = target["mac"]
+        artifacts.dump("restart_target", {"mac": mac, "name": target.get("name"), "model": target.get("model")})
+
+        resp = await _invoke(live_client, "unifi_network_restart_device", {"mac": mac})
+        assert isinstance(resp, dict), f"restart_device must return dict, got {type(resp).__name__}"
+        artifacts.dump("restart_response", {"ok": True, "mac": mac, "payload": resp})
+
+    async def test_power_cycle_and_assign_port_profile(self, live_client, artifacts, network_live_client, test_vlan_id):
+        """Tool-boundary roundtrip for ``power_cycle_port`` + ``assign_port_profile``.
+
+        Requires ``UNIFI_MCP_TEST_TARGET_MAC`` and ``UNIFI_MCP_TEST_PORT_IDX``
+        (the conftest-honored env vars). The target should be a switch with
+        an empty downstream port — per memory, Lite-16-PoE port 8 is the
+        documented safe target.
+
+        Self-contained: creates and deletes its own port profile via the
+        client layer so the test doesn't depend on the controller having
+        any pre-existing profiles. Captures the device's ``port_overrides``
+        snapshot before mutation and restores it in ``finally`` so the
+        target port returns to whatever override it had (or didn't have).
+        """
+        target_mac = os.environ.get("UNIFI_MCP_TEST_TARGET_MAC", "").strip().lower()
+        port_idx_raw = os.environ.get("UNIFI_MCP_TEST_PORT_IDX", "").strip()
+        if not target_mac or not port_idx_raw:
+            pytest.skip("UNIFI_MCP_TEST_TARGET_MAC and UNIFI_MCP_TEST_PORT_IDX must be set")
+        try:
+            port_idx = int(port_idx_raw)
+        except ValueError:
+            pytest.skip(f"UNIFI_MCP_TEST_PORT_IDX not an int: {port_idx_raw!r}")
+
+        # Power-cycle first — single-tool smoke, no state change needed.
+        cycle_resp = await _invoke(
+            live_client,
+            "unifi_network_power_cycle_port",
+            {"mac": target_mac, "port_idx": port_idx},
+        )
+        assert isinstance(cycle_resp, dict), f"power_cycle_port must return dict, got {type(cycle_resp).__name__}"
+        artifacts.dump(
+            "power_cycle_port",
+            {"ok": True, "mac": target_mac, "port_idx": port_idx, "payload": cycle_resp},
+        )
+
+        # Capture original port_overrides so the restore in finally is exact.
+        devices = await network_live_client.list_devices()
+        device = next((d for d in devices.get("data", []) if (d.get("mac") or "").lower() == target_mac), None)
+        if device is None:
+            pytest.skip(f"Device {target_mac} not found in list_devices")
+        device_id = device["_id"]
+        original_overrides = list(device.get("port_overrides", []))
+
+        # Throwaway profile via client layer — keeps the test independent of
+        # whatever profiles happen to exist on the controller.
+        suffix = uuid.uuid4().hex[:8]
+        profile_name = f"mcp-audit-pp-assign-{suffix}"
+        created_profile = await network_live_client.create_port_profile(
+            {
+                "name": profile_name,
+                "forward": "native",
+                "native_networkconf_id": test_vlan_id,
+                "poe_mode": "off",
+            }
+        )
+        profile_id = (created_profile.get("data") or [{}])[0].get("_id")
+        assert isinstance(profile_id, str), f"Throwaway profile missing _id: {created_profile}"
+        artifacts.dump(
+            "assign_port_profile_setup",
+            {
+                "profile_id": profile_id,
+                "name": profile_name,
+                "original_override_count": len(original_overrides),
+            },
+        )
+
+        try:
+            assign_resp = await _invoke(
+                live_client,
+                "unifi_network_assign_port_profile",
+                {"mac": target_mac, "port_idx": port_idx, "profile_id": profile_id},
+            )
+            assert isinstance(assign_resp, dict), (
+                f"assign_port_profile must return dict, got {type(assign_resp).__name__}"
+            )
+            artifacts.dump("assign_port_profile", {"ok": True, "payload": assign_resp})
+        finally:
+            try:
+                await network_live_client.put(f"rest/device/{device_id}", json={"port_overrides": original_overrides})
+                artifacts.dump(
+                    "assign_port_profile_restored",
+                    {"device_id": device_id, "override_count": len(original_overrides)},
+                )
+            except Exception as exc:
+                artifacts.dump("assign_port_profile_restore_failed", {"error": str(exc)})
+            try:
+                await network_live_client.delete_port_profile(profile_id)
+                artifacts.dump("assign_port_profile_temp_deleted", {"profile_id": profile_id})
+            except Exception as exc:
+                artifacts.dump("assign_port_profile_temp_delete_failed", {"error": str(exc)})
+
 
 # ── Mode-gating sanity: readonly hides writes (no live hardware needed) ────
 
