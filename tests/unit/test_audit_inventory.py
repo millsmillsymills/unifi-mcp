@@ -79,6 +79,9 @@ class TestReadonlyHidesEveryWriteTool:
 
         exclusive_to_rw = {t.name for t in rw_tools} - ro_names
         write_tagged = {t.name for t in rw_tools if "write" in set(t.tags)}
+        # Without this, the equality below trivially passes when both sets
+        # are empty — a refactor that strips every {"write"} tag would leak.
+        assert write_tagged, "expected at least one write-tagged tool; tag wiring may be broken"
         assert exclusive_to_rw == write_tagged, (
             "Difference between readwrite and readonly tool sets must equal "
             "exactly the write-tagged tools.\n"
