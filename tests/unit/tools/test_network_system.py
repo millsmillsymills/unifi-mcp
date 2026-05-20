@@ -21,7 +21,6 @@ WRITE_TOOL_NAMES = {
     "unifi_network_upgrade_device",
     "unifi_network_power_cycle_port",
     "unifi_network_unauthorize_guest",
-    "unifi_network_archive_events",
     "unifi_network_reset_dpi",
 }
 
@@ -49,8 +48,7 @@ class TestSystemToolRegistration:
             # Destructive per #49/#50.
             "unifi_network_upgrade_device",
             "unifi_network_power_cycle_port",
-            # Archive-events + reset-dpi both discard state.
-            "unifi_network_archive_events",
+            # reset-dpi discards state.
             "unifi_network_reset_dpi",
         ],
     )
@@ -93,12 +91,6 @@ class TestSystemCommandEndpoints:
         body = route.calls[0].request.content
         assert b"power-cycle" in body
         assert b'"port_idx":5' in body
-
-    @respx.mock
-    async def test_archive_events(self, network_client):
-        route = respx.post(f"{SITE_PREFIX}/cmd/evtmgr").mock(return_value=httpx.Response(200, json={}))
-        await network_client.archive_events()
-        assert b"archive-all-alarms" in route.calls[0].request.content
 
     @respx.mock
     async def test_reset_dpi(self, network_client):

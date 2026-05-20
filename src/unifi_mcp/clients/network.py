@@ -536,11 +536,6 @@ class NetworkClient(BaseUniFiClient):
         result: dict[str, Any] = await self.post("cmd/stamgr", json={"cmd": "unauthorize-guest", "mac": mac})
         return result
 
-    async def archive_events(self) -> dict[str, Any]:
-        """Archive all alarms/events."""
-        result: dict[str, Any] = await self.post("cmd/evtmgr", json={"cmd": "archive-all-alarms"})
-        return result
-
     async def reset_dpi(self) -> dict[str, Any]:
         """Reset DPI counters."""
         result: dict[str, Any] = await self.post("cmd/stat", json={"cmd": "reset-dpi"})
