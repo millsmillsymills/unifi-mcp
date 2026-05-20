@@ -75,14 +75,16 @@ def register_routing_tools(mcp: FastMCP) -> None:
                 raise UniFiReadOnlyError("Cannot create route in read-only mode")
             data: JsonObject = {
                 "name": name,
-                "type": route_type,
-                "network": network,
+                "type": "static-route",
                 "enabled": enabled,
+                "static-route_type": route_type,
+                "static-route_network": network,
+                "static-route_distance": 1,
             }
             if gateway_ip is not None:
-                data["gateway_ip"] = gateway_ip
+                data["static-route_nexthop"] = gateway_ip
             if interface is not None:
-                data["interface"] = interface
+                data["static-route_interface"] = interface
             return await context.clients["network"].create_route(data)
         except Exception as e:
             handle_client_error(e)
@@ -93,7 +95,10 @@ def register_routing_tools(mcp: FastMCP) -> None:
 
         Args:
             route_id: The route ID.
-            data: Fields to update (e.g., {"enabled": false, "gateway_ip": "10.0.0.1"}).
+            data: Fields to update using controller's prefixed key shape
+                (e.g., {"enabled": false, "static-route_nexthop": "10.0.0.1"}).
+                Flat keys like ``gateway_ip`` / ``network`` are rejected with
+                api.err.InvalidPayload.
 
         Returns:
             The upstream API response.

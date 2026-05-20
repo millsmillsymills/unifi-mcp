@@ -203,7 +203,6 @@ class TestCommandMethods:
         [
             ("run_speedtest", "cmd/devmgr", b"speedtest"),
             ("create_backup", "cmd/backup", b"backup"),
-            ("archive_events", "cmd/evtmgr", b"archive-all-alarms"),
             ("reset_dpi", "cmd/stat", b"reset-dpi"),
         ],
     )

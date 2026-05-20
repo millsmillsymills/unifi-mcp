@@ -209,7 +209,6 @@ NETWORK_HAPPY_PATHS = [
         None,
     ),
     (register_system_tools, "unifi_network_unauthorize_guest", "unauthorize_guest", {"mac": "aa:bb:cc:dd:ee:ff"}, None),
-    (register_system_tools, "unifi_network_archive_events", "archive_events", {}, None),
     (register_system_tools, "unifi_network_reset_dpi", "reset_dpi", {}, None),
 ]
 

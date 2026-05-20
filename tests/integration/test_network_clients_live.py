@@ -191,3 +191,51 @@ class TestAuthorizeUnauthorizeCycle:
                 await network_live_client.unauthorize_guest(mac)
             except Exception as exc:
                 LOG.warning("Cleanup unauthorize_guest(%s) failed: %s", mac, exc)
+
+
+_KICK_RECONNECT_TIMEOUT_S = 30.0
+_KICK_POLL_INTERVAL_S = 1.5
+
+
+class TestKickClient:
+    """Live kick_client smoke test.
+
+    ``cmd/stamgr cmd=kick-sta`` is a wireless force-reauth. The controller
+    accepts the call for wired clients too but it's effectively a no-op there.
+    Either way we assert:
+
+    1. The call returns a dict and does not raise (catches the
+       UnknownStation / malformed-payload class of bug).
+    2. If the client was wireless and dropped off active-list, that it
+       reappears within the reconnect window (catches a permanent kick).
+    """
+
+    async def test_kick_client(self, network_live_client, test_client_mac):
+        mac = test_client_mac
+
+        actives = await network_live_client.list_active_clients()
+        entry = _find_active(actives, mac)
+        if entry is None:
+            pytest.skip(f"Target MAC {mac} not currently active; cannot test kick")
+        was_wired = bool(entry.get("is_wired"))
+
+        response = await network_live_client.kick_client(mac)
+        assert isinstance(response, dict), "kick_client must return a dict response"
+
+        if was_wired:
+            LOG.warning("kick_client target MAC %s is wired; kick-sta is effectively a no-op for wired STAs.", mac)
+            return
+
+        deadline = asyncio.get_event_loop().time() + _KICK_RECONNECT_TIMEOUT_S
+        reappeared = False
+        while asyncio.get_event_loop().time() < deadline:
+            actives_now = await network_live_client.list_active_clients()
+            if mac in _active_macs(actives_now):
+                reappeared = True
+                break
+            await asyncio.sleep(_KICK_POLL_INTERVAL_S)
+
+        assert reappeared, (
+            f"kick_client target MAC {mac} never reappeared on active list "
+            f"within {_KICK_RECONNECT_TIMEOUT_S}s — kick may be permanent (controller bug or wrong endpoint)."
+        )

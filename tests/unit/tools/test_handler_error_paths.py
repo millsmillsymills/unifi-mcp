@@ -242,7 +242,6 @@ ERROR_PATH_CASES: list[tuple[Any, str, str, str, dict[str, Any]]] = [
         "network",
         {"mac": "aa:bb:cc:dd:ee:ff"},
     ),
-    (register_system_tools, "unifi_network_archive_events", "archive_events", "network", {}),
     (register_system_tools, "unifi_network_reset_dpi", "reset_dpi", "network", {}),
     # Protect
     (register_camera_tools, "unifi_protect_list_cameras", "list_cameras", "protect", {}),

@@ -104,6 +104,10 @@ ignore = [
     "TC001",   # application imports needed at runtime for FastMCP annotation introspection
     "TC002",   # third-party imports needed at runtime for FastMCP annotation introspection
 ]
+# Operator-facing CLI scripts print to stdout intentionally
+"scripts/**/*.py" = [
+    "T201",    # print is the script's output channel
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["unifi_mcp"]

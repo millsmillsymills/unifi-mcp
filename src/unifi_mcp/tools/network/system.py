@@ -246,24 +246,6 @@ def register_system_tools(mcp: FastMCP) -> None:
             handle_client_error(e)
 
     @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-    async def unifi_network_archive_events(ctx: Context) -> dict[str, Any]:
-        """Archive all alarms and events.
-
-        Args:
-            ctx: FastMCP request context.
-
-        Returns:
-            The upstream API response.
-        """
-        try:
-            context = get_server_context(ctx)
-            if not context.config.writes_enabled:
-                raise UniFiReadOnlyError("Cannot archive events in read-only mode")
-            return await context.clients["network"].archive_events()
-        except Exception as e:
-            handle_client_error(e)
-
-    @mcp.tool(tags={"write", "network"}, annotations={"readOnlyHint": False, "destructiveHint": True})
     async def unifi_network_reset_dpi(ctx: Context) -> dict[str, Any]:
         """Reset all DPI (Deep Packet Inspection) counters.
 
