@@ -95,7 +95,10 @@ def register_routing_tools(mcp: FastMCP) -> None:
 
         Args:
             route_id: The route ID.
-            data: Fields to update (e.g., {"enabled": false, "gateway_ip": "10.0.0.1"}).
+            data: Fields to update using controller's prefixed key shape
+                (e.g., {"enabled": false, "static-route_nexthop": "10.0.0.1"}).
+                Flat keys like ``gateway_ip`` / ``network`` are rejected with
+                api.err.InvalidPayload.
 
         Returns:
             The upstream API response.

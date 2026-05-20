@@ -58,6 +58,39 @@ _READOPT_TIMEOUT_S = 180.0
 _READOPT_POLL_INTERVAL_S = 5.0
 
 
+async def _wait_for_adopted(client, mac: str, deadline: float) -> bool:
+    """Poll list_devices() until ``mac`` reports adopted=True or deadline expires."""
+    while asyncio.get_event_loop().time() < deadline:
+        await asyncio.sleep(_READOPT_POLL_INTERVAL_S)
+        devices = await client.list_devices()
+        target = _find_device(devices, mac)
+        if target and target.get("adopted"):
+            return True
+    return False
+
+
+async def _wait_for_pending_then_adopt(client, mac: str, deadline: float) -> bool:
+    """Wait for ``mac`` to surface as un-adopted post-forget, issue adopt, wait for adopted state."""
+    while asyncio.get_event_loop().time() < deadline:
+        await asyncio.sleep(_READOPT_POLL_INTERVAL_S)
+        devices = await client.list_devices()
+        target = _find_device(devices, mac)
+        if target is None:
+            continue
+        if target.get("adopted"):
+            LOG.warning("%s adopted again before adopt_device was called (likely auto-adopt).", mac)
+            return True
+        try:
+            adopt_response = await client.adopt_device(mac)
+            assert isinstance(adopt_response, dict), "adopt_device must return a dict"
+            LOG.warning("adopt_device(%s) issued; waiting for adoption to complete...", mac)
+        except Exception as exc:
+            LOG.warning("adopt_device(%s) failed: %s", mac, exc)
+            continue
+        return await _wait_for_adopted(client, mac, deadline)
+    return False
+
+
 @pytest.mark.skipif(
     not _enabled("LIVE_TEST_FORGET_ADOPT"),
     reason="Set LIVE_TEST_FORGET_ADOPT=1 to run the forget→adopt cycle (irreversible if cleanup fails)",
@@ -70,7 +103,7 @@ class TestForgetAdoptCycle:
     can manually recover.
     """
 
-    async def test_forget_adopt_cycle(self, network_live_client, protected_macs):
+    async def test_forget_adopt_cycle(self, network_live_client, protected_macs, cleanup_register):
         mac = _risky_target_mac()
         if not mac:
             pytest.skip("UNIFI_MCP_TEST_TARGET_MAC or UNIFI_MCP_TEST_RISKY_TARGET_MAC unset")
@@ -92,37 +125,23 @@ class TestForgetAdoptCycle:
 
         forget_response = await network_live_client.forget_device(mac)
         assert isinstance(forget_response, dict), "forget_device must return a dict"
+        cleanup_register(network_live_client.adopt_device, mac)
 
         try:
             deadline = asyncio.get_event_loop().time() + _READOPT_TIMEOUT_S
-            adopted_again = False
-            while asyncio.get_event_loop().time() < deadline:
-                await asyncio.sleep(_READOPT_POLL_INTERVAL_S)
-                devices_now = await network_live_client.list_devices()
-                target_now = _find_device(devices_now, mac)
-                if target_now is None:
-                    continue
-                if target_now.get("adopted"):
-                    LOG.warning("%s is adopted again before adopt_device was called (likely auto-adopt).", mac)
-                    adopted_again = True
-                    break
-                if not target_now.get("adopted"):
-                    try:
-                        adopt_response = await network_live_client.adopt_device(mac)
-                        assert isinstance(adopt_response, dict), "adopt_device must return a dict"
-                        LOG.warning("adopt_device(%s) issued; waiting for adoption to complete...", mac)
-                    except Exception as exc:
-                        LOG.warning("adopt_device(%s) failed: %s", mac, exc)
-                        await asyncio.sleep(_READOPT_POLL_INTERVAL_S)
-                        continue
-                    while asyncio.get_event_loop().time() < deadline:
-                        await asyncio.sleep(_READOPT_POLL_INTERVAL_S)
-                        check = await network_live_client.list_devices()
-                        check_target = _find_device(check, mac)
-                        if check_target and check_target.get("adopted"):
-                            adopted_again = True
-                            break
-                    break
+            adopted_again = await _wait_for_pending_then_adopt(network_live_client, mac, deadline)
+
+            if not adopted_again:
+                LOG.error(
+                    "forget_adopt cycle: %s did not return to adopted state within %ss — "
+                    "issuing final best-effort adopt_device to limit blast radius.",
+                    mac,
+                    _READOPT_TIMEOUT_S,
+                )
+                try:
+                    await network_live_client.adopt_device(mac)
+                except Exception as exc:
+                    LOG.error("Final recovery adopt_device(%s) also failed: %s. Manual recovery required.", mac, exc)
 
             assert adopted_again, (
                 f"forget_adopt cycle: {mac} did not return to adopted state within {_READOPT_TIMEOUT_S}s. "
@@ -137,6 +156,12 @@ class TestForgetAdoptCycle:
                 target_final.get("adopted") if target_final else None,
                 target_final.get("state") if target_final else None,
             )
+            if target_final is not None and not target_final.get("adopted"):
+                try:
+                    await network_live_client.adopt_device(mac)
+                    LOG.warning("Best-effort recovery adopt_device(%s) issued.", mac)
+                except Exception as recovery_exc:
+                    LOG.error("Recovery adopt_device(%s) failed: %s", mac, recovery_exc)
             raise
 
 

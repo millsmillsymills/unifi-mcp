@@ -23,11 +23,16 @@ async def main() -> None:
         print("UNIFI_NETWORK_API not set", file=sys.stderr)
         sys.exit(2)
 
+    host = os.environ.get("UNIFI_NETWORK_HOST", "192.168.1.1")
+    verify_ssl = _bool_env("UNIFI_NETWORK_VERIFY_SSL")
+    if not verify_ssl:
+        print(f"WARNING: TLS verification disabled for {host} (probe script)", file=sys.stderr)
+
     client = NetworkClient(
-        base_url=f"https://{os.environ.get('UNIFI_NETWORK_HOST', '192.168.1.1')}:443",
+        base_url=f"https://{host}:443",
         api_key=api_key,
         site=os.environ.get("UNIFI_NETWORK_SITE", "default"),
-        verify_ssl=_bool_env("UNIFI_NETWORK_VERIFY_SSL"),
+        verify_ssl=verify_ssl,
         timeout=15,
         max_retries=1,
     )

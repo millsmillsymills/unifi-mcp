@@ -49,30 +49,37 @@ async def _pick_test_camera_id(protect_live_client) -> str:
     return cam_id
 
 
+_UPSTREAM_404_REASON = (
+    "Integration v1 returns 404 for this PUT body (see #139, "
+    "project_protect_integration_api_surface memory). xfail-strict so an upstream "
+    "fix flips the test red as a positive signal."
+)
+
+
+@pytest.mark.xfail(strict=True, raises=UniFiNotFoundError, reason=_UPSTREAM_404_REASON)
 class TestSetSmartDetectionMissing:
     """Lock in upstream 404 for set_smart_detection on integration v1."""
 
-    async def test_set_smart_detection_returns_not_found(self, protect_live_client):
+    async def test_set_smart_detection(self, protect_live_client):
         camera_id = await _pick_test_camera_id(protect_live_client)
-        with pytest.raises(UniFiNotFoundError):
-            await protect_live_client.set_smart_detection(camera_id, ["person"])
+        await protect_live_client.set_smart_detection(camera_id, ["person"])
 
 
+@pytest.mark.xfail(strict=True, raises=UniFiNotFoundError, reason=_UPSTREAM_404_REASON)
 class TestUpdateCameraMissing:
     """Lock in upstream 404 for update_camera with arbitrary body on integration v1."""
 
-    async def test_update_camera_returns_not_found(self, protect_live_client):
+    async def test_update_camera(self, protect_live_client):
         camera_id = await _pick_test_camera_id(protect_live_client)
-        with pytest.raises(UniFiNotFoundError):
-            await protect_live_client.update_camera(camera_id, {"name": "should-404"})
+        await protect_live_client.update_camera(camera_id, {"name": "should-404"})
 
 
+@pytest.mark.xfail(strict=True, raises=UniFiNotFoundError, reason=_UPSTREAM_404_REASON)
 class TestUpdateNvrMissing:
     """Lock in upstream 404 for update_nvr on integration v1 (PUT /nvrs)."""
 
-    async def test_update_nvr_returns_not_found(self, protect_live_client):
-        with pytest.raises(UniFiNotFoundError):
-            await protect_live_client.update_nvr({"name": "should-404"})
+    async def test_update_nvr(self, protect_live_client):
+        await protect_live_client.update_nvr({"name": "should-404"})
 
 
 @pytest.mark.skipif(not _writes_enabled(), reason=PROTECT_WRITE_GATE_REASON)

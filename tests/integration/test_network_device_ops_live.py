@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import uuid
 
 import pytest
 
@@ -178,8 +179,6 @@ class TestDisruptiveDeviceOps:
         Requires a switch as target. Creates a transient port profile if the
         controller has none, deletes it during cleanup.
         """
-        import uuid
-
         mac = test_target_mac
         assert mac not in protected_macs
 

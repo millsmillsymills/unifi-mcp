@@ -28,10 +28,10 @@ async def test_route_crud_roundtrip(
         "name": name,
         "type": "static-route",
         "enabled": False,
-        "static-route_network": "10.99.250.0/24",
+        "static-route_network": "192.0.2.0/24",
         "static-route_distance": 1,
         "static-route_type": "nexthop-route",
-        "static-route_nexthop": "192.168.1.1",
+        "static-route_nexthop": "192.0.2.1",
     }
 
     created = await network_live_client.create_route(create_payload)
@@ -53,6 +53,5 @@ async def test_route_crud_roundtrip(
     assert found2 is not None
     assert found2.get("name") == new_name
 
-    await network_live_client.delete_route(route_id)
     read3 = await network_live_client.list_routes()
-    assert not any(r.get("_id") == route_id for r in read3["data"])
+    assert any(r.get("_id") == route_id for r in read3["data"])

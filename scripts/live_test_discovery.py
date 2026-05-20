@@ -44,12 +44,18 @@ async def discover() -> dict[str, Any]:
     host = os.environ.get("UNIFI_NETWORK_HOST", "192.168.1.1")
     port = int(os.environ.get("UNIFI_NETWORK_PORT", "443"))
     site = os.environ.get("UNIFI_NETWORK_SITE", "default")
+    verify_ssl = _bool_env("UNIFI_NETWORK_VERIFY_SSL")
+    if not verify_ssl:
+        print(
+            f"WARNING: TLS verification disabled for {host}:{port} (set UNIFI_NETWORK_VERIFY_SSL=1 to enable)",
+            file=sys.stderr,
+        )
 
     client = NetworkClient(
         base_url=f"https://{host}:{port}",
         api_key=api_key,
         site=site,
-        verify_ssl=_bool_env("UNIFI_NETWORK_VERIFY_SSL"),
+        verify_ssl=verify_ssl,
         timeout=int(os.environ.get("UNIFI_REQUEST_TIMEOUT", "30")),
         max_retries=int(os.environ.get("UNIFI_MAX_RETRIES", "3")),
     )
