@@ -965,7 +965,7 @@ class TestWriteRoundtrips:
             deleted = await _invoke(live_client, "unifi_network_delete_port_profile", {"profile_id": profile_id})
             artifacts.dump(f"delete_port_profile-{suffix}", {"ok": True, "payload": deleted})
 
-    async def test_provision_device_smoke(self, live_client, artifacts):
+    async def test_provision_device_smoke(self, live_client, artifacts, touched_devices):
         """Tool-boundary smoke for ``provision_device``.
 
         Force-provisions an online AP that's NOT the primary WAP — pushes
@@ -1012,6 +1012,7 @@ class TestWriteRoundtrips:
             },
         )
 
+        touched_devices.claim(mac, "provision")
         resp = await _invoke(live_client, "unifi_network_provision_device", {"mac": mac})
         assert isinstance(resp, dict), f"provision_device must return dict, got {type(resp).__name__}"
         meta = resp.get("meta") if isinstance(resp, dict) else None
@@ -1392,7 +1393,7 @@ class TestDestructive:
         assert isinstance(payload, dict), f"run_speedtest must return dict, got {type(payload).__name__}"
         artifacts.dump("run_speedtest", {"ok": True, "payload": payload})
 
-    async def test_restart_non_protected_ap(self, live_client, artifacts):
+    async def test_restart_non_protected_ap(self, live_client, artifacts, touched_devices):
         """Tool-boundary smoke for ``restart_device``.
 
         Picks the first online AP whose MAC is NOT in
@@ -1442,6 +1443,7 @@ class TestDestructive:
             },
         )
 
+        touched_devices.claim(mac, "restart")
         resp = await _invoke(live_client, "unifi_network_restart_device", {"mac": mac})
         assert isinstance(resp, dict), f"restart_device must return dict, got {type(resp).__name__}"
         meta = resp.get("meta") if isinstance(resp, dict) else None
@@ -1682,7 +1684,7 @@ class TestRiskyDeviceLifecycle:
         not _lifecycle_enabled("LIVE_TEST_FORGET_ADOPT"),
         reason="Set LIVE_TEST_FORGET_ADOPT=1 to run the forget→adopt cycle",
     )
-    async def test_forget_adopt_cycle(self, live_client, artifacts):
+    async def test_forget_adopt_cycle(self, live_client, artifacts, touched_devices):
         import asyncio as _asyncio
 
         mac = _risky_target_mac()
@@ -1700,11 +1702,13 @@ class TestRiskyDeviceLifecycle:
             {"mac": mac, "name": target.get("name"), "model": target.get("model")},
         )
 
+        touched_devices.claim(mac, "forget")
         forget_resp = await _invoke(live_client, "unifi_network_forget_device", {"mac": mac})
         assert isinstance(forget_resp, dict), f"forget_device must return dict, got {type(forget_resp).__name__}"
         artifacts.dump("forget_device", {"ok": True, "payload": forget_resp})
 
         adopted_again = False
+        adopt_claimed = False
         try:
             deadline = _asyncio.get_event_loop().time() + _READOPT_TIMEOUT_S
             while _asyncio.get_event_loop().time() < deadline:
@@ -1717,6 +1721,9 @@ class TestRiskyDeviceLifecycle:
                     adopted_again = True
                     break
                 try:
+                    if not adopt_claimed:
+                        touched_devices.claim(mac, "adopt")
+                        adopt_claimed = True
                     adopt_resp = await _invoke(live_client, "unifi_network_adopt_device", {"mac": mac})
                     assert isinstance(adopt_resp, dict), (
                         f"adopt_device must return dict, got {type(adopt_resp).__name__}"
@@ -1751,7 +1758,7 @@ class TestRiskyDeviceLifecycle:
         not _lifecycle_enabled("LIVE_TEST_UPGRADE"),
         reason="Set LIVE_TEST_UPGRADE=1 to run upgrade_device smoke (controller may flash firmware)",
     )
-    async def test_upgrade_device_smoke(self, live_client, artifacts):
+    async def test_upgrade_device_smoke(self, live_client, artifacts, touched_devices):
         """Tool-boundary smoke for ``upgrade_device``.
 
         Asserts the tool returns a dict whether or not the controller has
@@ -1778,6 +1785,7 @@ class TestRiskyDeviceLifecycle:
             },
         )
 
+        touched_devices.claim(mac, "upgrade")
         try:
             resp = await _invoke(live_client, "unifi_network_upgrade_device", {"mac": mac})
             assert isinstance(resp, dict), f"upgrade_device must return dict, got {type(resp).__name__}"

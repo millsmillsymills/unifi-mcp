@@ -220,6 +220,35 @@ def mcptest_prefix() -> str:
     return os.environ.get("UNIFI_MCP_TEST_PREFIX", "mcptest-").strip()
 
 
+class TouchedDevices:
+    """Session-scoped guard against repeat destructive ops on the same device.
+
+    A single MAC may be targeted by at most one destructive op
+    (forget / adopt / upgrade / provision / restart) per pytest session.
+    Cumulative churn within a single session has bricked controllers
+    (UCG Ultra factory-reset 2026-05-21) — see #271.
+    """
+
+    def __init__(self) -> None:
+        self._claims: dict[str, str] = {}
+
+    def claim(self, mac: str, op: str) -> None:
+        key = mac.strip().lower()
+        prior = self._claims.get(key)
+        if prior is not None:
+            pytest.fail(
+                f"Device {key} already touched by {prior} earlier in session; "
+                f"refuse to {op} again to avoid cumulative controller corruption (#271)"
+            )
+        self._claims[key] = op
+
+
+@pytest.fixture(scope="session")
+def touched_devices() -> TouchedDevices:
+    """Session-scoped TouchedDevices guard. Per-MAC, one destructive op per session (#271)."""
+    return TouchedDevices()
+
+
 @pytest.fixture
 async def cleanup_register():
     """Per-test stack-based cleanup. register(callable, *args, **kwargs)
