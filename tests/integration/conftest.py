@@ -321,6 +321,17 @@ async def test_vlan_id(
             LOG.warning("Sandbox VLAN cleanup failed (id=%s): %s", network_id, exc)
 
 
+def _contains_tool_error(exc: BaseException | None) -> bool:
+    """True if ``exc`` is a ToolError or wraps one via cause/context/group."""
+    if exc is None:
+        return False
+    if isinstance(exc, ToolError):
+        return True
+    if isinstance(exc, BaseExceptionGroup):
+        return any(_contains_tool_error(e) for e in exc.exceptions)
+    return _contains_tool_error(exc.__cause__) or _contains_tool_error(exc.__context__)
+
+
 # #271: bench-bricking guardrail. The live write sweep churns controller
 # state (networks, port profiles, WLANs, device adoption). When one write
 # tool raises an unexpected ToolError, the controller is likely already
@@ -334,11 +345,12 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]):
     report: pytest.TestReport = yield
     if (
         report.when == "call"
-        and not report.passed
+        and report.failed
         and item.get_closest_marker("live_write") is not None
         and call.excinfo is not None
-        and call.excinfo.errisinstance(ToolError)
+        and _contains_tool_error(call.excinfo.value)
     ):
+        LOG.error("live_write abort triggered by %s: %s", item.nodeid, call.excinfo.getrepr())
         pytest.exit(
             f"aborting live write sweep — {item.nodeid} raised unexpected ToolError, "
             "refusing to continue churning controller state (#271)",
