@@ -333,13 +333,15 @@ async def _first_protect_camera_id(client: Client) -> str:
 
 WRITE_GATE_REASON = "Set UNIFI_MODE=readwrite and LIVE_TEST_WRITES=1 to run write tests"
 
-# #268 bounded-poll budgets for behavioural read-backs on smoke tests.
-# Provisioning is a config push (seconds, not minutes); restart waits cover
-# the AP fully cycling state=1 → 0 → 1 with a margin for slow re-association.
-_PROVISION_TIMEOUT_S = 30.0
-_PROVISION_POLL_S = 5.0
+# #271 behavioural read-backs widened to 15s polls to reduce controller
+# pressure during cumulative live sweeps. Provision timeout raised to 45s
+# so 15s polls give >=3 observations within budget (avoids one-shot poll
+# at the deadline). Restart budget unchanged from #268 (covers AP fully
+# cycling state=1 → 0 → 1 with a margin for slow re-association).
+_PROVISION_TIMEOUT_S = 45.0
+_PROVISION_POLL_S = 15.0
 _RESTART_TIMEOUT_S = 120.0
-_RESTART_POLL_S = 5.0
+_RESTART_POLL_S = 15.0
 _RESTART_OFFLINE_WINDOW_S = 60.0
 
 
