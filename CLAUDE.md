@@ -40,6 +40,22 @@ uv run unifi-mcp                       # readonly mode (default, safe)
 UNIFI_MODE=readwrite uv run unifi-mcp  # exposes the 43 write tools
 ```
 
+## Live Integration Tests — Critical Safety
+
+**NEVER** run `uv run pytest tests/integration/` as a single invocation when `LIVE_TEST_WRITES=1` and `LIVE_TEST_DESTRUCTIVE=1` are set. Cumulative config-state churn across the full destructive sweep has bricked production hardware: on 2026-05-21 it corrupted a UCG Ultra on-disk and required a factory reset (#271). Partial-create pins (#257, #258, etc.) compound under sustained load and the controller cannot self-recover.
+
+Required pattern: one TestClass per pytest invocation, with a controller health check between classes, and ~30s cooldown to let the controller settle.
+
+```bash
+uv run pytest tests/integration/test_all_tools_live.py::TestWriteRoundtrips -v -m integration
+# verify controller responsive before continuing, e.g.:
+curl -sf -o /dev/null -w '%{http_code}\n' "https://${UNIFI_NETWORK_HOST}/proxy/network/integration/v1/sites"
+sleep 30
+uv run pytest tests/integration/test_all_tools_live.py::TestDestructive -v -m integration
+```
+
+If the health check fails or any class hangs, stop the sweep and triage before continuing. See #271 for incident details.
+
 ## Architecture
 
 ```
