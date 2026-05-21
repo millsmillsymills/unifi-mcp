@@ -162,9 +162,20 @@ DETAIL_READ_TOOLS = {
 
 
 async def _invoke(client: Client, name: str, args: dict[str, Any] | None = None) -> Any:
-    """Call a tool and return the structured payload (or raise)."""
+    """Call a tool and return the structured payload (or raise).
+
+    Prefers ``structured_content`` then ``data`` then the raw result, using
+    explicit ``is not None`` checks instead of ``or`` so legitimate empty
+    payloads (``{}``, ``[]``) aren't silently degraded to the raw result.
+    """
     result = await client.call_tool(name, args or {})
-    return getattr(result, "structured_content", None) or getattr(result, "data", None) or result
+    structured = getattr(result, "structured_content", None)
+    if structured is not None:
+        return structured
+    data = getattr(result, "data", None)
+    if data is not None:
+        return data
+    return result
 
 
 class TestReadTools:
@@ -331,6 +342,7 @@ class TestWriteRoundtrips:
     """
 
     async def test_firewall_group_crud(self, live_client, artifacts):
+        """Tool-boundary CRUD for firewall groups, including update."""
         suffix = uuid.uuid4().hex[:8]
         name = f"mcp-audit-fwg-{suffix}"
         created = await _invoke(
@@ -343,9 +355,24 @@ class TestWriteRoundtrips:
         assert items, f"Expected created firewall group in response: {created}"
         group_id = items[0]["_id"]
 
-        # Cleanup
-        deleted = await _invoke(live_client, "unifi_network_delete_firewall_group", {"group_id": group_id})
-        artifacts.dump(f"delete_firewall_group-{suffix}", {"ok": True, "payload": deleted})
+        try:
+            new_members = ["192.0.2.1", "192.0.2.2"]
+            updated = await _invoke(
+                live_client,
+                "unifi_network_update_firewall_group",
+                {"group_id": group_id, "data": {"group_members": new_members}},
+            )
+            artifacts.dump(f"update_firewall_group-{suffix}", {"ok": True, "payload": updated})
+
+            read_back = await _invoke(live_client, "unifi_network_get_firewall_group", {"group_id": group_id})
+            found = next((g for g in _unwrap_list(read_back) if g.get("_id") == group_id), None)
+            assert found is not None, f"Updated group {group_id} not found in get_firewall_group"
+            assert sorted(found.get("group_members") or []) == sorted(new_members), (
+                f"group_members read-back mismatch: set {new_members!r}, got {found.get('group_members')!r}"
+            )
+        finally:
+            deleted = await _invoke(live_client, "unifi_network_delete_firewall_group", {"group_id": group_id})
+            artifacts.dump(f"delete_firewall_group-{suffix}", {"ok": True, "payload": deleted})
 
     async def test_port_forward_crud(self, live_client, artifacts):
         suffix = uuid.uuid4().hex[:8]
@@ -367,8 +394,588 @@ class TestWriteRoundtrips:
         items = _unwrap_list(created)
         assert items, f"Expected created port forward in response: {created}"
         pf_id = items[0]["_id"]
-        deleted = await _invoke(live_client, "unifi_network_delete_port_forward", {"port_forward_id": pf_id})
-        artifacts.dump(f"delete_port_forward-{suffix}", {"ok": True, "payload": deleted})
+
+        try:
+            new_name = f"{name}-updated"
+            updated = await _invoke(
+                live_client,
+                "unifi_network_update_port_forward",
+                {"port_forward_id": pf_id, "data": {"name": new_name}},
+            )
+            artifacts.dump(f"update_port_forward-{suffix}", {"ok": True, "payload": updated})
+
+            read_back = await _invoke(live_client, "unifi_network_get_port_forward", {"port_forward_id": pf_id})
+            found = next((p for p in _unwrap_list(read_back) if p.get("_id") == pf_id), None)
+            assert found is not None, f"Updated port-forward {pf_id} not found"
+            assert found.get("name") == new_name, (
+                f"Read-back name mismatch: set {new_name!r}, got {found.get('name')!r}"
+            )
+        finally:
+            deleted = await _invoke(live_client, "unifi_network_delete_port_forward", {"port_forward_id": pf_id})
+            artifacts.dump(f"delete_port_forward-{suffix}", {"ok": True, "payload": deleted})
+
+    async def test_route_crud(self, live_client, artifacts):
+        """Tool-boundary CRUD for static routes. #257 was a tool-layer payload
+        bug (friendly args → controller `static-route_*` shape) that the
+        client-layer route test missed because it bypassed the wrapper. This
+        test calls the MCP tool directly so future shape drift fails here.
+
+        TEST-NET-2 (198.51.100.0/24) is reserved for documentation per RFC5737
+        and never appears in routable traffic; the route is created disabled
+        regardless.
+        """
+        suffix = uuid.uuid4().hex[:8]
+        name = f"mcp-audit-route-{suffix}"
+        created = await _invoke(
+            live_client,
+            "unifi_network_create_route",
+            {
+                "name": name,
+                "network": "198.51.100.0/24",
+                "route_type": "nexthop-route",
+                "gateway_ip": "192.168.1.1",
+                "enabled": False,
+            },
+        )
+        artifacts.dump(f"create_route-{suffix}", {"ok": True, "payload": created})
+        items = _unwrap_list(created)
+        assert items, f"Expected created route in response: {created}"
+        route_id = items[0]["_id"]
+
+        try:
+            new_name = f"{name}-updated"
+            updated = await _invoke(
+                live_client,
+                "unifi_network_update_route",
+                {"route_id": route_id, "data": {"name": new_name}},
+            )
+            artifacts.dump(f"update_route-{suffix}", {"ok": True, "payload": updated})
+
+            read_back = await _invoke(live_client, "unifi_network_get_route", {"route_id": route_id})
+            found = next(
+                (r for r in _unwrap_list(read_back) if r.get("_id") == route_id),
+                None,
+            )
+            assert found is not None, f"Updated route {route_id} not found in get_route response"
+            assert found.get("name") == new_name, (
+                f"Read-back name mismatch: set {new_name!r}, got {found.get('name')!r}"
+            )
+        finally:
+            deleted = await _invoke(live_client, "unifi_network_delete_route", {"route_id": route_id})
+            artifacts.dump(f"delete_route-{suffix}", {"ok": True, "payload": deleted})
+
+    async def test_wlan_update_roundtrip_via_mills_work(self, live_client, artifacts):
+        """Tool-boundary ``update_wlan`` round-trip against ``mills_work``.
+
+        Captures the current name via the tool boundary (name is not a
+        secret, so the tool's redaction layer doesn't mask it), updates it
+        to ``mills_work [mcp-test]``, reads back, then restores the original
+        name in ``finally``. Non-destructive — the WLAN stays present and
+        clients (if any) keep their association across a name change.
+
+        ``create_wlan`` and ``delete_wlan`` are NOT exercised here: the
+        tool-layer ``create_wlan`` only forwards 5 fields (name/security/
+        wpa_mode/x_passphrase/enabled) and the controller rejects with
+        ``api.err.ApGroupMissing`` because ``ap_group_ids`` /
+        ``networkconf_id`` / ``usergroup_id`` aren't passed. See the strict
+        xfail below.
+        """
+        list_resp = await _invoke(live_client, "unifi_network_list_wlans")
+        wlans = _unwrap_list(list_resp)
+        mills_work = next((w for w in wlans if w.get("name") == "mills_work"), None)
+        if mills_work is None:
+            pytest.skip("mills_work WLAN not present; cannot run update_wlan roundtrip")
+        wlan_id = mills_work["_id"]
+        original_name = mills_work["name"]
+        artifacts.dump("wlan_update_target", {"wlan_id": wlan_id, "original_name": original_name})
+
+        target_name = f"{original_name} [mcp-test]"
+        try:
+            updated = await _invoke(
+                live_client,
+                "unifi_network_update_wlan",
+                {"wlan_id": wlan_id, "data": {"name": target_name}},
+            )
+            artifacts.dump(
+                "wlan_update_applied",
+                {"wlan_id": wlan_id, "target_name": target_name, "payload": updated},
+            )
+
+            read_back = await _invoke(live_client, "unifi_network_get_wlan", {"wlan_id": wlan_id})
+            items_rb = _unwrap_list(read_back) or ([read_back] if isinstance(read_back, dict) else [])
+            wlan_doc = next((w for w in items_rb if w.get("_id") == wlan_id), None)
+            assert wlan_doc is not None, f"WLAN {wlan_id} not found in get_wlan response: {read_back}"
+            assert wlan_doc.get("name") == target_name, (
+                f"Read-back name mismatch: set {target_name!r}, got {wlan_doc.get('name')!r}"
+            )
+        finally:
+            await _invoke(
+                live_client,
+                "unifi_network_update_wlan",
+                {"wlan_id": wlan_id, "data": {"name": original_name}},
+            )
+            artifacts.dump("wlan_update_restored", {"wlan_id": wlan_id, "restored_name": original_name})
+
+    async def test_create_wlan_pins_apgroup_missing(self, live_client, artifacts):
+        """Pin for the create_wlan tool-layer payload bug.
+
+        The tool only forwards ``name/security/wpa_mode/x_passphrase/enabled``
+        — the controller demands ``ap_group_ids`` / ``networkconf_id`` /
+        ``usergroup_id`` and rejects with ``api.err.ApGroupMissing``. Same
+        class as #257.
+
+        ``pytest.raises(match=...)`` makes the failure mode unambiguous:
+        today's bug → ToolError matching ``ApGroupMissing`` → test PASSES;
+        after the fix → no exception → ``pytest.raises`` reports DID NOT
+        RAISE → test FAILS red, prompting promotion to a real CRUD test.
+        Unlike a class-wide ``xfail`` marker, this can't be satisfied by an
+        unrelated prelude failure.
+
+        Pre-checks the bench is under the 4-WLAN cap so a cap-error doesn't
+        masquerade as the missing-field error.
+        """
+        wlans = _unwrap_list(await _invoke(live_client, "unifi_network_list_wlans"))
+        enabled_count = sum(1 for w in wlans if w.get("enabled"))
+        if enabled_count >= 4:
+            pytest.skip(f"Bench at WLAN cap ({enabled_count} enabled); cap error would mask the bug")
+
+        with pytest.raises(ToolError, match="ApGroupMissing"):
+            await _invoke(
+                live_client,
+                "unifi_network_create_wlan",
+                {
+                    "name": f"mcp-audit-wlan-{uuid.uuid4().hex[:8]}",
+                    "security": "wpapsk",
+                    "wpa_mode": "wpa2",
+                    "x_passphrase": f"mcp-audit-pass-{uuid.uuid4().hex[:16]}",
+                    "enabled": False,
+                },
+            )
+        artifacts.dump("create_wlan_pin", {"ok": True, "enabled_wlan_count": enabled_count})
+
+    async def test_firewall_rule_crud(self, live_client, artifacts):
+        """Tool-boundary CRUD for LAN_IN firewall rules.
+
+        Modern controllers reject scalar-only create payloads with
+        ``api.err.FirewallRuleFieldsRequired`` (#90), so this test passes the
+        full payload via the tool's ``data`` escape hatch — exercising the
+        same path agents use for non-trivial rules. ``192.0.2.0/24``
+        (RFC5737 TEST-NET-1) keeps the rule inert against real traffic and
+        the rule is created disabled.
+        """
+        suffix = uuid.uuid4().hex[:8]
+        name = f"mcp-audit-fwrule-{suffix}"
+        payload = {
+            "name": name,
+            "ruleset": "LAN_IN",
+            "rule_index": 20000,
+            "action": "drop",
+            "protocol": "all",
+            "src_address": "192.0.2.0/24",
+            "dst_address": "192.0.2.0/24",
+            "enabled": False,
+            "logging": False,
+            "state_new": True,
+            "state_established": True,
+            "state_invalid": True,
+            "state_related": True,
+            "icmp_typename": "",
+            "ipsec": "",
+            "src_firewallgroup_ids": [],
+            "dst_firewallgroup_ids": [],
+        }
+        created = await _invoke(
+            live_client,
+            "unifi_network_create_firewall_rule",
+            {"name": name, "ruleset": "LAN_IN", "data": payload},
+        )
+        artifacts.dump(f"create_firewall_rule-{suffix}", {"ok": True, "payload": created})
+        items = _unwrap_list(created)
+        assert items, f"Expected created firewall rule in response: {created}"
+        rule_id = items[0]["_id"]
+
+        try:
+            updated = await _invoke(
+                live_client,
+                "unifi_network_update_firewall_rule",
+                {"rule_id": rule_id, "data": {"action": "reject"}},
+            )
+            artifacts.dump(f"update_firewall_rule-{suffix}", {"ok": True, "payload": updated})
+
+            read_back = await _invoke(live_client, "unifi_network_get_firewall_rule", {"rule_id": rule_id})
+            found = next((r for r in _unwrap_list(read_back) if r.get("_id") == rule_id), None)
+            assert found is not None, f"Updated rule {rule_id} not found in get_firewall_rule response"
+            assert found.get("action") == "reject", (
+                f"Read-back action mismatch: set 'reject', got {found.get('action')!r}"
+            )
+        finally:
+            deleted = await _invoke(live_client, "unifi_network_delete_firewall_rule", {"rule_id": rule_id})
+            artifacts.dump(f"delete_firewall_rule-{suffix}", {"ok": True, "payload": deleted})
+
+    async def test_reset_dpi_smoke(self, live_client, artifacts):
+        """Tool-boundary smoke for ``reset_dpi``.
+
+        Clears DPI counters — no recovery needed and no state to capture.
+        Asserts the call succeeds and returns a dict; counters re-populate
+        as traffic flows. Lives outside ``TestDestructive`` because resetting
+        counters is reversible (next packet rebuilds them) and the operation
+        is short.
+        """
+        resp = await _invoke(live_client, "unifi_network_reset_dpi")
+        assert isinstance(resp, dict), f"reset_dpi must return dict, got {type(resp).__name__}"
+        artifacts.dump("reset_dpi_smoke", {"ok": True, "payload": resp})
+
+    async def test_kick_client_iphone(self, live_client, artifacts):
+        """Tool-boundary smoke for ``kick_client``.
+
+        Kicks an iPhone client off its AP (per user authorization
+        2026-05-20). The client typically reconnects within seconds.
+        Asserts the tool returned a dict response only — a behavioural
+        read-back via ``list_active_clients`` would race the client's
+        auto-reconnect.
+        """
+        clients_payload = await _invoke(live_client, "unifi_network_list_active_clients")
+        clients_list = _unwrap_list(clients_payload)
+        target = next(
+            (
+                c
+                for c in clients_list
+                if isinstance(c, dict) and c.get("mac") and "iphone" in (c.get("hostname") or "").lower()
+            ),
+            None,
+        )
+        if target is None:
+            pytest.skip("No iPhone client found in active client list")
+        mac = target["mac"]
+        artifacts.dump("kick_target", {"mac": mac, "hostname": target.get("hostname")})
+
+        resp = await _invoke(live_client, "unifi_network_kick_client", {"mac": mac})
+        assert isinstance(resp, dict), f"kick_client must return dict, got {type(resp).__name__}"
+        artifacts.dump("kick_response", {"ok": True, "mac": mac, "payload": resp})
+
+    async def test_block_unblock_client_roundtrip(self, live_client, artifacts):
+        """Tool-boundary block → verify → unblock → verify roundtrip.
+
+        Picks the first active client whose hostname contains ``iphone``
+        (case-insensitive). Per user authorization 2026-05-20, iPhone clients
+        are designated test devices for block/unblock/guest. Assumes the
+        target starts unblocked; the test ends in the unblocked state.
+
+        Skips cleanly if no iPhone client is online.
+        """
+        clients_payload = await _invoke(live_client, "unifi_network_list_active_clients")
+        clients_list = _unwrap_list(clients_payload)
+        target = next(
+            (
+                c
+                for c in clients_list
+                if isinstance(c, dict)
+                and c.get("mac")
+                and "iphone" in (c.get("hostname") or "").lower()
+                and not c.get("blocked")
+            ),
+            None,
+        )
+        if target is None:
+            pytest.skip("No unblocked iPhone client found in active client list")
+        mac = target["mac"]
+        artifacts.dump("block_target", {"mac": mac, "hostname": target.get("hostname")})
+
+        block_resp = None
+        try:
+            block_resp = await _invoke(live_client, "unifi_network_block_client", {"mac": mac})
+            artifacts.dump("block_response", {"ok": True, "payload": block_resp})
+
+            after_block = _unwrap_list(await _invoke(live_client, "unifi_network_list_all_clients"))
+            entry = next((c for c in after_block if (c.get("mac") or "").lower() == mac.lower()), None)
+            assert entry is not None, f"Blocked client {mac} missing from list_all_clients"
+            assert entry.get("blocked") is True, f"Block did not stick: blocked={entry.get('blocked')!r}"
+        finally:
+            if block_resp is not None:
+                unblock_resp = await _invoke(live_client, "unifi_network_unblock_client", {"mac": mac})
+                artifacts.dump("unblock_response", {"ok": True, "payload": unblock_resp})
+                after_unblock = _unwrap_list(await _invoke(live_client, "unifi_network_list_all_clients"))
+                entry = next(
+                    (c for c in after_unblock if (c.get("mac") or "").lower() == mac.lower()),
+                    None,
+                )
+                assert entry is not None, f"Unblocked client {mac} missing from list_all_clients"
+                assert not entry.get("blocked"), f"Unblock did not stick: blocked={entry.get('blocked')!r}"
+
+    async def test_authorize_guest_rejects_non_guest_client(self, live_client, artifacts):
+        """Tool-boundary safety pre-check: ``authorize_guest`` /
+        ``unauthorize_guest`` MUST reject a MAC that isn't on a guest network.
+
+        The tool's pre-check (``_assert_client_is_guest`` at
+        ``clients/network.py:491``) raises a ``UniFiBadRequestError`` →
+        ``ToolError`` whose message ends with "is not on a guest network;
+        authorize_guest / unauthorize_guest only apply to guest-portal
+        clients." Asserts the exact phrase ``not on a guest network`` so a
+        controller-side error that merely contains the words "guest" and
+        "network" can't satisfy the check after a refactor that drops the
+        pre-check.
+        """
+        clients_list = _unwrap_list(await _invoke(live_client, "unifi_network_list_active_clients"))
+        target = next(
+            (
+                c
+                for c in clients_list
+                if isinstance(c, dict)
+                and c.get("mac")
+                and "iphone" in (c.get("hostname") or "").lower()
+                and not c.get("is_guest")
+            ),
+            None,
+        )
+        if target is None:
+            pytest.skip("No non-guest iPhone client available for the rejection-path test")
+        mac = target["mac"]
+        artifacts.dump("guest_reject_target", {"mac": mac, "hostname": target.get("hostname")})
+
+        expected_phrase = "not on a guest network"
+        with pytest.raises(ToolError, match=expected_phrase) as exc_info:
+            await _invoke(live_client, "unifi_network_authorize_guest", {"mac": mac, "minutes": 1})
+        artifacts.dump("authorize_guest_reject", {"mac": mac, "error": str(exc_info.value)})
+
+        with pytest.raises(ToolError, match=expected_phrase) as exc_info:
+            await _invoke(live_client, "unifi_network_unauthorize_guest", {"mac": mac})
+        artifacts.dump("unauthorize_guest_reject", {"mac": mac, "error": str(exc_info.value)})
+
+    async def test_authorize_unauthorize_guest_positive_roundtrip(self, live_client, artifacts):
+        """Tool-boundary positive-path roundtrip for ``authorize_guest`` /
+        ``unauthorize_guest``.
+
+        Requires a client where ``list_all_clients`` reports ``is_guest:
+        True`` — i.e. a device associated with a WLAN configured as a guest
+        network. ``_assert_client_is_guest`` (clients/network.py:491) is the
+        pre-check that gates this path. Skips cleanly if no such client is
+        on the controller, so the test can sit dormant until a guest WLAN
+        with a connected client exists.
+
+        Cycle: authorize for 1 minute → verify ``authorized=True`` via
+        ``list_all_clients`` → unauthorize → verify ``authorized`` flipped
+        off. ``finally`` always issues a final ``unauthorize_guest`` so a
+        mid-test failure can't leave a stray authorization.
+        """
+        clients_payload = await _invoke(live_client, "unifi_network_list_all_clients")
+        clients_list = _unwrap_list(clients_payload)
+        target = next(
+            (c for c in clients_list if isinstance(c, dict) and c.get("mac") and c.get("is_guest") is True),
+            None,
+        )
+        if target is None:
+            pytest.skip("No is_guest=True client on the controller; positive guest-auth path unreachable")
+        mac = target["mac"]
+        original_authorized = bool(target.get("authorized", False))
+        artifacts.dump(
+            "guest_positive_target",
+            {"mac": mac, "hostname": target.get("hostname"), "originally_authorized": original_authorized},
+        )
+
+        try:
+            auth_resp = await _invoke(live_client, "unifi_network_authorize_guest", {"mac": mac, "minutes": 1})
+            assert isinstance(auth_resp, dict), f"authorize_guest must return dict, got {type(auth_resp).__name__}"
+            artifacts.dump("guest_positive_authorize", {"ok": True, "payload": auth_resp})
+
+            after_auth = _unwrap_list(await _invoke(live_client, "unifi_network_list_all_clients"))
+            entry = next((c for c in after_auth if (c.get("mac") or "").lower() == mac.lower()), None)
+            assert entry is not None, f"Authorized client {mac} missing from list_all_clients"
+            assert entry.get("authorized") is True, (
+                f"authorize_guest did not stick: authorized={entry.get('authorized')!r}"
+            )
+
+            unauth_resp = await _invoke(live_client, "unifi_network_unauthorize_guest", {"mac": mac})
+            assert isinstance(unauth_resp, dict), (
+                f"unauthorize_guest must return dict, got {type(unauth_resp).__name__}"
+            )
+            artifacts.dump("guest_positive_unauthorize", {"ok": True, "payload": unauth_resp})
+
+            after_unauth = _unwrap_list(await _invoke(live_client, "unifi_network_list_all_clients"))
+            entry = next((c for c in after_unauth if (c.get("mac") or "").lower() == mac.lower()), None)
+            assert entry is not None, f"Unauthorized client {mac} missing from list_all_clients"
+            assert not entry.get("authorized"), (
+                f"unauthorize_guest did not stick: authorized={entry.get('authorized')!r}"
+            )
+        finally:
+            if not original_authorized:
+                try:
+                    await _invoke(live_client, "unifi_network_unauthorize_guest", {"mac": mac})
+                except ToolError as exc:
+                    artifacts.dump("guest_positive_cleanup_failed", {"error": str(exc)})
+
+    async def test_delete_wlan_via_tool_boundary(self, live_client, artifacts, network_live_client):
+        """Tool-boundary positive-path coverage for ``delete_wlan``.
+
+        Self-bootstraps a sacrificial WLAN via the client layer (the
+        tool-layer ``create_wlan`` is the bug pinned in
+        ``test_create_wlan_pins_apgroup_missing``) then deletes it through
+        the MCP tool boundary. Skips when the bench is already at the
+        4-WLAN cap or has no template WLAN to copy structural fields from.
+        """
+        # Self-bootstrap a WLAN via the client layer (the tool's create_wlan
+        # is the strict-xfail pinned bug); then delete via the tool boundary
+        # to give positive-path coverage that doesn't depend on bench leftovers.
+        # Skips cleanly when the bench is already at the 4-WLAN cap.
+        wlans = _unwrap_list(await _invoke(live_client, "unifi_network_list_wlans"))
+        enabled = sum(1 for w in wlans if w.get("enabled"))
+        if enabled >= 4:
+            pytest.skip(f"Bench at WLAN cap ({enabled} enabled); cannot create a sacrificial WLAN")
+        # Look up structural fields from an existing WLAN so the controller
+        # accepts the create (mirrors the create_wlan tool-layer bug workaround).
+        template = next((w for w in wlans if w.get("ap_group_ids")), None)
+        if template is None:
+            pytest.skip("No WLAN with ap_group_ids available as a template for sacrificial create")
+
+        suffix = uuid.uuid4().hex[:8]
+        ssid = f"mcp-audit-delwlan-{suffix}"
+        passphrase = uuid.uuid4().hex[:16]
+        created = await network_live_client.create_wlan(
+            {
+                "name": ssid,
+                "enabled": False,
+                "security": "wpapsk",
+                "wpa_mode": "wpa2",
+                "wpa_enc": "ccmp",
+                "x_passphrase": passphrase,
+                "is_guest": False,
+                "ap_group_ids": template["ap_group_ids"],
+                "ap_group_mode": "all",
+                "usergroup_id": template["usergroup_id"],
+                "networkconf_id": template["networkconf_id"],
+                "wlan_band": "both",
+                "wlan_bands": ["2g", "5g"],
+            }
+        )
+        created_doc = (created.get("data") or [{}])[0]
+        wlan_id = created_doc.get("_id")
+        assert isinstance(wlan_id, str), f"Sacrificial create_wlan missing _id: {created}"
+        artifacts.dump("delete_wlan_target", {"wlan_id": wlan_id, "name": ssid})
+
+        try:
+            deleted = await _invoke(live_client, "unifi_network_delete_wlan", {"wlan_id": wlan_id})
+            artifacts.dump(f"delete_wlan-{ssid}", {"ok": True, "payload": deleted})
+
+            after = _unwrap_list(await _invoke(live_client, "unifi_network_list_wlans"))
+            still_there = next((w for w in after if w.get("_id") == wlan_id), None)
+            assert still_there is None, f"WLAN {wlan_id} ({ssid}) still present after delete_wlan: {still_there}"
+        except Exception:
+            # Best-effort recovery so a failed assertion doesn't leak the sacrificial WLAN.
+            try:
+                await network_live_client.delete_wlan(wlan_id)
+            except Exception as cleanup_exc:
+                artifacts.dump("delete_wlan_cleanup_failed", {"error": str(cleanup_exc)})
+            raise
+
+    async def test_create_network_vlan_pins_vlan_enabled(self, live_client, artifacts):
+        """Pin for the create_network VLAN payload gap.
+
+        The tool doesn't forward ``vlan_enabled``; controller rejects any
+        VLAN-bearing payload with the misleading ``api.err.VlanUsed`` (the
+        VLAN isn't in use — the flag is just missing). ``conftest.py``'s
+        ``test_vlan_id`` fixture works by going through the client layer
+        with the full payload.
+
+        Same inversion-safe ``pytest.raises(match=...)`` pattern as
+        ``test_create_wlan_pins_apgroup_missing``: today's bug → ToolError
+        matching ``VlanUsed`` → test PASSES; after the fix → no exception →
+        DID NOT RAISE → test FAILS red. VLAN range 80-89 (vs the conftest
+        fixture's 90-99) avoids fixture collision.
+        """
+        existing = _unwrap_list(await _invoke(live_client, "unifi_network_list_networks"))
+        used_vlans = {n.get("vlan") for n in existing if isinstance(n, dict) and n.get("vlan")}
+        chosen_vlan = next((v for v in range(80, 90) if v not in used_vlans), None)
+        if chosen_vlan is None:
+            pytest.skip("VLAN IDs 80-89 are all in use; cannot attempt sandbox network create")
+
+        with pytest.raises(ToolError, match="VlanUsed"):
+            await _invoke(
+                live_client,
+                "unifi_network_create_network",
+                {
+                    "name": f"mcp-audit-net-{uuid.uuid4().hex[:8]}",
+                    "purpose": "corporate",
+                    "subnet": f"10.99.{chosen_vlan}.1/24",
+                    "vlan": chosen_vlan,
+                    "dhcpd_enabled": False,
+                },
+            )
+        artifacts.dump("create_network_pin", {"ok": True, "vlan": chosen_vlan})
+
+    async def test_port_profile_crud(self, live_client, artifacts, test_vlan_id):
+        """Tool-boundary CRUD for switch port profiles.
+
+        Reuses the conftest ``test_vlan_id`` session-scoped sandbox VLAN
+        as the profile's ``native_networkconf_id`` (required for
+        ``forward=native``). The profile starts with ``poe_mode=off`` and
+        flips to ``auto`` during the update step.
+        """
+        suffix = uuid.uuid4().hex[:8]
+        name = f"mcp-audit-pp-{suffix}"
+        create_payload = {
+            "name": name,
+            "forward": "native",
+            "native_networkconf_id": test_vlan_id,
+            "poe_mode": "off",
+        }
+        created = await _invoke(
+            live_client,
+            "unifi_network_create_port_profile",
+            {"data": create_payload},
+        )
+        artifacts.dump(f"create_port_profile-{suffix}", {"ok": True, "payload": created})
+        items = _unwrap_list(created)
+        assert items, f"Expected created port profile in response: {created}"
+        profile_id = items[0]["_id"]
+
+        try:
+            updated = await _invoke(
+                live_client,
+                "unifi_network_update_port_profile",
+                {"profile_id": profile_id, "data": {"poe_mode": "auto"}},
+            )
+            artifacts.dump(f"update_port_profile-{suffix}", {"ok": True, "payload": updated})
+
+            read_back = await _invoke(live_client, "unifi_network_get_port_profile", {"profile_id": profile_id})
+            found = next((p for p in _unwrap_list(read_back) if p.get("_id") == profile_id), None)
+            assert found is not None, f"Updated port profile {profile_id} not found in get_port_profile"
+            assert found.get("poe_mode") == "auto", (
+                f"Read-back poe_mode mismatch: set 'auto', got {found.get('poe_mode')!r}"
+            )
+        finally:
+            deleted = await _invoke(live_client, "unifi_network_delete_port_profile", {"profile_id": profile_id})
+            artifacts.dump(f"delete_port_profile-{suffix}", {"ok": True, "payload": deleted})
+
+    async def test_provision_device_smoke(self, live_client, artifacts):
+        """Tool-boundary smoke for ``provision_device``.
+
+        Force-provisions an online AP that's NOT the primary WAP — pushes
+        the current config to it. Skips cleanly if no eligible non-protected
+        AP is online. Provisioning is normally non-disruptive (config push,
+        not reboot), but is gated by the regular write-test opt-in.
+        """
+        devices_payload = await _invoke(live_client, "unifi_network_list_devices")
+        devices = _unwrap_list(devices_payload)
+        protected_raw = os.environ.get("UNIFI_MCP_TEST_PROTECTED_MACS", "")
+        protected = {p.strip().lower() for p in protected_raw.split(",") if p.strip()}
+        target = next(
+            (
+                d
+                for d in devices
+                if isinstance(d, dict)
+                and d.get("state") == 1
+                and (d.get("mac") or "").lower() not in protected
+                and (d.get("type") or "").lower() == "uap"
+            ),
+            None,
+        )
+        if target is None:
+            pytest.skip("No online non-protected AP available for provision_device smoke")
+        mac = target["mac"]
+        artifacts.dump("provision_target", {"mac": mac, "model": target.get("model"), "name": target.get("name")})
+
+        resp = await _invoke(live_client, "unifi_network_provision_device", {"mac": mac})
+        assert isinstance(resp, dict), f"provision_device must return dict, got {type(resp).__name__}"
+        artifacts.dump("provision_response", {"ok": True, "mac": mac, "payload": resp})
 
 
 @pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
@@ -688,6 +1295,325 @@ class TestDestructive:
         # timeout to 300s, so this should complete end-to-end on a live controller.
         payload = await _invoke(live_client, "unifi_network_create_backup")
         artifacts.dump("create_backup", {"ok": True, "payload": payload})
+
+    async def test_run_speedtest_smoke(self, live_client, artifacts):
+        """Tool-boundary smoke for ``run_speedtest``.
+
+        Runs a WAN speedtest from the controller — slow (~30-60s), kicks
+        off real traffic against speedtest.net. Asserts the tool returns a
+        dict; doesn't verify result fields since they're transient and
+        controller-version-dependent.
+        """
+        payload = await _invoke(live_client, "unifi_network_run_speedtest")
+        assert isinstance(payload, dict), f"run_speedtest must return dict, got {type(payload).__name__}"
+        artifacts.dump("run_speedtest", {"ok": True, "payload": payload})
+
+    async def test_restart_non_protected_ap(self, live_client, artifacts):
+        """Tool-boundary smoke for ``restart_device``.
+
+        Picks the first online AP whose MAC is NOT in
+        ``UNIFI_MCP_TEST_PROTECTED_MACS`` and whose ``num_sta`` is 0
+        (no associated clients), then issues a restart through the tool.
+        Skips if no such AP exists. The AP comes back online in ~60s; the
+        test doesn't wait for re-association — it just confirms the
+        controller accepted the restart command.
+        """
+        devices_payload = await _invoke(live_client, "unifi_network_list_devices")
+        devices = _unwrap_list(devices_payload)
+        protected_raw = os.environ.get("UNIFI_MCP_TEST_PROTECTED_MACS", "")
+        protected = {p.strip().lower() for p in protected_raw.split(",") if p.strip()}
+        target = next(
+            (
+                d
+                for d in devices
+                if isinstance(d, dict)
+                and d.get("state") == 1
+                and (d.get("type") or "").lower() == "uap"
+                and (d.get("mac") or "").lower() not in protected
+                and (d.get("num_sta") or 0) == 0
+            ),
+            None,
+        )
+        if target is None:
+            pytest.skip("No online non-protected AP with zero clients available for restart smoke")
+        mac = target["mac"]
+        artifacts.dump("restart_target", {"mac": mac, "name": target.get("name"), "model": target.get("model")})
+
+        resp = await _invoke(live_client, "unifi_network_restart_device", {"mac": mac})
+        assert isinstance(resp, dict), f"restart_device must return dict, got {type(resp).__name__}"
+        artifacts.dump("restart_response", {"ok": True, "mac": mac, "payload": resp})
+
+    async def test_power_cycle_and_assign_port_profile(self, live_client, artifacts, network_live_client, test_vlan_id):
+        """Tool-boundary roundtrip for ``power_cycle_port`` + ``assign_port_profile``.
+
+        Requires ``UNIFI_MCP_TEST_TARGET_MAC`` and ``UNIFI_MCP_TEST_PORT_IDX``
+        (the conftest-honored env vars). The target should be a switch with
+        an empty downstream port — per memory, Lite-16-PoE port 8 is the
+        documented safe target.
+
+        Self-contained: creates and deletes its own port profile via the
+        client layer so the test doesn't depend on the controller having
+        any pre-existing profiles. Captures the device's ``port_overrides``
+        snapshot before mutation and restores it in ``finally`` so the
+        target port returns to whatever override it had (or didn't have).
+        """
+        target_mac = os.environ.get("UNIFI_MCP_TEST_TARGET_MAC", "").strip().lower()
+        port_idx_raw = os.environ.get("UNIFI_MCP_TEST_PORT_IDX", "").strip()
+        if not target_mac or not port_idx_raw:
+            pytest.skip("UNIFI_MCP_TEST_TARGET_MAC and UNIFI_MCP_TEST_PORT_IDX must be set")
+        try:
+            port_idx = int(port_idx_raw)
+        except ValueError:
+            pytest.skip(f"UNIFI_MCP_TEST_PORT_IDX not an int: {port_idx_raw!r}")
+
+        # Power-cycle first — no test-side capture/restore needed; the controller
+        # re-applies PoE state itself once the cycle completes.
+        cycle_resp = await _invoke(
+            live_client,
+            "unifi_network_power_cycle_port",
+            {"mac": target_mac, "port_idx": port_idx},
+        )
+        assert isinstance(cycle_resp, dict), f"power_cycle_port must return dict, got {type(cycle_resp).__name__}"
+        artifacts.dump(
+            "power_cycle_port",
+            {"ok": True, "mac": target_mac, "port_idx": port_idx, "payload": cycle_resp},
+        )
+
+        # Capture original port_overrides so the restore in finally is exact.
+        devices = await network_live_client.list_devices()
+        device = next((d for d in devices.get("data", []) if (d.get("mac") or "").lower() == target_mac), None)
+        if device is None:
+            pytest.skip(f"Device {target_mac} not found in list_devices")
+        device_id = device["_id"]
+        original_overrides = list(device.get("port_overrides", []))
+
+        # Throwaway profile via client layer — keeps the test independent of
+        # whatever profiles happen to exist on the controller.
+        suffix = uuid.uuid4().hex[:8]
+        profile_name = f"mcp-audit-pp-assign-{suffix}"
+        created_profile = await network_live_client.create_port_profile(
+            {
+                "name": profile_name,
+                "forward": "native",
+                "native_networkconf_id": test_vlan_id,
+                "poe_mode": "off",
+            }
+        )
+        profile_id = (created_profile.get("data") or [{}])[0].get("_id")
+        assert isinstance(profile_id, str), f"Throwaway profile missing _id: {created_profile}"
+        artifacts.dump(
+            "assign_port_profile_setup",
+            {
+                "profile_id": profile_id,
+                "name": profile_name,
+                "original_override_count": len(original_overrides),
+            },
+        )
+
+        try:
+            assign_resp = await _invoke(
+                live_client,
+                "unifi_network_assign_port_profile",
+                {"mac": target_mac, "port_idx": port_idx, "profile_id": profile_id},
+            )
+            assert isinstance(assign_resp, dict), (
+                f"assign_port_profile must return dict, got {type(assign_resp).__name__}"
+            )
+            artifacts.dump("assign_port_profile", {"ok": True, "payload": assign_resp})
+        finally:
+            # port_overrides restore failure leaves a live switch port on a
+            # sandbox profile — must raise so an operator sees the dirty state.
+            try:
+                await network_live_client.put(f"rest/device/{device_id}", json={"port_overrides": original_overrides})
+                artifacts.dump(
+                    "assign_port_profile_restored",
+                    {"device_id": device_id, "override_count": len(original_overrides)},
+                )
+            except Exception as restore_exc:
+                artifacts.dump(
+                    "assign_port_profile_restore_failed",
+                    {"error": str(restore_exc), "device_id": device_id, "port_idx": port_idx},
+                )
+                raise RuntimeError(
+                    f"port_overrides restore failed on device {device_id}; "
+                    f"port {port_idx} may still be assigned to sandbox profile {profile_id}. "
+                    "Manual cleanup required."
+                ) from restore_exc
+            # Profile deletion failure is non-load-bearing (orphan profile is
+            # harmless clutter); artifact-only is fine.
+            try:
+                await network_live_client.delete_port_profile(profile_id)
+                artifacts.dump("assign_port_profile_temp_deleted", {"profile_id": profile_id})
+            except Exception as exc:
+                artifacts.dump("assign_port_profile_temp_delete_failed", {"error": str(exc)})
+
+
+# ── Risky device-lifecycle tools (separately gated) ──────────────────────
+
+
+def _lifecycle_enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _risky_target_mac() -> str:
+    """UNIFI_MCP_TEST_RISKY_TARGET_MAC if set, else UNIFI_MCP_TEST_TARGET_MAC."""
+    return (
+        os.environ.get("UNIFI_MCP_TEST_RISKY_TARGET_MAC", "").strip().lower()
+        or os.environ.get("UNIFI_MCP_TEST_TARGET_MAC", "").strip().lower()
+    )
+
+
+_READOPT_TIMEOUT_S = 180.0
+_READOPT_POLL_S = 5.0
+
+
+async def _wait_for_adopted_via_tool(client: Client, mac: str, deadline: float) -> bool:
+    """Poll list_devices through the MCP boundary until target reports adopted=True."""
+    import asyncio as _asyncio
+
+    while _asyncio.get_event_loop().time() < deadline:
+        await _asyncio.sleep(_READOPT_POLL_S)
+        devices = _unwrap_list(await _invoke(client, "unifi_network_list_devices"))
+        target = next((d for d in devices if (d.get("mac") or "").lower() == mac.lower()), None)
+        if target and target.get("adopted"):
+            return True
+    return False
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not _writes_enabled(),
+    reason=WRITE_GATE_REASON,
+)
+class TestRiskyDeviceLifecycle:
+    """Tool-boundary mirrors of forget/adopt/upgrade.
+
+    Separately gated from ``TestDestructive`` because a botched forget+adopt
+    cycle can leave a device unadopted (manual reset required) and
+    ``upgrade_device`` initiates a firmware flash. Each test has its own
+    env-var gate matching ``test_network_device_lifecycle_live.py`` so an
+    operator opts in per-tool.
+    """
+
+    @pytest.mark.skipif(
+        not _lifecycle_enabled("LIVE_TEST_FORGET_ADOPT"),
+        reason="Set LIVE_TEST_FORGET_ADOPT=1 to run the forget→adopt cycle",
+    )
+    async def test_forget_adopt_cycle(self, live_client, artifacts):
+        import asyncio as _asyncio
+
+        mac = _risky_target_mac()
+        if not mac:
+            pytest.skip("UNIFI_MCP_TEST_RISKY_TARGET_MAC or UNIFI_MCP_TEST_TARGET_MAC must be set")
+
+        devices = _unwrap_list(await _invoke(live_client, "unifi_network_list_devices"))
+        target = next((d for d in devices if (d.get("mac") or "").lower() == mac.lower()), None)
+        if target is None:
+            pytest.skip(f"Target MAC {mac} not in device list")
+        if not target.get("adopted"):
+            pytest.skip(f"Target MAC {mac} is not currently adopted; nothing to forget")
+        artifacts.dump(
+            "forget_adopt_target",
+            {"mac": mac, "name": target.get("name"), "model": target.get("model")},
+        )
+
+        forget_resp = await _invoke(live_client, "unifi_network_forget_device", {"mac": mac})
+        assert isinstance(forget_resp, dict), f"forget_device must return dict, got {type(forget_resp).__name__}"
+        artifacts.dump("forget_device", {"ok": True, "payload": forget_resp})
+
+        adopted_again = False
+        try:
+            deadline = _asyncio.get_event_loop().time() + _READOPT_TIMEOUT_S
+            while _asyncio.get_event_loop().time() < deadline:
+                await _asyncio.sleep(_READOPT_POLL_S)
+                devices = _unwrap_list(await _invoke(live_client, "unifi_network_list_devices"))
+                t = next((d for d in devices if (d.get("mac") or "").lower() == mac.lower()), None)
+                if t is None:
+                    continue
+                if t.get("adopted"):
+                    adopted_again = True
+                    break
+                try:
+                    adopt_resp = await _invoke(live_client, "unifi_network_adopt_device", {"mac": mac})
+                    assert isinstance(adopt_resp, dict), (
+                        f"adopt_device must return dict, got {type(adopt_resp).__name__}"
+                    )
+                    artifacts.dump("adopt_device", {"ok": True, "payload": adopt_resp})
+                except ToolError as exc:
+                    # Narrowed from bare Exception so schema/AttributeError surface immediately.
+                    artifacts.dump("adopt_device_retry", {"error": str(exc)})
+                    continue
+                adopted_again = await _wait_for_adopted_via_tool(live_client, mac, deadline)
+                break
+            assert adopted_again, (
+                f"forget_adopt cycle: {mac} did not return to adopted state within {_READOPT_TIMEOUT_S}s. "
+                "Manual recovery may be required."
+            )
+        except BaseException as orig_exc:
+            # Best-effort recovery — chain the recovery failure into the original
+            # error so an operator chasing the original sees that the bench is
+            # in an unadopted state requiring manual reset.
+            try:
+                await _invoke(live_client, "unifi_network_adopt_device", {"mac": mac})
+                artifacts.dump("adopt_device_recovery", {"ok": True, "mac": mac})
+            except Exception as recovery_exc:
+                artifacts.dump("adopt_device_recovery_failed", {"error": str(recovery_exc)})
+                raise RuntimeError(
+                    f"forget_adopt cycle failed AND recovery adopt_device({mac}) also failed; "
+                    f"manual reset required. Original error: {orig_exc!r}"
+                ) from recovery_exc
+            raise
+
+    @pytest.mark.skipif(
+        not _lifecycle_enabled("LIVE_TEST_UPGRADE"),
+        reason="Set LIVE_TEST_UPGRADE=1 to run upgrade_device smoke (controller may flash firmware)",
+    )
+    async def test_upgrade_device_smoke(self, live_client, artifacts):
+        """Tool-boundary smoke for ``upgrade_device``.
+
+        Asserts the tool returns a dict whether or not the controller has
+        an upgrade to push. On already-current devices the controller may
+        either no-op-succeed or surface a ToolError with "already/no
+        upgrade/up to date" messaging — both are accepted.
+        """
+        mac = _risky_target_mac()
+        if not mac:
+            pytest.skip("UNIFI_MCP_TEST_RISKY_TARGET_MAC or UNIFI_MCP_TEST_TARGET_MAC must be set")
+
+        devices = _unwrap_list(await _invoke(live_client, "unifi_network_list_devices"))
+        target = next((d for d in devices if (d.get("mac") or "").lower() == mac.lower()), None)
+        if target is None:
+            pytest.skip(f"Target MAC {mac} not in device list")
+        artifacts.dump(
+            "upgrade_target",
+            {
+                "mac": mac,
+                "name": target.get("name"),
+                "model": target.get("model"),
+                "version": target.get("version"),
+                "upgradable": target.get("upgradable"),
+            },
+        )
+
+        try:
+            resp = await _invoke(live_client, "unifi_network_upgrade_device", {"mac": mac})
+            assert isinstance(resp, dict), f"upgrade_device must return dict, got {type(resp).__name__}"
+            artifacts.dump("upgrade_response", {"ok": True, "mac": mac, "payload": resp})
+        except ToolError as exc:
+            artifacts.dump("upgrade_response_rejected", {"mac": mac, "error": str(exc)})
+            # Tightened phrases so genuine concurrent-upgrade errors
+            # ("already in progress") aren't swallowed. Match full phrases
+            # the controller emits for already-current devices.
+            already_current_phrases = (
+                "already running",
+                "already on the latest",
+                "no upgrade available",
+                "no upgrades available",
+                "is up to date",
+                "not upgradable",
+            )
+            if not any(phrase in str(exc).lower() for phrase in already_current_phrases):
+                raise
 
 
 # ── Mode-gating sanity: readonly hides writes (no live hardware needed) ────
