@@ -18,6 +18,7 @@ import os
 from typing import TYPE_CHECKING
 
 import pytest
+from fastmcp.exceptions import ToolError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -318,3 +319,41 @@ async def test_vlan_id(
             LOG.warning("Sandbox VLAN deleted: %s", network_id)
         except Exception as exc:
             LOG.warning("Sandbox VLAN cleanup failed (id=%s): %s", network_id, exc)
+
+
+def _contains_tool_error(exc: BaseException | None) -> bool:
+    """True if ``exc`` is a ToolError or wraps one via cause/context/group."""
+    if exc is None:
+        return False
+    if isinstance(exc, ToolError):
+        return True
+    if isinstance(exc, BaseExceptionGroup):
+        return any(_contains_tool_error(e) for e in exc.exceptions)
+    return _contains_tool_error(exc.__cause__) or _contains_tool_error(exc.__context__)
+
+
+# #271: bench-bricking guardrail. The live write sweep churns controller
+# state (networks, port profiles, WLANs, device adoption). When one write
+# tool raises an unexpected ToolError, the controller is likely already
+# in a degraded state (partial-write residue, stuck transactions). Letting
+# the rest of the sweep keep churning has, in practice, factory-reset a
+# UCG Ultra. Expected errors guarded by pytest.raises(ToolError, match=...)
+# are caught inside the test and never reach this hook, so legitimate
+# create_wlan / create_network pins stay green.
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]):
+    report: pytest.TestReport = yield
+    if (
+        report.when == "call"
+        and report.failed
+        and item.get_closest_marker("live_write") is not None
+        and call.excinfo is not None
+        and _contains_tool_error(call.excinfo.value)
+    ):
+        LOG.error("live_write abort triggered by %s: %s", item.nodeid, call.excinfo.getrepr())
+        pytest.exit(
+            f"aborting live write sweep — {item.nodeid} raised unexpected ToolError, "
+            "refusing to continue churning controller state (#271)",
+            returncode=2,
+        )
+    return report
