@@ -1464,6 +1464,157 @@ class TestDestructive:
                 artifacts.dump("assign_port_profile_temp_delete_failed", {"error": str(exc)})
 
 
+# ── Risky device-lifecycle tools (separately gated) ──────────────────────
+
+
+def _lifecycle_enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _risky_target_mac() -> str:
+    """UNIFI_MCP_TEST_RISKY_TARGET_MAC if set, else UNIFI_MCP_TEST_TARGET_MAC."""
+    return (
+        os.environ.get("UNIFI_MCP_TEST_RISKY_TARGET_MAC", "").strip().lower()
+        or os.environ.get("UNIFI_MCP_TEST_TARGET_MAC", "").strip().lower()
+    )
+
+
+_READOPT_TIMEOUT_S = 180.0
+_READOPT_POLL_S = 5.0
+
+
+async def _wait_for_adopted_via_tool(client: Client, mac: str, deadline: float) -> bool:
+    """Poll list_devices through the MCP boundary until target reports adopted=True."""
+    import asyncio as _asyncio
+
+    while _asyncio.get_event_loop().time() < deadline:
+        await _asyncio.sleep(_READOPT_POLL_S)
+        devices = _unwrap_list(await _invoke(client, "unifi_network_list_devices"))
+        target = next((d for d in devices if (d.get("mac") or "").lower() == mac.lower()), None)
+        if target and target.get("adopted"):
+            return True
+    return False
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not _writes_enabled(),
+    reason=WRITE_GATE_REASON,
+)
+class TestRiskyDeviceLifecycle:
+    """Tool-boundary mirrors of forget/adopt/upgrade.
+
+    Separately gated from ``TestDestructive`` because a botched forget+adopt
+    cycle can leave a device unadopted (manual reset required) and
+    ``upgrade_device`` initiates a firmware flash. Each test has its own
+    env-var gate matching ``test_network_device_lifecycle_live.py`` so an
+    operator opts in per-tool.
+    """
+
+    @pytest.mark.skipif(
+        not _lifecycle_enabled("LIVE_TEST_FORGET_ADOPT"),
+        reason="Set LIVE_TEST_FORGET_ADOPT=1 to run the forget→adopt cycle",
+    )
+    async def test_forget_adopt_cycle(self, live_client, artifacts):
+        import asyncio as _asyncio
+
+        mac = _risky_target_mac()
+        if not mac:
+            pytest.skip("UNIFI_MCP_TEST_RISKY_TARGET_MAC or UNIFI_MCP_TEST_TARGET_MAC must be set")
+
+        devices = _unwrap_list(await _invoke(live_client, "unifi_network_list_devices"))
+        target = next((d for d in devices if (d.get("mac") or "").lower() == mac.lower()), None)
+        if target is None:
+            pytest.skip(f"Target MAC {mac} not in device list")
+        if not target.get("adopted"):
+            pytest.skip(f"Target MAC {mac} is not currently adopted; nothing to forget")
+        artifacts.dump(
+            "forget_adopt_target",
+            {"mac": mac, "name": target.get("name"), "model": target.get("model")},
+        )
+
+        forget_resp = await _invoke(live_client, "unifi_network_forget_device", {"mac": mac})
+        assert isinstance(forget_resp, dict), f"forget_device must return dict, got {type(forget_resp).__name__}"
+        artifacts.dump("forget_device", {"ok": True, "payload": forget_resp})
+
+        adopted_again = False
+        try:
+            deadline = _asyncio.get_event_loop().time() + _READOPT_TIMEOUT_S
+            while _asyncio.get_event_loop().time() < deadline:
+                await _asyncio.sleep(_READOPT_POLL_S)
+                devices = _unwrap_list(await _invoke(live_client, "unifi_network_list_devices"))
+                t = next((d for d in devices if (d.get("mac") or "").lower() == mac.lower()), None)
+                if t is None:
+                    continue
+                if t.get("adopted"):
+                    adopted_again = True
+                    break
+                try:
+                    adopt_resp = await _invoke(live_client, "unifi_network_adopt_device", {"mac": mac})
+                    assert isinstance(adopt_resp, dict), (
+                        f"adopt_device must return dict, got {type(adopt_resp).__name__}"
+                    )
+                    artifacts.dump("adopt_device", {"ok": True, "payload": adopt_resp})
+                except Exception as exc:
+                    artifacts.dump("adopt_device_retry", {"error": str(exc)})
+                    continue
+                adopted_again = await _wait_for_adopted_via_tool(live_client, mac, deadline)
+                break
+            assert adopted_again, (
+                f"forget_adopt cycle: {mac} did not return to adopted state within {_READOPT_TIMEOUT_S}s. "
+                "Manual recovery may be required."
+            )
+        except Exception:
+            try:
+                await _invoke(live_client, "unifi_network_adopt_device", {"mac": mac})
+                artifacts.dump("adopt_device_recovery", {"ok": True, "mac": mac})
+            except Exception as recovery_exc:
+                artifacts.dump("adopt_device_recovery_failed", {"error": str(recovery_exc)})
+            raise
+
+    @pytest.mark.skipif(
+        not _lifecycle_enabled("LIVE_TEST_UPGRADE"),
+        reason="Set LIVE_TEST_UPGRADE=1 to run upgrade_device smoke (controller may flash firmware)",
+    )
+    async def test_upgrade_device_smoke(self, live_client, artifacts):
+        """Tool-boundary smoke for ``upgrade_device``.
+
+        Asserts the tool returns a dict whether or not the controller has
+        an upgrade to push. On already-current devices the controller may
+        either no-op-succeed or surface a ToolError with "already/no
+        upgrade/up to date" messaging — both are accepted.
+        """
+        mac = _risky_target_mac()
+        if not mac:
+            pytest.skip("UNIFI_MCP_TEST_RISKY_TARGET_MAC or UNIFI_MCP_TEST_TARGET_MAC must be set")
+
+        devices = _unwrap_list(await _invoke(live_client, "unifi_network_list_devices"))
+        target = next((d for d in devices if (d.get("mac") or "").lower() == mac.lower()), None)
+        if target is None:
+            pytest.skip(f"Target MAC {mac} not in device list")
+        artifacts.dump(
+            "upgrade_target",
+            {
+                "mac": mac,
+                "name": target.get("name"),
+                "model": target.get("model"),
+                "version": target.get("version"),
+                "upgradable": target.get("upgradable"),
+            },
+        )
+
+        try:
+            resp = await _invoke(live_client, "unifi_network_upgrade_device", {"mac": mac})
+            assert isinstance(resp, dict), f"upgrade_device must return dict, got {type(resp).__name__}"
+            artifacts.dump("upgrade_response", {"ok": True, "mac": mac, "payload": resp})
+        except ToolError as exc:
+            artifacts.dump("upgrade_response_rejected", {"mac": mac, "error": str(exc)})
+            if not any(
+                phrase in str(exc).lower() for phrase in ("already", "no upgrade", "up to date", "not upgradable")
+            ):
+                raise
+
+
 # ── Mode-gating sanity: readonly hides writes (no live hardware needed) ────
 
 
