@@ -1029,15 +1029,12 @@ class TestProtectWriteRoundtrips:
             artifacts.dump("recording_mode_readback", {"after_mode": after_mode, "snapshot": after})
             assert after_mode == target, f"Read-back mismatch: set {target!r}, read back {after_mode!r}"
         finally:
-            try:
-                await _invoke(
-                    live_client,
-                    "unifi_protect_set_recording_mode",
-                    {"camera_id": camera_id, "mode": original_for_restore},
-                )
-                artifacts.dump("recording_mode_restored", {"restored_mode": original_for_restore})
-            except ToolError as e:
-                artifacts.dump("recording_mode_restore_failed", {"error": str(e)})
+            await _invoke(
+                live_client,
+                "unifi_protect_set_recording_mode",
+                {"camera_id": camera_id, "mode": original_for_restore},
+            )
+            artifacts.dump("recording_mode_restored", {"restored_mode": original_for_restore})
 
     @pytest.mark.xfail(strict=True, reason=XFAIL_PROTECT_WRITE_TOOLS["unifi_protect_set_smart_detection"])
     async def test_smart_detection_roundtrip(self, live_client, artifacts):
@@ -1266,8 +1263,10 @@ class TestDeviceLocateCycle:
                 artifacts.dump(f"locate_cycle-{mac}", {"ok": True, "mac": mac})
             except ToolError as exc:
                 # Race: device went offline between list_devices and locate. Skip
-                # rather than fail the whole cycle.
-                if "api.err.DeviceOffline" in str(exc):
+                # rather than fail the whole cycle. Match the trailing period
+                # appended by ``handle_client_error`` so a sibling code such as
+                # ``api.err.DeviceOfflineUnknown`` doesn't get silently swallowed.
+                if "api.err.DeviceOffline." in str(exc):
                     artifacts.dump(
                         f"locate_cycle-{mac}",
                         {"ok": False, "skipped": True, "reason": "DeviceOffline", "mac": mac},
