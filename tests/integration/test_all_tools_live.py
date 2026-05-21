@@ -346,6 +346,7 @@ _RESTART_POLL_S = 15.0
 _RESTART_OFFLINE_WINDOW_S = 60.0
 
 
+@pytest.mark.live_write
 @pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
 class TestWriteRoundtrips:
     """Curated create → (update →) delete roundtrips with ``mcp-audit-<uuid>``
@@ -1065,6 +1066,7 @@ class TestWriteRoundtrips:
         )
 
 
+@pytest.mark.live_write
 @pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
 class TestProtectWriteRoundtrips:
     """Curated capture → mutate → read-back → restore roundtrips for the
@@ -1267,6 +1269,7 @@ class TestProtectWriteRoundtrips:
             artifacts.dump("update_nvr_restored", {"restored_name": original_name})
 
 
+@pytest.mark.live_write
 @pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
 class TestProtectWriteNegatives:
     """Each Protect write tool with malformed input must surface a ToolError
@@ -1327,6 +1330,7 @@ class TestProtectWriteNegatives:
 # ── Device LED locate/unlocate cycle (only runs in LIVE_TEST_WRITES mode) ─
 
 
+@pytest.mark.live_write
 @pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
 class TestDeviceLocateCycle:
     async def test_locate_then_unlocate_each_adopted_device(self, live_client, artifacts):
@@ -1370,6 +1374,7 @@ class TestDeviceLocateCycle:
 # ── Slow / destructive (opt-in separately via LIVE_TEST_DESTRUCTIVE=1) ────
 
 
+@pytest.mark.live_write
 @pytest.mark.slow
 @pytest.mark.skipif(
     not (_writes_enabled() and _destructive_enabled()),
@@ -1666,6 +1671,7 @@ async def _wait_for_adopted_via_tool(client: Client, mac: str, deadline: float) 
     return False
 
 
+@pytest.mark.live_write
 @pytest.mark.slow
 @pytest.mark.skipif(
     not _writes_enabled(),

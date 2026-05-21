@@ -18,6 +18,7 @@ import os
 from typing import TYPE_CHECKING
 
 import pytest
+from fastmcp.exceptions import ToolError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -318,3 +319,29 @@ async def test_vlan_id(
             LOG.warning("Sandbox VLAN deleted: %s", network_id)
         except Exception as exc:
             LOG.warning("Sandbox VLAN cleanup failed (id=%s): %s", network_id, exc)
+
+
+# #271: bench-bricking guardrail. The live write sweep churns controller
+# state (networks, port profiles, WLANs, device adoption). When one write
+# tool raises an unexpected ToolError, the controller is likely already
+# in a degraded state (partial-write residue, stuck transactions). Letting
+# the rest of the sweep keep churning has, in practice, factory-reset a
+# UCG Ultra. Expected errors guarded by pytest.raises(ToolError, match=...)
+# are caught inside the test and never reach this hook, so legitimate
+# create_wlan / create_network pins stay green.
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]):
+    report: pytest.TestReport = yield
+    if (
+        report.when == "call"
+        and not report.passed
+        and item.get_closest_marker("live_write") is not None
+        and call.excinfo is not None
+        and call.excinfo.errisinstance(ToolError)
+    ):
+        pytest.exit(
+            f"aborting live write sweep — {item.nodeid} raised unexpected ToolError, "
+            "refusing to continue churning controller state (#271)",
+            returncode=2,
+        )
+    return report
