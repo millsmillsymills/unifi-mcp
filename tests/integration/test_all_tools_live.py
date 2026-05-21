@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _pytest.outcomes import OutcomeException
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
@@ -1740,9 +1741,18 @@ class TestRiskyDeviceLifecycle:
                 "Manual recovery may be required."
             )
         except BaseException as orig_exc:
-            # Best-effort recovery — chain the recovery failure into the original
-            # error so an operator chasing the original sees that the bench is
-            # in an unadopted state requiring manual reset.
+            # touched_devices.claim raises pytest.fail → _pytest.outcomes.Failed
+            # (a BaseException). The guard's whole point is "do NOT touch this
+            # MAC again"; running recovery-adopt here would defeat it and
+            # re-trigger the cumulative-churn brick scenario (#271). Re-raise
+            # OutcomeException unmodified so the guard's signal reaches pytest.
+            if isinstance(orig_exc, OutcomeException):
+                raise
+            # Recovery intentionally bypasses touched_devices guard: this only
+            # runs after a genuine controller-side failure left the device
+            # unadopted, and a single adopt to restore the bench is strictly
+            # less risky than leaving it forgotten. Future edits: do NOT add
+            # touched_devices.claim() here — doing so blocks recovery (#271).
             try:
                 await _invoke(live_client, "unifi_network_adopt_device", {"mac": mac})
                 artifacts.dump("adopt_device_recovery", {"ok": True, "mac": mac})
