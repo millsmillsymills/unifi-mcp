@@ -333,6 +333,15 @@ async def _first_protect_camera_id(client: Client) -> str:
 
 WRITE_GATE_REASON = "Set UNIFI_MODE=readwrite and LIVE_TEST_WRITES=1 to run write tests"
 
+# #268 bounded-poll budgets for behavioural read-backs on smoke tests.
+# Provisioning is a config push (seconds, not minutes); restart waits cover
+# the AP fully cycling state=1 → 0 → 1 with a margin for slow re-association.
+_PROVISION_TIMEOUT_S = 30.0
+_PROVISION_POLL_S = 5.0
+_RESTART_TIMEOUT_S = 120.0
+_RESTART_POLL_S = 5.0
+_RESTART_OFFLINE_WINDOW_S = 60.0
+
 
 @pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
 class TestWriteRoundtrips:
@@ -616,14 +625,23 @@ class TestWriteRoundtrips:
         """Tool-boundary smoke for ``reset_dpi``.
 
         Clears DPI counters — no recovery needed and no state to capture.
-        Asserts the call succeeds and returns a dict; counters re-populate
-        as traffic flows. Lives outside ``TestDestructive`` because resetting
-        counters is reversible (next packet rebuilds them) and the operation
-        is short.
+        Counters re-populate as traffic flows. Lives outside
+        ``TestDestructive`` because resetting counters is reversible (next
+        packet rebuilds them) and the operation is short.
+
+        Behavioural assertion (#268): the controller's `cmd/stat` envelope
+        carries `meta.rc` and only sets it to `"ok"` when the reset actually
+        ran. A regression where the tool returns 200 with an empty body or
+        a non-ok rc would now fail here. Polling `get_health` for a counter
+        drop would be racier than this envelope check (background traffic
+        bumps counters between calls).
         """
         resp = await _invoke(live_client, "unifi_network_reset_dpi")
         assert isinstance(resp, dict), f"reset_dpi must return dict, got {type(resp).__name__}"
         artifacts.dump("reset_dpi_smoke", {"ok": True, "payload": resp})
+        meta = resp.get("meta")
+        assert isinstance(meta, dict), f"reset_dpi response missing meta envelope: {resp!r}"
+        assert meta.get("rc") == "ok", f"reset_dpi controller envelope not ok: meta={meta!r}"
 
     async def test_kick_client_iphone(self, live_client, artifacts):
         """Tool-boundary smoke for ``kick_client``.
@@ -952,7 +970,17 @@ class TestWriteRoundtrips:
         the current config to it. Skips cleanly if no eligible non-protected
         AP is online. Provisioning is normally non-disruptive (config push,
         not reboot), but is gated by the regular write-test opt-in.
+
+        Behavioural assertion (#268): captures ``provisioned_at`` before the
+        call and polls ``list_devices`` for up to ``_PROVISION_TIMEOUT_S`` /
+        every ``_PROVISION_POLL_S`` looking for the timestamp to advance.
+        Some controllers don't surface ``provisioned_at`` (older firmware /
+        different device classes); in that case the test skips after the
+        deadline rather than failing — the dict-shape + meta.rc baseline is
+        the floor.
         """
+        import asyncio as _asyncio
+
         devices_payload = await _invoke(live_client, "unifi_network_list_devices")
         devices = _unwrap_list(devices_payload)
         protected_raw = os.environ.get("UNIFI_MCP_TEST_PROTECTED_MACS", "")
@@ -971,11 +999,66 @@ class TestWriteRoundtrips:
         if target is None:
             pytest.skip("No online non-protected AP available for provision_device smoke")
         mac = target["mac"]
-        artifacts.dump("provision_target", {"mac": mac, "model": target.get("model"), "name": target.get("name")})
+        original_provisioned_at = target.get("provisioned_at")
+        artifacts.dump(
+            "provision_target",
+            {
+                "mac": mac,
+                "model": target.get("model"),
+                "name": target.get("name"),
+                "provisioned_at": original_provisioned_at,
+            },
+        )
 
         resp = await _invoke(live_client, "unifi_network_provision_device", {"mac": mac})
         assert isinstance(resp, dict), f"provision_device must return dict, got {type(resp).__name__}"
+        meta = resp.get("meta") if isinstance(resp, dict) else None
+        if isinstance(meta, dict):
+            assert meta.get("rc") == "ok", f"provision_device envelope not ok: meta={meta!r}"
         artifacts.dump("provision_response", {"ok": True, "mac": mac, "payload": resp})
+
+        if original_provisioned_at is None:
+            pytest.skip(
+                f"Device {mac} has no provisioned_at field on this controller; behavioural read-back not observable"
+            )
+
+        deadline = _asyncio.get_event_loop().time() + _PROVISION_TIMEOUT_S
+        observed_provisioned_at = original_provisioned_at
+        while _asyncio.get_event_loop().time() < deadline:
+            await _asyncio.sleep(_PROVISION_POLL_S)
+            after_devices = _unwrap_list(await _invoke(live_client, "unifi_network_list_devices"))
+            after = next((d for d in after_devices if (d.get("mac") or "").lower() == mac.lower()), None)
+            if after is None:
+                continue
+            observed_provisioned_at = after.get("provisioned_at")
+            if observed_provisioned_at and observed_provisioned_at > original_provisioned_at:
+                artifacts.dump(
+                    "provision_readback",
+                    {
+                        "ok": True,
+                        "mac": mac,
+                        "before": original_provisioned_at,
+                        "after": observed_provisioned_at,
+                    },
+                )
+                return
+
+        artifacts.dump(
+            "provision_readback",
+            {
+                "ok": False,
+                "skipped": True,
+                "reason": "provisioned_at did not advance within timeout",
+                "mac": mac,
+                "before": original_provisioned_at,
+                "last_observed": observed_provisioned_at,
+            },
+        )
+        pytest.skip(
+            f"provisioned_at on {mac} did not advance within {_PROVISION_TIMEOUT_S}s "
+            f"(before={original_provisioned_at}, last={observed_provisioned_at}); "
+            "controller may not surface a field bump for this device class"
+        )
 
 
 @pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
@@ -1313,10 +1396,20 @@ class TestDestructive:
         Picks the first online AP whose MAC is NOT in
         ``UNIFI_MCP_TEST_PROTECTED_MACS`` and whose ``num_sta`` is 0
         (no associated clients), then issues a restart through the tool.
-        Skips if no such AP exists. The AP comes back online in ~60s; the
-        test doesn't wait for re-association — it just confirms the
-        controller accepted the restart command.
+        Skips if no such AP exists.
+
+        Behavioural assertion (#268): polls ``list_devices`` for the device
+        to transition ``state=1 → state=0 → state=1`` and for ``last_seen``
+        to advance past its pre-call value. The offline transition has an
+        inner ``_RESTART_OFFLINE_WINDOW_S`` budget — some restart calls are
+        no-ops if the controller decides the device doesn't need a reboot,
+        and we skip cleanly rather than fail in that case. The full
+        offline→online round trip has the outer ``_RESTART_TIMEOUT_S``
+        budget; missing that does fail, since a real restart that never
+        comes back is the regression we care about.
         """
+        import asyncio as _asyncio
+
         devices_payload = await _invoke(live_client, "unifi_network_list_devices")
         devices = _unwrap_list(devices_payload)
         protected_raw = os.environ.get("UNIFI_MCP_TEST_PROTECTED_MACS", "")
@@ -1336,11 +1429,100 @@ class TestDestructive:
         if target is None:
             pytest.skip("No online non-protected AP with zero clients available for restart smoke")
         mac = target["mac"]
-        artifacts.dump("restart_target", {"mac": mac, "name": target.get("name"), "model": target.get("model")})
+        original_last_seen = target.get("last_seen")
+        artifacts.dump(
+            "restart_target",
+            {
+                "mac": mac,
+                "name": target.get("name"),
+                "model": target.get("model"),
+                "last_seen": original_last_seen,
+            },
+        )
 
         resp = await _invoke(live_client, "unifi_network_restart_device", {"mac": mac})
         assert isinstance(resp, dict), f"restart_device must return dict, got {type(resp).__name__}"
+        meta = resp.get("meta") if isinstance(resp, dict) else None
+        if isinstance(meta, dict):
+            assert meta.get("rc") == "ok", f"restart_device envelope not ok: meta={meta!r}"
         artifacts.dump("restart_response", {"ok": True, "mac": mac, "payload": resp})
+
+        # Phase 1: bounded wait for the device to drop offline. If the AP
+        # never goes offline within the inner window, the controller likely
+        # treated this as a no-op (firmware version, current state, etc.) —
+        # skip rather than fail.
+        offline_deadline = _asyncio.get_event_loop().time() + _RESTART_OFFLINE_WINDOW_S
+        went_offline = False
+        while _asyncio.get_event_loop().time() < offline_deadline:
+            await _asyncio.sleep(_RESTART_POLL_S)
+            after_devices = _unwrap_list(await _invoke(live_client, "unifi_network_list_devices"))
+            entry = next((d for d in after_devices if (d.get("mac") or "").lower() == mac.lower()), None)
+            if entry is not None and entry.get("state") == 0:
+                went_offline = True
+                break
+
+        if not went_offline:
+            artifacts.dump(
+                "restart_readback",
+                {
+                    "ok": False,
+                    "skipped": True,
+                    "reason": "device never transitioned to state=0",
+                    "mac": mac,
+                    "offline_window_s": _RESTART_OFFLINE_WINDOW_S,
+                },
+            )
+            pytest.skip(
+                f"Device {mac} never went offline within {_RESTART_OFFLINE_WINDOW_S}s; "
+                "restart_device may have been a controller-side no-op"
+            )
+
+        # Phase 2: bounded wait for the device to come back online with a
+        # bumped last_seen. Missing this is a real failure — the restart
+        # got far enough to take the AP down but it never re-associated.
+        online_deadline = _asyncio.get_event_loop().time() + _RESTART_TIMEOUT_S
+        last_observed: dict[str, Any] | None = None
+        while _asyncio.get_event_loop().time() < online_deadline:
+            await _asyncio.sleep(_RESTART_POLL_S)
+            after_devices = _unwrap_list(await _invoke(live_client, "unifi_network_list_devices"))
+            entry = next((d for d in after_devices if (d.get("mac") or "").lower() == mac.lower()), None)
+            if entry is None:
+                continue
+            last_observed = entry
+            current_last_seen = entry.get("last_seen")
+            if (
+                entry.get("state") == 1
+                and original_last_seen is not None
+                and isinstance(current_last_seen, int)
+                and current_last_seen > original_last_seen
+            ):
+                artifacts.dump(
+                    "restart_readback",
+                    {
+                        "ok": True,
+                        "mac": mac,
+                        "before_last_seen": original_last_seen,
+                        "after_last_seen": current_last_seen,
+                    },
+                )
+                return
+
+        artifacts.dump(
+            "restart_readback",
+            {
+                "ok": False,
+                "mac": mac,
+                "before_last_seen": original_last_seen,
+                "last_observed_state": (last_observed or {}).get("state"),
+                "last_observed_last_seen": (last_observed or {}).get("last_seen"),
+            },
+        )
+        raise AssertionError(
+            f"Device {mac} went offline but did not return to state=1 with bumped last_seen "
+            f"within {_RESTART_TIMEOUT_S}s "
+            f"(before_last_seen={original_last_seen}, "
+            f"last_observed={last_observed!r})"
+        )
 
     async def test_power_cycle_and_assign_port_profile(self, live_client, artifacts, network_live_client, test_vlan_id):
         """Tool-boundary roundtrip for ``power_cycle_port`` + ``assign_port_profile``.
