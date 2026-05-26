@@ -1,12 +1,15 @@
-"""Unit coverage for the live_write collection guard (#277, Part B).
+"""Unit coverage for the #271 live_write guardrails in tests/integration/conftest.py.
 
-The integration suite is excluded from CI, so its ``pytest_collection_modifyitems``
-guard never runs there. These tests exercise the guard's logic directly against
-the pytest item protocol it relies on (``iter_markers`` / ``get_closest_marker``).
+The integration suite is excluded from CI, so neither the
+``pytest_collection_modifyitems`` guard (Part B) nor the
+``pytest_runtest_makereport`` abort hook (Part A) ever runs there. These tests
+exercise both: the collection guard directly against the pytest item protocol,
+and the abort hook via ``pytester`` sub-sessions that load the real hook.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -15,6 +18,24 @@ from tests.integration.conftest import _is_write_gated, pytest_collection_modify
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+pytest_plugins = ["pytester"]
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Sub-session conftest: load the real abort hook and register the marker it keys
+# on. The repo root is injected so ``tests.integration.conftest`` imports inside
+# the isolated pytester session.
+_HOOK_CONFTEST = f"""
+import sys
+sys.path.insert(0, {str(_REPO_ROOT)!r})
+import pytest
+from tests.integration.conftest import pytest_runtest_makereport  # noqa: F401
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "live_write: marks live write tests")
+"""
 
 _WRITE_GATE_REASON = "Set UNIFI_MODE=readwrite and LIVE_TEST_WRITES=1 to run write tests"
 
@@ -81,3 +102,101 @@ def test_guard_ignores_non_write_gated_tests() -> None:
         _item("t::plain"),
     ]
     pytest_collection_modifyitems(items=items)  # must not raise
+
+
+def _run_hook_case(pytester: pytest.Pytester, test_body: str) -> pytest.RunResult:
+    pytester.makeconftest(_HOOK_CONFTEST)
+    pytester.makepyfile(test_body)
+    # The sub-session tests are synchronous; disable pytest-asyncio so its
+    # configure-time deprecation warning can't surface as an INTERNALERROR
+    # under the process-inherited ``-W error`` filter.
+    return pytester.runpytest_inprocess("-p", "no:asyncio")
+
+
+def _output(result: pytest.RunResult) -> str:
+    return result.stdout.str() + result.stderr.str()
+
+
+def test_bare_tool_error_aborts_session(pytester: pytest.Pytester) -> None:
+    result = _run_hook_case(
+        pytester,
+        """
+        import pytest
+        from fastmcp.exceptions import ToolError
+
+        @pytest.mark.live_write
+        def test_boom():
+            raise ToolError("kaboom")
+        """,
+    )
+    assert result.ret == 2
+    assert "#271" in _output(result)
+
+
+def test_expected_tool_error_under_raises_stays_green(pytester: pytest.Pytester) -> None:
+    result = _run_hook_case(
+        pytester,
+        """
+        import pytest
+        from fastmcp.exceptions import ToolError
+
+        @pytest.mark.live_write
+        def test_expected():
+            with pytest.raises(ToolError, match="expected"):
+                raise ToolError("expected boom")
+        """,
+    )
+    assert result.ret == 0
+    result.assert_outcomes(passed=1)
+
+
+def test_assertion_error_fails_without_aborting(pytester: pytest.Pytester) -> None:
+    result = _run_hook_case(
+        pytester,
+        """
+        import pytest
+
+        @pytest.mark.live_write
+        def test_assert():
+            assert False, "plain failure"
+        """,
+    )
+    assert result.ret == 1
+    result.assert_outcomes(failed=1)
+    assert "aborting live write sweep" not in _output(result)
+
+
+def test_unmarked_tool_error_fails_without_aborting(pytester: pytest.Pytester) -> None:
+    result = _run_hook_case(
+        pytester,
+        """
+        from fastmcp.exceptions import ToolError
+
+        def test_unmarked():
+            raise ToolError("boom")
+        """,
+    )
+    assert result.ret == 1
+    result.assert_outcomes(failed=1)
+    assert "aborting live write sweep" not in _output(result)
+
+
+def test_setup_phase_tool_error_does_not_abort(pytester: pytest.Pytester) -> None:
+    result = _run_hook_case(
+        pytester,
+        """
+        import pytest
+        from fastmcp.exceptions import ToolError
+
+        @pytest.fixture
+        def boom():
+            raise ToolError("setup boom")
+
+        @pytest.mark.live_write
+        def test_setup_error(boom):
+            pass
+        """,
+    )
+    assert result.ret == 1
+    result.assert_outcomes(errors=1)
+    assert "aborting live write sweep" not in _output(result)
