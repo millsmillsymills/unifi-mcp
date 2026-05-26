@@ -130,6 +130,21 @@ python-version = "3.13"
 unused-ignore-comment = "warn"
 possibly-unresolved-reference = "warn"
 
+# Tests are type-checked (#292), but three rules fire only on pydantic-settings /
+# FastMCP test idioms that are correct at runtime and which ty cannot model:
+#   - invalid-argument-type: passing "k" where a SecretStr field is annotated
+#     (pydantic coerces str -> SecretStr).
+#   - unknown-argument: BaseSettings' special `_env_file` init kwarg.
+#   - unresolved-attribute: `.fn` on `mcp.get_tool() -> Tool | None`.
+# Relaxed for tests/ only so real type errors elsewhere in the suite still fail.
+[[tool.ty.overrides]]
+include = ["tests/**"]
+
+[tool.ty.overrides.rules]
+invalid-argument-type = "ignore"
+unknown-argument = "ignore"
+unresolved-attribute = "ignore"
+
 # =============================================================================
 # Pytest — testing
 # =============================================================================
