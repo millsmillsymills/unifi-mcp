@@ -347,6 +347,7 @@ _RESTART_OFFLINE_WINDOW_S = 60.0
 
 
 @pytest.mark.live_write
+@pytest.mark.write_gated
 @pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
 class TestWriteRoundtrips:
     """Curated create → (update →) delete roundtrips with ``mcp-audit-<uuid>``
@@ -1067,6 +1068,7 @@ class TestWriteRoundtrips:
 
 
 @pytest.mark.live_write
+@pytest.mark.write_gated
 @pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
 class TestProtectWriteRoundtrips:
     """Curated capture → mutate → read-back → restore roundtrips for the
@@ -1270,6 +1272,7 @@ class TestProtectWriteRoundtrips:
 
 
 @pytest.mark.live_write
+@pytest.mark.write_gated
 @pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
 class TestProtectWriteNegatives:
     """Each Protect write tool with malformed input must surface a ToolError
@@ -1331,6 +1334,7 @@ class TestProtectWriteNegatives:
 
 
 @pytest.mark.live_write
+@pytest.mark.write_gated
 @pytest.mark.skipif(not _writes_enabled(), reason=WRITE_GATE_REASON)
 class TestDeviceLocateCycle:
     async def test_locate_then_unlocate_each_adopted_device(self, live_client, artifacts):
@@ -1376,6 +1380,7 @@ class TestDeviceLocateCycle:
 
 @pytest.mark.live_write
 @pytest.mark.slow
+@pytest.mark.write_gated
 @pytest.mark.skipif(
     not (_writes_enabled() and _destructive_enabled()),
     reason="Set UNIFI_MODE=readwrite, LIVE_TEST_WRITES=1, and LIVE_TEST_DESTRUCTIVE=1 to run backup + restart tests",
@@ -1673,6 +1678,7 @@ async def _wait_for_adopted_via_tool(client: Client, mac: str, deadline: float) 
 
 @pytest.mark.live_write
 @pytest.mark.slow
+@pytest.mark.write_gated
 @pytest.mark.skipif(
     not _writes_enabled(),
     reason=WRITE_GATE_REASON,

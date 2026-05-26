@@ -10,14 +10,11 @@ and the abort hook via ``pytester`` sub-sessions that load the real hook.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import pytest
 
 from tests.integration.conftest import _is_write_gated, pytest_collection_modifyitems
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
 
 pytest_plugins = ["pytester"]
 
@@ -25,7 +22,9 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Sub-session conftest: load the real abort hook and register the marker it keys
 # on. The repo root is injected so ``tests.integration.conftest`` imports inside
-# the isolated pytester session.
+# the isolated pytester session. The ``sys.path`` insert persists across the
+# in-process ``runpytest_inprocess`` sub-sessions below, but it is idempotent
+# (always the same repo root) and harmless, so it does not need teardown.
 _HOOK_CONFTEST = f"""
 import sys
 sys.path.insert(0, {str(_REPO_ROOT)!r})
@@ -36,8 +35,6 @@ from tests.integration.conftest import pytest_runtest_makereport  # noqa: F401
 def pytest_configure(config):
     config.addinivalue_line("markers", "live_write: marks live write tests")
 """
-
-_WRITE_GATE_REASON = "Set UNIFI_MODE=readwrite and LIVE_TEST_WRITES=1 to run write tests"
 
 
 class _Marker:
@@ -53,9 +50,6 @@ class _Item:
         self.nodeid = nodeid
         self._markers = markers
 
-    def iter_markers(self, name: str) -> Iterator[_Marker]:
-        return (m for m in self._markers if m.name == name)
-
     def get_closest_marker(self, name: str) -> _Marker | None:
         return next((m for m in self._markers if m.name == name), None)
 
@@ -65,23 +59,23 @@ def _item(nodeid: str, *markers: _Marker) -> pytest.Item:
     return cast("pytest.Item", _Item(nodeid, *markers))
 
 
-def test_write_gate_detected_by_reason() -> None:
-    assert _is_write_gated(_item("t::a", _Marker("skipif", reason=_WRITE_GATE_REASON)))
+def test_write_gate_detected_by_marker() -> None:
+    assert _is_write_gated(_item("t::a", _Marker("write_gated")))
     assert not _is_write_gated(_item("t::a", _Marker("skipif", reason="needs live hardware")))
     assert not _is_write_gated(_item("t::a"))
 
 
 def test_guard_raises_for_write_gated_without_marker() -> None:
-    item = _item("t::a", _Marker("skipif", reason=_WRITE_GATE_REASON))
+    item = _item("t::a", _Marker("write_gated"))
     with pytest.raises(pytest.UsageError, match="missing the live_write marker"):
         pytest_collection_modifyitems(items=[item])
 
 
 def test_guard_lists_every_offender() -> None:
     items = [
-        _item("t::a", _Marker("skipif", reason=_WRITE_GATE_REASON)),
-        _item("t::b", _Marker("skipif", reason=_WRITE_GATE_REASON), _Marker("live_write")),
-        _item("t::c", _Marker("skipif", reason=_WRITE_GATE_REASON)),
+        _item("t::a", _Marker("write_gated")),
+        _item("t::b", _Marker("write_gated"), _Marker("live_write")),
+        _item("t::c", _Marker("write_gated")),
     ]
     with pytest.raises(pytest.UsageError) as excinfo:
         pytest_collection_modifyitems(items=items)
@@ -92,7 +86,7 @@ def test_guard_lists_every_offender() -> None:
 
 
 def test_guard_passes_when_marker_present() -> None:
-    item = _item("t::a", _Marker("skipif", reason=_WRITE_GATE_REASON), _Marker("live_write"))
+    item = _item("t::a", _Marker("write_gated"), _Marker("live_write"))
     pytest_collection_modifyitems(items=[item])  # must not raise
 
 
