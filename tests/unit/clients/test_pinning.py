@@ -143,7 +143,7 @@ class TestTeardownOnMismatch:
     async def test_mismatch_closes_response(self, monkeypatch):
         transport = CertPinningTransport(expected_fingerprint="c" * 64)
         response = _make_response(_FakeSSLObject(_FAKE_DER))
-        response.aclose = AsyncMock()  # type: ignore[method-assign]
+        response.aclose = AsyncMock()  # ty: ignore[invalid-assignment]
 
         async def fake_super(self_: Any, request: httpx.Request) -> httpx.Response:
             return response
@@ -175,13 +175,13 @@ class TestTeardownOnMismatch:
             port = 443
 
         non_matching = _FakeConn()
-        non_matching._origin = _OtherOrigin()  # type: ignore[assignment]
+        non_matching._origin = _OtherOrigin()  # ty: ignore[invalid-assignment]
 
         class _FakePool:
             def __init__(self, conns: list[_FakeConn]) -> None:
                 self.connections = conns
 
-        transport._pool = _FakePool([matching, non_matching])  # type: ignore[assignment]
+        transport._pool = _FakePool([matching, non_matching])  # ty: ignore[invalid-assignment]
 
         async def fake_super(self_: Any, request: httpx.Request) -> httpx.Response:
             return response
@@ -196,7 +196,7 @@ class TestTeardownOnMismatch:
     async def test_success_path_does_not_teardown(self, monkeypatch):
         transport = CertPinningTransport(expected_fingerprint=_FAKE_FP)
         response = _make_response(_FakeSSLObject(_FAKE_DER))
-        response.aclose = AsyncMock()  # type: ignore[method-assign]
+        response.aclose = AsyncMock()  # ty: ignore[invalid-assignment]
 
         async def fake_super(self_: Any, request: httpx.Request) -> httpx.Response:
             return response

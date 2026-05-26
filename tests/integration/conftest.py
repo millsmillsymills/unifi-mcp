@@ -286,7 +286,7 @@ async def cleanup_register():
                 if inspect.iscoroutine(result):
                     await result
             except Exception as exc:
-                LOG.warning("cleanup_register: %s(%s) failed: %s", fn.__name__, args, exc)
+                LOG.warning("cleanup_register: %s(%s) failed: %s", getattr(fn, "__name__", repr(fn)), args, exc)
 
 
 @pytest.fixture(scope="session")

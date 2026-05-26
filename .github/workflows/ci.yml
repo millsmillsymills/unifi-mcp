@@ -63,7 +63,7 @@ jobs:
         run: uv sync --extra dev
 
       - name: ty check
-        run: uv run ty check src/unifi_mcp/
+        run: uv run ty check src/ tests/
 
   test:
     name: Test (Python ${{ matrix.python-version }})
