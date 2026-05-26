@@ -6,7 +6,7 @@ framing, line buffering, and process boundary that real MCP clients use. This
 module spawns the installed ``unifi-mcp`` console script as a real subprocess
 and drives it through the MCP **stdio** transport, covering §4 of #97.
 
-Two layers of coverage live here:
+Three layers of coverage live here:
 
 * ``test_stdio_handshake_no_apis_configured`` exercises the bare transport
   contract — handshake, ``serverInfo``, empty ``tools/list``, clean shutdown —
@@ -17,6 +17,13 @@ Two layers of coverage live here:
   ``UNIFI_MODE=readonly`` and once with ``UNIFI_MODE=readwrite`` to verify the
   write-tool tag gate over the real stdio boundary. This closes the most
   agent-doable slice of #43 acceptance criterion 3.
+* ``TestStdioToolCallCancellation`` drives a tool call that hangs in the
+  upstream HTTP request, then cancels the client task. It verifies that a
+  cancellation crossing the real JSON-RPC stdio boundary surfaces as
+  ``CancelledError`` and — critically — that the session stays usable
+  afterwards. ``tests/unit/clients/test_cancellation.py`` only pins the
+  ``BaseUniFiClient`` contract in-process; this is the missing transport-level
+  slice of §4 in #97.
 
 The subprocess is launched in a temp ``cwd`` so pydantic-settings doesn't pick
 up the repo's ``.env`` and silently re-enable APIs (which would then fail
@@ -29,6 +36,7 @@ Run manually with::
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import http.server
 import json
@@ -346,3 +354,176 @@ class TestStdioModeFlip:
             f"no known write tools visible in readwrite mode; expected at least one of "
             f"{sorted(_KNOWN_WRITE_TOOLS)!r}, got {sorted(tool_names)!r}"
         )
+
+
+# ── Tool-call cancellation over stdio ───────────────────────────────────────
+
+# The read tool whose call we cancel. It maps to ``NetworkClient.get_health``
+# (``GET stat/health``), which the mock below hangs on. It registers in
+# readonly mode, so no write gate is involved.
+_HANGING_TOOL = "unifi_network_get_health"
+
+
+class _CancellableNetworkHandler(http.server.BaseHTTPRequestHandler):
+    """Canned 200 for any GET except ``stat/health``, which blocks until released.
+
+    ``validate_connection`` hits ``stat/sysinfo`` at startup and must succeed
+    fast, so only the health path hangs. The handler signals ``health_requested``
+    the instant the hang begins (proving the tool call reached the upstream
+    request server-side) and then waits on ``release`` — set during teardown so
+    a hung handler thread can never outlive the test. The events live on the
+    server instance so this stateless handler can reach them.
+    """
+
+    def do_GET(self) -> None:
+        server: Any = self.server
+        if "health" in self.path:
+            server.health_requested.set()
+            # Bounded wait: teardown sets ``release``; the timeout is a
+            # backstop so a test bug can't wedge the handler thread forever.
+            server.release.wait(timeout=30)
+        body = json.dumps(_CANNED_BODY).encode("utf-8")
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except OSError:
+            # The subprocess closes the connection when the cancelled tool
+            # task tears down its httpx request; writing the late response
+            # then fails. That's expected, not a test failure.
+            pass
+
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002, ARG002 — http.server API
+        return
+
+
+class _CancellableMockHTTPSServer:
+    """Threaded HTTPS mock so a hung ``stat/health`` handler can't block startup.
+
+    A single-threaded ``HTTPServer`` would serialise requests: the hanging
+    health handler would also stall the ``stat/sysinfo`` validation probe and
+    the teardown ``shutdown()``. ``ThreadingHTTPServer`` gives each request its
+    own (daemon) thread so only the health request blocks.
+    """
+
+    def __init__(self, cert_path: Path, key_path: Path) -> None:
+        self._server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _CancellableNetworkHandler)
+        self._server.daemon_threads = True
+        self._server.health_requested = threading.Event()  # type: ignore[attr-defined]
+        self._server.release = threading.Event()  # type: ignore[attr-defined]
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
+        self._server.socket = ctx.wrap_socket(self._server.socket, server_side=True)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    @property
+    def port(self) -> int:
+        port: int = self._server.server_address[1]
+        return port
+
+    @property
+    def health_requested(self) -> threading.Event:
+        return self._server.health_requested  # type: ignore[attr-defined,no-any-return]
+
+    @property
+    def release(self) -> threading.Event:
+        return self._server.release  # type: ignore[attr-defined,no-any-return]
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        # Release any in-flight health handler before shutting down so its
+        # thread can exit instead of sitting on the 30s backstop.
+        self._server.release.set()  # type: ignore[attr-defined]
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=5)
+
+
+@pytest.fixture
+def cancellation_mock_server(tmp_path: Path) -> Iterator[_CancellableMockHTTPSServer]:
+    """HTTPS mock that hangs on ``stat/health`` until ``release`` is set."""
+    cert_pem, key_pem = _generate_self_signed_cert("127.0.0.1")
+    cert_path = tmp_path / "server.pem"
+    key_path = tmp_path / "server.key"
+    cert_path.write_bytes(cert_pem)
+    key_path.write_bytes(key_pem)
+
+    server = _CancellableMockHTTPSServer(cert_path=cert_path, key_path=key_path)
+    server.start()
+    try:
+        yield server
+    finally:
+        server.stop()
+
+
+class TestStdioToolCallCancellation:
+    """Cancel an in-flight ``tools/call`` over the real stdio JSON-RPC boundary.
+
+    Closes the transport-level slice of §4 in #97 that the in-process
+    ``test_cancellation.py`` suite cannot reach.
+    """
+
+    async def test_cancel_in_flight_tool_call_keeps_session_usable(
+        self,
+        cancellation_mock_server: _CancellableMockHTTPSServer,
+    ) -> None:
+        """A cancelled tool call must surface ``CancelledError`` and leave the
+        session healthy enough to serve a follow-up request.
+
+        Sequence: call ``unifi_network_get_health`` (the mock hangs on
+        ``stat/health``); once the mock confirms the upstream request arrived,
+        cancel the awaiting client task; assert ``CancelledError`` propagates;
+        then issue a fresh ``tools/list`` on the same session and assert it
+        still answers — i.e. one cancelled call doesn't wedge the transport.
+        """
+        command = shutil.which("unifi-mcp")
+        if command is None:
+            pytest.skip("unifi-mcp console script not on PATH; run `uv sync` first")
+
+        with tempfile.TemporaryDirectory(prefix="unifi-mcp-stdio-cancel-") as cwd:
+            transport = StdioTransport(
+                command=command,
+                args=[],
+                env=_mode_flip_env(mode="readonly", network_port=cancellation_mock_server.port),
+                cwd=cwd,
+            )
+            async with Client(transport) as client:
+                assert client.is_connected(), "client failed to connect over stdio"
+
+                tool_names = {t.name for t in await client.list_tools()}
+                assert _HANGING_TOOL in tool_names, (
+                    f"{_HANGING_TOOL!r} did not register; mock backend or env wiring is broken — "
+                    f"got tools: {sorted(tool_names)!r}"
+                )
+
+                call_task = asyncio.create_task(client.call_tool(_HANGING_TOOL, {}))
+
+                # Wait until the upstream request is genuinely in-flight
+                # server-side before cancelling. Polling the threading.Event
+                # from the loop is a cheap flag read.
+                for _ in range(200):
+                    if cancellation_mock_server.health_requested.is_set():
+                        break
+                    await asyncio.sleep(0.05)
+                else:  # pragma: no cover — only hit if the call never dispatched
+                    call_task.cancel()
+                    pytest.fail("tool call never reached the upstream stat/health request")
+
+                call_task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await call_task
+
+                # The session must still be alive: a fresh request over the
+                # same stdio connection has to succeed. If cancellation had
+                # wedged the transport this would hang (caught by the suite
+                # timeout) or raise a connection error.
+                tools_after = await client.list_tools()
+                assert _HANGING_TOOL in {t.name for t in tools_after}, (
+                    "session unusable after cancelling an in-flight tool call"
+                )
+
+            assert not client.is_connected(), "client still connected after context exit"
