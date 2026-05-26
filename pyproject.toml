@@ -156,6 +156,7 @@ markers = [
     "disruptive: marks integration tests that bounce ports, kick clients, or restart devices. Skipped unless UNIFI_MCP_TEST_ALLOW_DISRUPTIVE=1.",
     "slow: marks tests that are slow to run",
     "live_write: marks live integration tests that mutate controller state; an unexpected ToolError aborts the session (#271).",
+    "write_gated: marks integration tests skipped unless write mode is enabled; the collection guard requires these to also carry live_write (#290).",
 ]
 addopts = [
     "-ra",

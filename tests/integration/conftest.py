@@ -378,21 +378,18 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]):
     return report
 
 
-# #277: CI never collects the integration suite (it runs `-m "not integration"`),
+# #277/#290: CI never collects the integration suite (it runs `-m "not integration"`),
 # so a write-gated test class that forgets @pytest.mark.live_write would silently
 # lose abort-hook protection until the next manual live run re-bricked the bench.
-# The write gate always resolves to a reason mentioning LIVE_TEST_WRITES, so use
-# that as the signal (live_client is shared with read-only tests and can't be).
-_WRITE_GATE_REASON_FRAGMENT = "LIVE_TEST_WRITES"
-
-
+# Write-gated tests carry the explicit @pytest.mark.write_gated marker (#290); the
+# guard keys on that structural signal rather than scraping skipif reason text,
+# which was a brittle convention that any reworded reason could silently defeat.
 def _is_write_gated(item: pytest.Item) -> bool:
-    return any(
-        _WRITE_GATE_REASON_FRAGMENT in str(marker.kwargs.get("reason", ""))
-        for marker in item.iter_markers(name="skipif")
-    )
+    return item.get_closest_marker("write_gated") is not None
 
 
+# `items` is filled by name from pytest's (session, config, items) hookspec; the
+# leading args are intentionally omitted since the guard needs only the items.
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     unguarded = [
         item.nodeid for item in items if _is_write_gated(item) and item.get_closest_marker("live_write") is None
