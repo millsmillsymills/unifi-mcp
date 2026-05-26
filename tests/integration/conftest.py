@@ -351,9 +351,39 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]):
         and _contains_tool_error(call.excinfo.value)
     ):
         LOG.error("live_write abort triggered by %s: %s", item.nodeid, call.excinfo.getrepr())
+        # returncode=2 is pytest's "session interrupted", not 1 ("tests failed").
+        # The distinction is deliberate: a #271 safety abort is a controlled
+        # interruption of the sweep, and keeping it separate from ordinary
+        # failures lets CI/log triage tell the two apart at a glance.
         pytest.exit(
             f"aborting live write sweep — {item.nodeid} raised unexpected ToolError, "
             "refusing to continue churning controller state (#271)",
             returncode=2,
         )
     return report
+
+
+# #277: CI never collects the integration suite (it runs `-m "not integration"`),
+# so a write-gated test class that forgets @pytest.mark.live_write would silently
+# lose abort-hook protection until the next manual live run re-bricked the bench.
+# The write gate always resolves to a reason mentioning LIVE_TEST_WRITES, so use
+# that as the signal (live_client is shared with read-only tests and can't be).
+_WRITE_GATE_REASON_FRAGMENT = "LIVE_TEST_WRITES"
+
+
+def _is_write_gated(item: pytest.Item) -> bool:
+    return any(
+        _WRITE_GATE_REASON_FRAGMENT in str(marker.kwargs.get("reason", ""))
+        for marker in item.iter_markers(name="skipif")
+    )
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    unguarded = [
+        item.nodeid for item in items if _is_write_gated(item) and item.get_closest_marker("live_write") is None
+    ]
+    if unguarded:
+        raise pytest.UsageError(
+            "write-gated tests are missing the live_write marker, so the #271 abort "
+            "hook cannot protect them: " + ", ".join(unguarded)
+        )
