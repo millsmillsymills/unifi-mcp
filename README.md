@@ -136,6 +136,27 @@ trusted directory so an unrelated `.env` cannot override your API keys.
 Rotating UniFi API keys requires restarting the server process; there is no
 hot-reload.
 
+## Troubleshooting
+
+### `Unknown tool: unifi_network_*` (or `unifi_protect_*`)
+
+Tools register only for APIs that are both **configured and reachable**
+(graceful per-API degradation). A caller that gets
+`Unknown tool: 'unifi_network_get_health'` — or any other `unifi_network_*` /
+`unifi_protect_*` name — is hitting an API whose tools were never registered,
+almost always because its key is unset:
+
+- `unifi_network_*` tools require `UNIFI_NETWORK_API`, issued under the
+  **Network** service in UniFi OS. A Site Manager or Protect key returns 401
+  and won't register Network tools ([#131](https://github.com/millsmillsymills/unifi-mcp/issues/131)).
+- `unifi_protect_*` tools require `UNIFI_PROTECT_API` (and `UNIFI_PROTECT_HOST`
+  on split deployments — see Known Issues).
+- `unifi_site_manager_*` tools require `UNIFI_SITE_MANAGER_API`.
+
+Call `tools/list` after startup to see what registered, and check the startup
+log: a configured-but-unreachable API logs `<api> tools disabled — ...`, while
+an unconfigured API logs nothing and simply exposes no tools.
+
 ## TLS
 
 UniFi controllers ship self-signed certificates, so `UNIFI_*_VERIFY_SSL`
