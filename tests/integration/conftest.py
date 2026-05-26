@@ -221,6 +221,21 @@ def mcptest_prefix() -> str:
     return os.environ.get("UNIFI_MCP_TEST_PREFIX", "mcptest-").strip()
 
 
+def _canonical_mac(mac: str) -> str:
+    """Canonical 12-hex-digit form of a MAC, separators and case stripped.
+
+    Controllers return the same device as ``aa:bb:cc:11:22:33`` or
+    ``aa-bb-cc-11-22-33``; folding both to ``aabbcc112233`` keeps the guard
+    from treating them as distinct and silently bypassing (#278). Anything
+    that is not exactly 12 hex digits after stripping is unparseable and is
+    rejected rather than slipping through as a degenerate key.
+    """
+    digits = "".join(c for c in mac.lower() if c in "0123456789abcdef")
+    if len(digits) != 12:
+        pytest.fail(f"TouchedDevices.claim: invalid MAC {mac!r}")
+    return digits
+
+
 class TouchedDevices:
     """Session-scoped guard against repeat destructive ops on the same device.
 
@@ -234,7 +249,7 @@ class TouchedDevices:
         self._claims: dict[str, str] = {}
 
     def claim(self, mac: str, op: str) -> None:
-        key = mac.strip().lower()
+        key = _canonical_mac(mac)
         prior = self._claims.get(key)
         if prior is not None:
             pytest.fail(

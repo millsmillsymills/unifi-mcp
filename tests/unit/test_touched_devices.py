@@ -55,30 +55,42 @@ def test_distinct_macs_claim_independently() -> None:
 
 
 @pytest.mark.parametrize(
-    "second",
+    "variant",
     [
+        "aa:bb:cc:11:22:33",  # colon form
+        "aa-bb-cc-11-22-33",  # dash form
+        "aabbcc112233",  # no separators
         "AA:BB:CC:11:22:33",  # upper-case
         "  aa:bb:cc:11:22:33  ",  # surrounding whitespace
     ],
 )
-def test_case_and_whitespace_collide(second: str) -> None:
-    """The normaliser folds case and trims whitespace, so these variants
-    collide with the canonical lower-case form."""
+def test_equivalent_mac_forms_collide(variant: str) -> None:
+    """Every separator/case/whitespace variant folds to the same canonical
+    12-hex key, so it collides with a prior claim on the same device (#278)."""
     guard = TouchedDevices()
-    guard.claim("aa:bb:cc:11:22:33", "forget")
+    guard.claim("aabbcc112233", "forget")
 
     with pytest.raises(pytest.fail.Exception, match="#271"):
-        guard.claim(second, "adopt")
+        guard.claim(variant, "adopt")
 
 
-def test_empty_mac_is_treated_as_a_claim() -> None:
-    """Current behaviour: an empty MAC normalises to ``""`` and occupies a
-    slot, so a second empty claim collides. (#278 tightens this to a reject.)"""
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "",  # empty
+        "   ",  # whitespace only
+        "aa:bb:cc:11:22",  # too short (10 hex)
+        "aa:bb:cc:11:22:33:44",  # too long (14 hex)
+        "zz:zz:zz:zz:zz:zz",  # non-hex
+        "not-a-mac",  # garbage
+    ],
+)
+def test_invalid_mac_is_rejected(bad: str) -> None:
+    """Unparseable input fails fast rather than slipping through as a
+    degenerate key (#278)."""
     guard = TouchedDevices()
-    guard.claim("", "forget")
-
-    with pytest.raises(pytest.fail.Exception, match="#271"):
-        guard.claim("", "adopt")
+    with pytest.raises(pytest.fail.Exception, match="invalid MAC"):
+        guard.claim(bad, "forget")
 
 
 def _destructive_invoke_tool(call: ast.Call) -> str | None:
