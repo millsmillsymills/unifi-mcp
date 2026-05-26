@@ -3,8 +3,8 @@
 ``TouchedDevices`` is the safety net that stops the live write sweep from
 applying more than one destructive op to the same device per session. It
 ships in ``tests/integration/conftest.py`` and previously had no coverage of
-its own — a refactor that dropped ``.strip().lower()`` or swapped
-``pytest.fail`` for a warning would silently disarm it (#276).
+its own — a refactor that weakened MAC normalisation (``_canonical_mac``) or
+swapped ``pytest.fail`` for a warning would silently disarm it (#276, #278).
 """
 
 from __future__ import annotations
@@ -124,6 +124,7 @@ def test_every_destructive_test_guards_with_touched_devices() -> None:
     ``test_forget_adopt_cycle`` deliberately runs a recovery adopt without a
     claim (conftest #271 recovery path); that function still claims earlier.
     """
+    assert _LIVE_TEST_PATH.exists(), f"live test file not found: {_LIVE_TEST_PATH}"
     tree = ast.parse(_LIVE_TEST_PATH.read_text(encoding="utf-8"), filename=str(_LIVE_TEST_PATH))
 
     guarded: set[str] = set()
@@ -144,4 +145,8 @@ def test_every_destructive_test_guards_with_touched_devices() -> None:
         "test_restart_non_protected_ap",
         "test_forget_adopt_cycle",
         "test_upgrade_device_smoke",
-    }, f"unexpected set of destructive-op tests: {sorted(guarded)}"
+    }, (
+        f"unexpected set of destructive-op tests: {sorted(guarded)} — if you added a "
+        "correctly-guarded destructive test, add its name to the expected set above; "
+        "if one vanished, a touched_devices.claim guard may have been removed"
+    )
