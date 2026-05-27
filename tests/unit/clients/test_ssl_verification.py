@@ -428,16 +428,38 @@ class TestVerifySslIntermediateChain:
     works against a root-only bundle, and the negative case (server omits the
     intermediate) proves the positive one genuinely required the intermediate
     rather than passing via some lenient fallback.
+
+    The positive case is parametrized over how the server orders the CA certs
+    *after* the leaf. The leaf must come first on the wire (it holds the key the
+    server presents — ``ssl.load_cert_chain`` rejects any other first cert with
+    ``KEY_VALUES_MISMATCH``), but real controllers behind a proxy often append
+    the root or emit the trailing CA certs out of order. OpenSSL's path builder
+    treats those trailing certs as an unordered pool, so all three orderings
+    must validate against the same root-only bundle.
     """
 
-    async def test_full_chain_validates_against_root_only_bundle(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize(
+        "trailing_order",
+        [
+            pytest.param(("intermediate",), id="canonical"),
+            pytest.param(("intermediate", "root"), id="root-appended"),
+            pytest.param(("root", "intermediate"), id="ca-out-of-order"),
+        ],
+    )
+    async def test_full_chain_validates_against_root_only_bundle(
+        self,
+        tmp_path: Path,
+        trailing_order: tuple[str, ...],
+    ) -> None:
         root_pem, intermediate_pem, leaf_pem, leaf_key_pem = _generate_three_tier_chain("127.0.0.1")
         root_path = tmp_path / "root.pem"
         root_path.write_bytes(root_pem)
 
-        # The server presents leaf + intermediate (chain order, leaf first); the
-        # client trusts only the root. A working chain builder bridges the gap.
-        server_chain_pem = leaf_pem + intermediate_pem
+        # Leaf always first (server key matches it); the trailing CA certs vary
+        # per param. The client trusts only the root, so a working chain builder
+        # must bridge the gap regardless of trailing-cert order.
+        trailing_pems = {"intermediate": intermediate_pem, "root": root_pem}
+        server_chain_pem = leaf_pem + b"".join(trailing_pems[name] for name in trailing_order)
         with _running_https_server(server_chain_pem, leaf_key_pem, tmp_path, name="full-chain") as server:
             verify_arg: Any = str(root_path)
             client = _ConcreteClient(
