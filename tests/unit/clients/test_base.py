@@ -8,7 +8,7 @@ import httpx
 import pytest
 import respx
 
-from unifi_mcp.clients.base import BaseUniFiClient
+from unifi_mcp.clients.base import _MIN_SCRUBBABLE_SECRET_LEN, BaseUniFiClient
 from unifi_mcp.errors import (
     UniFiAuthError,
     UniFiBadRequestError,
@@ -273,6 +273,25 @@ class TestErrorBodyExtraction:
         short_key_client = _ConcreteClient(base_url=BASE_URL, api_key="abc")
         text = "abc device not found in fabric abc"
         assert short_key_client._scrub_secret(text) == text
+
+    def test_scrub_secret_boundary_at_min_length(self):
+        """Pin the ``len(secret) < _MIN_SCRUBBABLE_SECRET_LEN`` hinge against an
+        off-by-one or ``<=``/``<`` drift: a key one char below the threshold
+        passes through, a key exactly at the threshold is scrubbed.
+        """
+        assert _MIN_SCRUBBABLE_SECRET_LEN == 8, "test keys are sized to the threshold"
+        below = "k" * (_MIN_SCRUBBABLE_SECRET_LEN - 1)
+        at = "k" * _MIN_SCRUBBABLE_SECRET_LEN
+
+        below_client = _ConcreteClient(base_url=BASE_URL, api_key=below)
+        text_below = f"controller rejected {below} for site default"
+        assert below_client._scrub_secret(text_below) == text_below
+
+        at_client = _ConcreteClient(base_url=BASE_URL, api_key=at)
+        text_at = f"controller rejected {at} for site default"
+        scrubbed = at_client._scrub_secret(text_at)
+        assert at not in scrubbed, f"threshold-length key leaked: {scrubbed!r}"
+        assert "***REDACTED***" in scrubbed
 
     def test_scrub_secret_masks_percent_encoded_reflection(self):
         """A controller that reflects the key into a URL/query field encodes it
