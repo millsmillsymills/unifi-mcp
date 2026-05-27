@@ -18,6 +18,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from unifi_mcp._redaction import REDACTED
 from unifi_mcp._redaction import redact_secrets as _redact_sensitive
 from unifi_mcp.clients._pinning import CertPinningTransport
 from unifi_mcp.errors import (
@@ -165,8 +166,7 @@ class BaseUniFiClient(ABC):
             return None
         return max(seconds, 0)
 
-    @staticmethod
-    def _extract_error_body(response: httpx.Response) -> str:
+    def _extract_error_body(self, response: httpx.Response) -> str:
         """Return a short, actionable error description from a response body.
 
         UniFi APIs wrap error details in structured JSON; extracting the
@@ -180,7 +180,9 @@ class BaseUniFiClient(ABC):
         Sensitive keys (passphrases, secrets, tokens) are masked at this
         boundary so downstream WARN logs and ``ToolError`` strings never
         carry reflected credentials (#148). When ``UNIFI_LOG_RAW_BODIES`` is
-        unset (default), the DEBUG body log also receives the redacted form;
+        unset (default), the DEBUG body log receives the key-name-redacted
+        form with the configured API-key value additionally scrubbed, so a
+        value reflected into a free-text field never lands in the log either;
         operators that need the untouched body for diagnosis must opt in.
         """
         raw_log_enabled = _log_raw_bodies_enabled()
@@ -194,7 +196,11 @@ class BaseUniFiClient(ABC):
             if raw_log_enabled:
                 logger.debug("Error response body (HTTP %d): %s", response.status_code, response.text)
             else:
-                logger.debug("Error response body (HTTP %d, redacted): %s", response.status_code, safe_payload)
+                logger.debug(
+                    "Error response body (HTTP %d, redacted): %s",
+                    response.status_code,
+                    self._scrub_secret(str(safe_payload)),
+                )
             if isinstance(safe_payload, dict):
                 meta = safe_payload.get("meta") if isinstance(safe_payload.get("meta"), dict) else None
                 err = safe_payload.get("error")
@@ -230,12 +236,26 @@ class BaseUniFiClient(ABC):
             return "(empty body)"
         return "<unparseable body, see DEBUG log>"
 
+    def _scrub_secret(self, text: str) -> str:
+        """Mask the configured API key's value anywhere it appears in ``text``.
+
+        ``_redact_sensitive`` masks sensitive *keys* in a parsed body, but a
+        controller can reflect the key *value* into a free-text field it echoes
+        back (e.g. ``meta.msg``) or an HTML error page. This value-level scrub
+        is the final backstop so the secret can never reach a surfaced error
+        message regardless of where the upstream puts it. See §4 of #97.
+        """
+        secret = self._client.headers.get("X-API-Key")
+        if secret and secret in text:
+            return text.replace(secret, REDACTED)
+        return text
+
     def _raise_for_status(self, response: httpx.Response) -> None:
         """Map HTTP status codes to typed exceptions."""
         if response.is_success:
             return
         status = response.status_code
-        body = self._extract_error_body(response)
+        body = self._scrub_secret(self._extract_error_body(response))
         if status == 400:
             raise UniFiBadRequestError(f"HTTP {status}: {body}", status_code=status)
         if status in (401, 403):
@@ -353,7 +373,7 @@ class BaseUniFiClient(ABC):
         """
         content_type = response.headers.get("content-type", "").lower()
         if content_type.startswith("text/html"):
-            body = response.text[:200]
+            body = self._scrub_secret(response.text[:200])
             raise UniFiAuthError(
                 f"Controller returned HTML instead of JSON on HTTP {response.status_code} — "
                 f"likely an auth/path mismatch (hit the UniFi OS portal). Check host, "
@@ -363,7 +383,7 @@ class BaseUniFiClient(ABC):
         try:
             return response.json()
         except ValueError as exc:
-            body = response.text[:200]
+            body = self._scrub_secret(response.text[:200])
             raise UniFiError(
                 f"Invalid JSON in response (HTTP {response.status_code}): {body}",
                 status_code=None,
