@@ -6,7 +6,7 @@ framing, line buffering, and process boundary that real MCP clients use. This
 module spawns the installed ``unifi-mcp`` console script as a real subprocess
 and drives it through the MCP **stdio** transport, covering §4 of #97.
 
-Three layers of coverage live here:
+Four layers of coverage live here:
 
 * ``test_stdio_handshake_no_apis_configured`` exercises the bare transport
   contract — handshake, ``serverInfo``, empty ``tools/list``, clean shutdown —
@@ -23,6 +23,13 @@ Three layers of coverage live here:
   ``CancelledError`` and — critically — that the session stays usable
   afterwards. ``tests/unit/clients/test_cancellation.py`` only pins the
   ``BaseUniFiClient`` contract in-process; this is the missing transport-level
+  slice of §4 in #97.
+* ``TestStdioConcurrentToolCalls`` fires many tool calls simultaneously over the
+  same session. The Network client re-uses one ``httpx.AsyncClient``, so every
+  concurrent call shares its connection pool; a rendezvous mock that answers a
+  request only once all of them have arrived proves the pool serves them
+  simultaneously instead of serialising, and equal payloads prove no cross-talk
+  between in-flight calls. This is the "concurrent tool calls — no stress test"
   slice of §4 in #97.
 
 The subprocess is launched in a temp ``cwd`` so pydantic-settings doesn't pick
@@ -524,6 +531,219 @@ class TestStdioToolCallCancellation:
                 tools_after = await client.list_tools()
                 assert _HANGING_TOOL in {t.name for t in tools_after}, (
                     "session unusable after cancelling an in-flight tool call"
+                )
+
+            assert not client.is_connected(), "client still connected after context exit"
+
+
+# ── Concurrent tool calls over stdio ────────────────────────────────────────
+
+# Each concurrent call invokes this read tool (``NetworkClient.get_health`` →
+# ``GET stat/health``). Firing many at once drives many simultaneous GETs through
+# the one ``httpx.AsyncClient`` the Network client re-uses, exercising the shared
+# connection pool §4 of #97 flags as never stress-tested. It registers in
+# readonly mode, so no write gate is involved.
+_CONCURRENT_TOOL = "unifi_network_get_health"
+
+# Number of tool calls to fire at once. Above httpx's one-live-connection default
+# so genuine parallelism is exercised, yet far below its max_connections cap
+# (100, unset here) so the pool itself is not the bottleneck.
+_CONCURRENCY = 8
+
+# Client-side bound on the rendezvous. With a healthy pool all calls arrive
+# within milliseconds and the gather resolves at once; if the pool (or the
+# server) serialised calls the rendezvous could never fill and the first handler
+# would sit on its 30s backstop, so this shorter bound trips first — turning a
+# silent slowdown into an explicit failure.
+_RENDEZVOUS_TIMEOUT = 10.0
+
+
+def _result_payload(result: Any) -> Any:
+    """Return a tool result's structured payload (``structured_content`` then ``data``).
+
+    ``Client.call_tool`` raises on a tool error, so any result reaching here is a
+    success; ``is not None`` precedence (not ``or``) keeps legitimately empty
+    payloads from being skipped.
+    """
+    structured = getattr(result, "structured_content", None)
+    if structured is not None:
+        return structured
+    return getattr(result, "data", None)
+
+
+class _RendezvousNetworkHandler(http.server.BaseHTTPRequestHandler):
+    """Canned 200 for any GET, but ``stat/health`` requests rendezvous first.
+
+    Each health request bumps a shared counter and then blocks on a release
+    Event; only once ``_CONCURRENCY`` of them have arrived does the last set the
+    Event, freeing them all to answer together. Progress is therefore possible
+    *only* if the requests are genuinely in flight at the same time — serialised
+    calls would never reach the target count and would each sit on the backstop.
+    The ``stat/sysinfo`` startup probe takes neither branch, so the server boots
+    without touching the rendezvous.
+    """
+
+    def do_GET(self) -> None:
+        server: Any = self.server
+        if "health" in self.path:
+            with server.arrival_lock:
+                server.arrivals += 1
+                if server.arrivals >= _CONCURRENCY:
+                    server.all_arrived.set()
+            # Backstop so a never-completing rendezvous can't wedge the handler
+            # thread forever. Longer than the client-side ``_RENDEZVOUS_TIMEOUT``
+            # so that bound is what fails the test on a serialising pool.
+            server.all_arrived.wait(timeout=30)
+        body = json.dumps(_CANNED_BODY).encode("utf-8")
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except OSError:
+            # On the failure path the client tears down before a backstop-
+            # released handler writes its late response, closing the socket;
+            # the write then fails. Expected during teardown, not a test failure.
+            pass
+
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002, ARG002 — http.server API
+        return
+
+
+class _RendezvousMockHTTPSServer:
+    """Threaded HTTPS mock that holds ``stat/health`` GETs until ``_CONCURRENCY`` arrive.
+
+    Threaded for the same reason as the mode-flip mock cannot be: a
+    single-threaded server serialises requests, so the rendezvous could never
+    fill and the mock itself would defeat the property under test.
+    ``ThreadingHTTPServer`` gives each request its own daemon thread.
+    """
+
+    def __init__(self, cert_path: Path, key_path: Path) -> None:
+        self._server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _RendezvousNetworkHandler)
+        self._server.daemon_threads = True
+        self._server.arrival_lock = threading.Lock()  # type: ignore[attr-defined]
+        self._server.arrivals = 0  # type: ignore[attr-defined]
+        self._server.all_arrived = threading.Event()  # type: ignore[attr-defined]
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
+        self._server.socket = ctx.wrap_socket(self._server.socket, server_side=True)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    @property
+    def port(self) -> int:
+        port: int = self._server.server_address[1]
+        return port
+
+    @property
+    def arrivals(self) -> int:
+        count: int = self._server.arrivals  # type: ignore[attr-defined]
+        return count
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        # Release any handler still waiting on the rendezvous so its thread can
+        # exit instead of sitting on the 30s backstop.
+        self._server.all_arrived.set()  # type: ignore[attr-defined]
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=5)
+
+
+@pytest.fixture
+def rendezvous_mock_server(tmp_path: Path) -> Iterator[_RendezvousMockHTTPSServer]:
+    """HTTPS mock that holds ``stat/health`` GETs until ``_CONCURRENCY`` arrive."""
+    cert_pem, key_pem = _generate_self_signed_cert("127.0.0.1")
+    cert_path = tmp_path / "server.pem"
+    key_path = tmp_path / "server.key"
+    cert_path.write_bytes(cert_pem)
+    key_path.write_bytes(key_pem)
+
+    server = _RendezvousMockHTTPSServer(cert_path=cert_path, key_path=key_path)
+    server.start()
+    try:
+        yield server
+    finally:
+        server.stop()
+
+
+class TestStdioConcurrentToolCalls:
+    """Fire many ``tools/call`` simultaneously over the real stdio boundary.
+
+    Closes the "concurrent tool calls — no stress test" slice of §4 in #97. The
+    Network client re-uses one ``httpx.AsyncClient`` across calls, so every
+    concurrent tool call shares its connection pool; this proves the pool serves
+    simultaneous in-flight requests without serialising or corrupting them.
+    """
+
+    async def test_concurrent_calls_share_pool_without_corruption(
+        self,
+        rendezvous_mock_server: _RendezvousMockHTTPSServer,
+    ) -> None:
+        """``_CONCURRENCY`` simultaneous calls must all complete with identical,
+        well-formed results, then leave the session usable.
+
+        The mock answers a health request only once all ``_CONCURRENCY`` have
+        arrived, so the gather can resolve *only* if the calls are genuinely
+        concurrent through the shared pool — a serialising pool (or a server that
+        handles ``tools/call`` one at a time) stalls the rendezvous and trips
+        ``_RENDEZVOUS_TIMEOUT``. Equal payloads across all results guard against
+        responses crossing between in-flight calls.
+        """
+        command = shutil.which("unifi-mcp")
+        if command is None:
+            pytest.skip("unifi-mcp console script not on PATH; run `uv sync` first")
+
+        with tempfile.TemporaryDirectory(prefix="unifi-mcp-stdio-concurrent-") as cwd:
+            transport = StdioTransport(
+                command=command,
+                args=[],
+                env=_mode_flip_env(mode="readonly", network_port=rendezvous_mock_server.port),
+                cwd=cwd,
+            )
+            async with Client(transport) as client:
+                assert client.is_connected(), "client failed to connect over stdio"
+
+                tool_names = {t.name for t in await client.list_tools()}
+                assert _CONCURRENT_TOOL in tool_names, (
+                    f"{_CONCURRENT_TOOL!r} did not register; mock backend or env wiring is broken — "
+                    f"got tools: {sorted(tool_names)!r}"
+                )
+
+                tasks = [asyncio.create_task(client.call_tool(_CONCURRENT_TOOL, {})) for _ in range(_CONCURRENCY)]
+                try:
+                    results = await asyncio.wait_for(asyncio.gather(*tasks), timeout=_RENDEZVOUS_TIMEOUT)
+                except TimeoutError:
+                    for task in tasks:
+                        task.cancel()
+                    pytest.fail(
+                        f"{_CONCURRENCY} concurrent calls failed to rendezvous within "
+                        f"{_RENDEZVOUS_TIMEOUT}s — only {rendezvous_mock_server.arrivals} of "
+                        f"{_CONCURRENCY} requests reached the upstream; tool calls are being "
+                        "serialised rather than sharing the connection pool"
+                    )
+
+                payloads = [_result_payload(r) for r in results]
+                assert all(p is not None for p in payloads), (
+                    f"a concurrent call returned an empty payload: {payloads!r}"
+                )
+                first = payloads[0]
+                assert all(p == first for p in payloads), (
+                    "concurrent calls returned differing payloads — a response crossed between "
+                    f"in-flight requests: {payloads!r}"
+                )
+                assert "8.0.0" in json.dumps(first), (
+                    f"payload is not the canned health body — wrong response routed back: {first!r}"
+                )
+
+                # The session must still be alive after the burst: a fresh
+                # request over the same stdio connection has to succeed.
+                tools_after = await client.list_tools()
+                assert _CONCURRENT_TOOL in {t.name for t in tools_after}, (
+                    "session unusable after a burst of concurrent tool calls"
                 )
 
             assert not client.is_connected(), "client still connected after context exit"
