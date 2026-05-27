@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import urllib.parse
 from abc import ABC, abstractmethod
 from typing import Any
@@ -46,6 +47,14 @@ _MAX_RETRY_AFTER_SECONDS = 30
 # call exceeds ``timeout * _TOTAL_ELAPSED_TIMEOUT_MULTIPLIER`` we refuse to
 # retry further and raise. See #151.
 _TOTAL_ELAPSED_TIMEOUT_MULTIPLIER = 5
+
+# Floor below which a configured "secret" is too short to value-scrub safely:
+# a 1-2 char value would splice ``REDACTED`` into unrelated text (a key of
+# ``ab`` mangling ``table``). Genuine UniFi OS API keys are long opaque tokens
+# well above this, so skipping the scrub for shorter values trades a
+# theoretical leak of an implausibly short key for not corrupting every error
+# message. See #303.
+_MIN_SCRUBBABLE_SECRET_LEN = 8
 
 
 def _log_raw_bodies_enabled() -> bool:
@@ -236,6 +245,32 @@ class BaseUniFiClient(ABC):
             return "(empty body)"
         return "<unparseable body, see DEBUG log>"
 
+    @staticmethod
+    def _secret_scrub_forms(secret: str) -> list[str]:
+        """Return the literal secret plus the percent-encodings it might be reflected as.
+
+        A controller that echoes the key into a URL or query field encodes it
+        first — ``+`` becomes ``%2B``, ``/`` may become ``%2F`` — so a literal
+        ``secret in text`` match misses it. UniFi OS keys are opaque tokens that
+        can contain ``+``, ``/``, and ``=``, so the standard ``quote`` /
+        ``quote_plus`` forms are the realistic reflection encodings to cover.
+        Percent-encoding hex is case-insensitive (RFC 3986 §6.2.2.1) and a proxy
+        may emit lowercase (``%2b``) where stdlib emits uppercase (``%2B``), so
+        the lowercase-hex variant of each encoded form is included too. Real keys
+        rarely contain ``+``/``/``/``=``, so for the common alphanumeric key every
+        form collapses to the literal. The forms differ in their raw-vs-encoded
+        bytes, so none is a substring of another and replacement order is
+        irrelevant; returned sorted purely for deterministic output. See #303.
+        """
+        encoded = {
+            urllib.parse.quote(secret),
+            urllib.parse.quote(secret, safe=""),
+            urllib.parse.quote_plus(secret),
+        }
+        lowercased = {re.sub(r"%[0-9A-F]{2}", lambda m: m.group().lower(), form) for form in encoded}
+        forms = {secret, *encoded, *lowercased}
+        return sorted(forms)
+
     def _scrub_secret(self, text: str) -> str:
         """Mask the configured API key's value anywhere it appears in ``text``.
 
@@ -243,11 +278,17 @@ class BaseUniFiClient(ABC):
         controller can reflect the key *value* into a free-text field it echoes
         back (e.g. ``meta.msg``) or an HTML error page. This value-level scrub
         is the final backstop so the secret can never reach a surfaced error
-        message regardless of where the upstream puts it. See §4 of #97.
+        message regardless of where the upstream puts it, including when the
+        upstream percent-encodes it. Secrets shorter than
+        ``_MIN_SCRUBBABLE_SECRET_LEN`` are skipped to avoid mangling unrelated
+        text. See §4 of #97 and #303.
         """
         secret = self._client.headers.get("X-API-Key")
-        if secret and secret in text:
-            return text.replace(secret, REDACTED)
+        if not secret or len(secret) < _MIN_SCRUBBABLE_SECRET_LEN:
+            return text
+        for form in self._secret_scrub_forms(secret):
+            if form in text:
+                text = text.replace(form, REDACTED)
         return text
 
     def _raise_for_status(self, response: httpx.Response) -> None:

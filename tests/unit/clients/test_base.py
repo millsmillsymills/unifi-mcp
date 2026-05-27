@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import urllib.parse
 
 import httpx
 import pytest
@@ -263,6 +264,55 @@ class TestErrorBodyExtraction:
         empty_key_client = _ConcreteClient(base_url=BASE_URL, api_key="")
         text = "some error mentioning test-api-key verbatim"
         assert empty_key_client._scrub_secret(text) == text
+
+    def test_scrub_secret_skips_implausibly_short_key(self):
+        """A 1-2 char key would mangle unrelated text (``ab`` -> ``t***ble``).
+        Genuine UniFi keys are long opaque tokens, so the scrub skips secrets
+        below ``_MIN_SCRUBBABLE_SECRET_LEN`` rather than over-redacting.
+        """
+        short_key_client = _ConcreteClient(base_url=BASE_URL, api_key="abc")
+        text = "abc device not found in fabric abc"
+        assert short_key_client._scrub_secret(text) == text
+
+    def test_scrub_secret_masks_percent_encoded_reflection(self):
+        """A controller that reflects the key into a URL/query field encodes it
+        (e.g. ``+`` → ``%2B``), bypassing a literal-only match. The scrub must
+        also mask the common percent-encoded forms of the secret.
+        """
+        key = "abc+def/ghi==jkl"
+        client = _ConcreteClient(base_url=BASE_URL, api_key=key)
+        encoded = urllib.parse.quote(key)  # 'abc%2Bdef/ghi%3D%3Djkl'
+        assert encoded != key, "test key must actually change under percent-encoding"
+        text = f"controller rejected {encoded} for site default"
+        scrubbed = client._scrub_secret(text)
+        assert encoded not in scrubbed, f"percent-encoded key leaked: {scrubbed!r}"
+        assert "***REDACTED***" in scrubbed
+
+    def test_scrub_secret_masks_quote_plus_reflection(self):
+        """Query-style encoding (``quote_plus``: ``/`` → ``%2F``) must be caught
+        too, not just the default ``quote`` form.
+        """
+        key = "abc+def/ghi==jkl"
+        client = _ConcreteClient(base_url=BASE_URL, api_key=key)
+        encoded = urllib.parse.quote_plus(key)  # 'abc%2Bdef%2Fghi%3D%3Djkl'
+        text = f"denied: {encoded}"
+        scrubbed = client._scrub_secret(text)
+        assert encoded not in scrubbed, f"quote_plus-encoded key leaked: {scrubbed!r}"
+        assert "***REDACTED***" in scrubbed
+
+    def test_scrub_secret_masks_lowercase_hex_reflection(self):
+        """Percent-encoding hex is case-insensitive (RFC 3986); a proxy may emit
+        ``%2b`` where stdlib emits ``%2B``. The lowercase-hex reflection must be
+        masked too, not just the uppercase ``quote`` output.
+        """
+        key = "abc+def/ghi==jkl"
+        client = _ConcreteClient(base_url=BASE_URL, api_key=key)
+        encoded = urllib.parse.quote(key).lower()  # 'abc%2bdef/ghi%3d%3djkl'
+        assert "%2b" in encoded, "test key must exercise lowercase hex"
+        text = f"controller rejected {encoded} for site default"
+        scrubbed = client._scrub_secret(text)
+        assert encoded not in scrubbed, f"lowercase-hex-encoded key leaked: {scrubbed!r}"
+        assert "***REDACTED***" in scrubbed
 
     @respx.mock
     async def test_flat_error_string_envelope(self, client):
