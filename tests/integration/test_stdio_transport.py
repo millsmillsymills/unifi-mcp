@@ -28,9 +28,9 @@ Five layers of coverage live here:
   same session. The Network client re-uses one ``httpx.AsyncClient``, so every
   concurrent call shares its connection pool; a rendezvous mock that answers a
   request only once all of them have arrived proves the pool serves them
-  simultaneously instead of serialising, and equal payloads prove no cross-talk
-  between in-flight calls. This is the "concurrent tool calls — no stress test"
-  slice of §4 in #97.
+  simultaneously instead of serialising, and a unique per-response marker that
+  maps one-to-one onto the results proves no cross-talk between in-flight calls.
+  This is the "concurrent tool calls — no stress test" slice of §4 in #97.
 * ``TestStdioToolListStability`` takes three ``tools/list`` snapshots on one
   session — back to back, then once more after a tool call — and asserts the
   served tool set is byte-for-byte identical each time. A tool appearing,
@@ -67,11 +67,14 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from fastmcp import Client
+from fastmcp.client.messages import MessageHandler
 from fastmcp.client.transports import StdioTransport
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
+
+    import mcp.types
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -205,6 +208,51 @@ def _generate_self_signed_cert(host_ip: str) -> tuple[bytes, bytes]:
     return cert_pem, key_pem
 
 
+class _ThreadedMockHTTPSServer:
+    """Background ``ThreadingHTTPServer`` with TLS on 127.0.0.1, shared by the stdio mocks.
+
+    Each request gets its own daemon thread, so a handler that blocks (the
+    cancellation hang, the concurrency rendezvous) can't stall the
+    ``stat/sysinfo`` startup probe or teardown. Subclasses attach any per-test
+    state to ``self._server`` after calling ``super().__init__`` and override
+    ``_pre_shutdown`` to release in-flight handlers before the server stops.
+
+    Mirrors the fixture in ``tests/unit/clients/test_ssl_verification.py`` but is
+    intentionally duplicated: the integration package shouldn't reach into
+    ``tests/unit`` internals.
+    """
+
+    def __init__(
+        self,
+        handler_class: type[http.server.BaseHTTPRequestHandler],
+        cert_path: Path,
+        key_path: Path,
+    ) -> None:
+        self._server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler_class)
+        self._server.daemon_threads = True
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
+        self._server.socket = ctx.wrap_socket(self._server.socket, server_side=True)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    @property
+    def port(self) -> int:
+        port: int = self._server.server_address[1]
+        return port
+
+    def _pre_shutdown(self) -> None:
+        """Hook for subclasses to release handlers blocked on an Event before shutdown."""
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._pre_shutdown()
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=5)
+
+
 class _CannedNetworkHandler(http.server.BaseHTTPRequestHandler):
     """Returns a canned Network-API-shaped JSON body for any GET; suppresses logs.
 
@@ -225,35 +273,14 @@ class _CannedNetworkHandler(http.server.BaseHTTPRequestHandler):
         return
 
 
-class _NetworkMockHTTPSServer:
-    """Background thread running an ``http.server`` with TLS wrapping on 127.0.0.1.
+class _NetworkMockHTTPSServer(_ThreadedMockHTTPSServer):
+    """Answers any Network-API GET with a canned 200 so ``validate_connection`` passes.
 
-    Mirrors the fixture in ``tests/unit/clients/test_ssl_verification.py`` but
-    is intentionally duplicated here: the integration package shouldn't reach
-    into ``tests/unit`` internals, and the mock's only job is to make
-    ``validate_connection`` return True so the subprocess registers Network
-    tools.
+    Stateless: its only job is to make the subprocess register Network tools.
     """
 
     def __init__(self, cert_path: Path, key_path: Path) -> None:
-        self._server = http.server.HTTPServer(("127.0.0.1", 0), _CannedNetworkHandler)
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
-        self._server.socket = ctx.wrap_socket(self._server.socket, server_side=True)
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
-
-    @property
-    def port(self) -> int:
-        port: int = self._server.server_address[1]
-        return port
-
-    def start(self) -> None:
-        self._thread.start()
-
-    def stop(self) -> None:
-        self._server.shutdown()
-        self._server.server_close()
-        self._thread.join(timeout=5)
+        super().__init__(_CannedNetworkHandler, cert_path, key_path)
 
 
 @pytest.fixture
@@ -412,29 +439,17 @@ class _CancellableNetworkHandler(http.server.BaseHTTPRequestHandler):
         return
 
 
-class _CancellableMockHTTPSServer:
-    """Threaded HTTPS mock so a hung ``stat/health`` handler can't block startup.
+class _CancellableMockHTTPSServer(_ThreadedMockHTTPSServer):
+    """Hangs on ``stat/health`` until ``release`` is set; every other GET answers 200.
 
-    A single-threaded ``HTTPServer`` would serialise requests: the hanging
-    health handler would also stall the ``stat/sysinfo`` validation probe and
-    the teardown ``shutdown()``. ``ThreadingHTTPServer`` gives each request its
-    own (daemon) thread so only the health request blocks.
+    ``health_requested`` signals the instant a health request begins blocking
+    (proving the tool call reached the upstream request server-side).
     """
 
     def __init__(self, cert_path: Path, key_path: Path) -> None:
-        self._server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _CancellableNetworkHandler)
-        self._server.daemon_threads = True
+        super().__init__(_CancellableNetworkHandler, cert_path, key_path)
         self._server.health_requested = threading.Event()  # type: ignore[attr-defined]
         self._server.release = threading.Event()  # type: ignore[attr-defined]
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
-        self._server.socket = ctx.wrap_socket(self._server.socket, server_side=True)
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
-
-    @property
-    def port(self) -> int:
-        port: int = self._server.server_address[1]
-        return port
 
     @property
     def health_requested(self) -> threading.Event:
@@ -444,16 +459,10 @@ class _CancellableMockHTTPSServer:
     def release(self) -> threading.Event:
         return self._server.release  # type: ignore[attr-defined,no-any-return]
 
-    def start(self) -> None:
-        self._thread.start()
-
-    def stop(self) -> None:
-        # Release any in-flight health handler before shutting down so its
-        # thread can exit instead of sitting on the 30s backstop.
+    def _pre_shutdown(self) -> None:
+        # Release any in-flight health handler so its thread can exit instead of
+        # sitting on the 30s backstop.
         self._server.release.set()  # type: ignore[attr-defined]
-        self._server.shutdown()
-        self._server.server_close()
-        self._thread.join(timeout=5)
 
 
 @pytest.fixture
@@ -580,19 +589,25 @@ def _result_payload(result: Any) -> Any:
 class _RendezvousNetworkHandler(http.server.BaseHTTPRequestHandler):
     """Canned 200 for any GET, but ``stat/health`` requests rendezvous first.
 
-    Each health request bumps a shared counter and then blocks on a release
-    Event; only once ``_CONCURRENCY`` of them have arrived does the last set the
-    Event, freeing them all to answer together. Progress is therefore possible
-    *only* if the requests are genuinely in flight at the same time — serialised
-    calls would never reach the target count and would each sit on the backstop.
-    The ``stat/sysinfo`` startup probe takes neither branch, so the server boots
-    without touching the rendezvous.
+    Each health request claims a unique marker, bumps a shared counter, and then
+    blocks on a release Event; only once ``_CONCURRENCY`` of them have arrived
+    does the last set the Event, freeing them all to answer together. Progress is
+    therefore possible *only* if the requests are genuinely in flight at the same
+    time — serialised calls would never reach the target count and would each sit
+    on the backstop. The unique marker embedded in each response lets the test
+    prove no response crossed between in-flight calls. The ``stat/sysinfo``
+    startup probe takes neither branch, so the server boots without touching the
+    rendezvous.
     """
 
     def do_GET(self) -> None:
         server: Any = self.server
+        body_obj: Any = _CANNED_BODY
         if "health" in self.path:
             with server.arrival_lock:
+                marker = f"req-{server.marker_seq}"
+                server.marker_seq += 1
+                server.issued_markers.append(marker)
                 server.arrivals += 1
                 if server.arrivals >= _CONCURRENCY:
                     server.all_arrived.set()
@@ -600,7 +615,11 @@ class _RendezvousNetworkHandler(http.server.BaseHTTPRequestHandler):
             # thread forever. Longer than the client-side ``_RENDEZVOUS_TIMEOUT``
             # so that bound is what fails the test on a serialising pool.
             server.all_arrived.wait(timeout=30)
-        body = json.dumps(_CANNED_BODY).encode("utf-8")
+            # Tag this response with its unique marker so the test can verify a
+            # bijection between issued markers and client results — a crossed
+            # response would duplicate one marker and drop another.
+            body_obj = {"data": [{"version": "8.0.0", "marker": marker}], "meta": {"rc": "ok"}}
+        body = json.dumps(body_obj).encode("utf-8")
         try:
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -617,46 +636,35 @@ class _RendezvousNetworkHandler(http.server.BaseHTTPRequestHandler):
         return
 
 
-class _RendezvousMockHTTPSServer:
-    """Threaded HTTPS mock that holds ``stat/health`` GETs until ``_CONCURRENCY`` arrive.
+class _RendezvousMockHTTPSServer(_ThreadedMockHTTPSServer):
+    """Holds ``stat/health`` GETs until ``_CONCURRENCY`` arrive, tagging each with a unique marker.
 
-    Threaded for the same reason as the mode-flip mock cannot be: a
-    single-threaded server serialises requests, so the rendezvous could never
-    fill and the mock itself would defeat the property under test.
-    ``ThreadingHTTPServer`` gives each request its own daemon thread.
+    ``issued_markers`` records the marker handed to each health response so the
+    test can assert the markers map one-to-one onto the client results.
     """
 
     def __init__(self, cert_path: Path, key_path: Path) -> None:
-        self._server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _RendezvousNetworkHandler)
-        self._server.daemon_threads = True
+        super().__init__(_RendezvousNetworkHandler, cert_path, key_path)
         self._server.arrival_lock = threading.Lock()  # type: ignore[attr-defined]
         self._server.arrivals = 0  # type: ignore[attr-defined]
         self._server.all_arrived = threading.Event()  # type: ignore[attr-defined]
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
-        self._server.socket = ctx.wrap_socket(self._server.socket, server_side=True)
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
-
-    @property
-    def port(self) -> int:
-        port: int = self._server.server_address[1]
-        return port
+        self._server.marker_seq = 0  # type: ignore[attr-defined]
+        self._server.issued_markers = []  # type: ignore[attr-defined]
 
     @property
     def arrivals(self) -> int:
         count: int = self._server.arrivals  # type: ignore[attr-defined]
         return count
 
-    def start(self) -> None:
-        self._thread.start()
+    @property
+    def issued_markers(self) -> list[str]:
+        markers: list[str] = self._server.issued_markers  # type: ignore[attr-defined]
+        return markers
 
-    def stop(self) -> None:
+    def _pre_shutdown(self) -> None:
         # Release any handler still waiting on the rendezvous so its thread can
         # exit instead of sitting on the 30s backstop.
         self._server.all_arrived.set()  # type: ignore[attr-defined]
-        self._server.shutdown()
-        self._server.server_close()
-        self._thread.join(timeout=5)
 
 
 @pytest.fixture
@@ -689,15 +697,17 @@ class TestStdioConcurrentToolCalls:
         self,
         rendezvous_mock_server: _RendezvousMockHTTPSServer,
     ) -> None:
-        """``_CONCURRENCY`` simultaneous calls must all complete with identical,
-        well-formed results, then leave the session usable.
+        """``_CONCURRENCY`` simultaneous calls must all complete with well-formed,
+        uniquely-marked results, then leave the session usable.
 
         The mock answers a health request only once all ``_CONCURRENCY`` have
         arrived, so the gather can resolve *only* if the calls are genuinely
         concurrent through the shared pool — a serialising pool (or a server that
         handles ``tools/call`` one at a time) stalls the rendezvous and trips
-        ``_RENDEZVOUS_TIMEOUT``. Equal payloads across all results guard against
-        responses crossing between in-flight calls.
+        ``_RENDEZVOUS_TIMEOUT``. Each upstream response carries a unique marker;
+        asserting the markers map one-to-one onto the results detects a response
+        crossing between in-flight calls (which would duplicate one marker and
+        drop another).
         """
         command = shutil.which("unifi-mcp")
         if command is None:
@@ -736,14 +746,30 @@ class TestStdioConcurrentToolCalls:
                 assert all(p is not None for p in payloads), (
                     f"a concurrent call returned an empty payload: {payloads!r}"
                 )
-                first = payloads[0]
-                assert all(p == first for p in payloads), (
-                    "concurrent calls returned differing payloads — a response crossed between "
-                    f"in-flight requests: {payloads!r}"
+                serialized = [json.dumps(p) for p in payloads]
+                assert all("8.0.0" in s for s in serialized), (
+                    f"a payload is not the canned health body — wrong response routed back: {serialized!r}"
                 )
-                assert "8.0.0" in json.dumps(first), (
-                    f"payload is not the canned health body — wrong response routed back: {first!r}"
-                )
+                # Each upstream health response carried a unique marker. A clean
+                # run is a bijection: every issued marker appears in exactly one
+                # result and every result carries exactly one marker. A response
+                # crossing between in-flight calls would duplicate one marker and
+                # drop another, breaking it. (Inputs are identical, so a per-call
+                # marker isn't predictable client-side; the bijection is the
+                # observable no-cross-talk property.)
+                issued = rendezvous_mock_server.issued_markers
+                assert len(issued) == _CONCURRENCY, f"expected {_CONCURRENCY} issued markers, got {issued!r}"
+                for marker in issued:
+                    hits = [s for s in serialized if marker in s]
+                    assert len(hits) == 1, (
+                        f"marker {marker!r} appeared in {len(hits)} results — a response crossed "
+                        f"between in-flight calls: {serialized!r}"
+                    )
+                for serial in serialized:
+                    present = [marker for marker in issued if marker in serial]
+                    assert len(present) == 1, (
+                        f"a result carried {len(present)} markers (expected exactly 1): {serial!r}"
+                    )
 
                 # The session must still be alive after the burst: a fresh
                 # request over the same stdio connection has to succeed.
@@ -763,7 +789,22 @@ class TestStdioConcurrentToolCalls:
 _PROBE_TOOL = "unifi_network_get_health"
 
 
-def _tool_fingerprint(tools: list[Any]) -> dict[str, str]:
+class _ToolListChangeRecorder(MessageHandler):
+    """Records any ``notifications/tools/list_changed`` the server emits.
+
+    A stable session must never emit one: a caching client only refetches
+    ``tools/list`` on this notification, so a spurious emission would desync it.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.changes: list[mcp.types.ToolListChangedNotification] = []
+
+    async def on_tool_list_changed(self, message: mcp.types.ToolListChangedNotification) -> None:
+        self.changes.append(message)
+
+
+def _tool_fingerprint(tools: list[mcp.types.Tool]) -> dict[str, str]:
     """Map each tool name to a canonical description + input-schema fingerprint.
 
     Comparing fingerprints rather than bare names means a silent description or
@@ -796,11 +837,13 @@ class TestStdioToolListStability:
         network_mock_server: _NetworkMockHTTPSServer,
     ) -> None:
         """Three ``tools/list`` snapshots on one session must be identical, even
-        with a tool call between the second and third."""
+        with a tool call between the second and third — and the server must never
+        emit a ``tools/list_changed`` notification during the stable session."""
         command = shutil.which("unifi-mcp")
         if command is None:
             pytest.skip("unifi-mcp console script not on PATH; run `uv sync` first")
 
+        recorder = _ToolListChangeRecorder()
         with tempfile.TemporaryDirectory(prefix="unifi-mcp-stdio-toollist-") as cwd:
             transport = StdioTransport(
                 command=command,
@@ -808,7 +851,7 @@ class TestStdioToolListStability:
                 env=_mode_flip_env(mode="readonly", network_port=network_mock_server.port),
                 cwd=cwd,
             )
-            async with Client(transport) as client:
+            async with Client(transport, message_handler=recorder) as client:
                 assert client.is_connected(), "client failed to connect over stdio"
 
                 first = _tool_fingerprint(await client.list_tools())
@@ -830,4 +873,12 @@ class TestStdioToolListStability:
             assert first == second, "tool set changed between back-to-back tools/list calls over stdio"
             assert first == third, "tool set changed after a tool call within the same session"
 
+        # The equality check proves the served set never drifted; this proves the
+        # server also never *told* a client it changed. A caching client refetches
+        # only on this notification, so a spurious emission would desync it even
+        # while the set is stable.
+        assert recorder.changes == [], (
+            f"server emitted {len(recorder.changes)} tools/list_changed notification(s) during a "
+            "stable session; a caching client would needlessly refetch the tool list"
+        )
         assert not client.is_connected(), "client still connected after context exit"
