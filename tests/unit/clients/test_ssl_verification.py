@@ -9,7 +9,7 @@ constructor argument) would not be caught by ``respx``-backed tests because
 handshake.
 
 This module spins up a local HTTPS server backed by an in-process self-signed
-CA + leaf cert, then drives ``BaseUniFiClient`` through three branches:
+CA + leaf cert, then drives ``BaseUniFiClient`` through four branches:
 
 1. ``verify_ssl=<CA-bundle-path>`` -> request succeeds (custom trust honored).
 2. ``verify_ssl=True`` with system default trust -> request raises a
@@ -17,6 +17,10 @@ CA + leaf cert, then drives ``BaseUniFiClient`` through three branches:
    to ``ConnectError``, which the client maps to its own type). Must not
    silently succeed.
 3. ``verify_ssl=False`` -> request succeeds (sanity check existing behavior).
+4. ``verify_ssl=<root-only bundle>`` against a root->intermediate->leaf chain
+   -> request succeeds only if the client builds the chain from the
+   server-presented intermediate; a paired negative control omits the
+   intermediate and must fail.
 
 See #248.
 """
@@ -128,15 +132,11 @@ def _generate_ca_and_server_cert(
 def _generate_three_tier_chain(server_ip: str) -> tuple[bytes, bytes, bytes, bytes]:
     """Generate a root CA -> intermediate CA -> leaf chain bound to ``server_ip``.
 
-    Returns ``(root_pem, intermediate_pem, leaf_cert_pem, leaf_key_pem)``.
-
-    Mirrors a publicly-rooted deployment (Let's Encrypt, a corporate CA): the
-    trust anchor is the *root* only, and a client must build the chain from the
-    *intermediate* the server presents alongside the leaf.
-    ``_generate_ca_and_server_cert`` above signs the leaf directly with the
-    trust anchor — a two-tier chain that never exercises intermediate-chain
-    building, which is the §3c gap that "only manifests against a
-    publicly-rooted cert".
+    Returns ``(root_pem, intermediate_pem, leaf_cert_pem, leaf_key_pem)``: a
+    leaf signed by an intermediate, the intermediate signed by a self-issued
+    root. Unlike ``_generate_ca_and_server_cert`` (leaf signed directly by the
+    trust anchor), this three-tier shape forces a client to build the chain
+    from the server-presented intermediate up to a root-only trust anchor.
     """
     now = datetime.datetime.now(datetime.UTC)
 
@@ -420,10 +420,9 @@ class TestVerifySslIntermediateChain:
     Controllers fronted by a real PKI (Let's Encrypt, a corporate CA) present a
     leaf signed by an *intermediate*, and the trust anchor shipped to the client
     is the *root* only — the client builds the chain from the intermediate the
-    server presents. ``TestVerifySslTrue`` signs the leaf directly with the
-    trust anchor (a two-tier chain), so a regression in intermediate-chain
-    building — the kind §3c of #97 flags as "only manifests against a
-    publicly-rooted cert" — would slip through it.
+    server presents. The two-tier verify_ssl tests sign the leaf directly with
+    the trust anchor, so a regression in intermediate-chain building (which only
+    manifests against a publicly-rooted cert) would slip through them.
 
     Two tests pin the three-tier path: the positive case proves chain building
     works against a root-only bundle, and the negative case (server omits the
@@ -471,6 +470,8 @@ class TestVerifySslIntermediateChain:
                 api_key="test-key",
                 verify_ssl=verify_arg,
                 timeout=5,
+                # A TLS failure maps to ConnectError, which is retryable; max_retries=1
+                # collapses tenacity to one attempt so the test fails fast without backoff.
                 max_retries=1,
             )
             try:
