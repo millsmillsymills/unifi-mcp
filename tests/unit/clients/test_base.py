@@ -300,6 +300,20 @@ class TestErrorBodyExtraction:
         assert encoded not in scrubbed, f"quote_plus-encoded key leaked: {scrubbed!r}"
         assert "***REDACTED***" in scrubbed
 
+    def test_scrub_secret_masks_lowercase_hex_reflection(self):
+        """Percent-encoding hex is case-insensitive (RFC 3986); a proxy may emit
+        ``%2b`` where stdlib emits ``%2B``. The lowercase-hex reflection must be
+        masked too, not just the uppercase ``quote`` output.
+        """
+        key = "abc+def/ghi==jkl"
+        client = _ConcreteClient(base_url=BASE_URL, api_key=key)
+        encoded = urllib.parse.quote(key).lower()  # 'abc%2bdef/ghi%3d%3djkl'
+        assert "%2b" in encoded, "test key must exercise lowercase hex"
+        text = f"controller rejected {encoded} for site default"
+        scrubbed = client._scrub_secret(text)
+        assert encoded not in scrubbed, f"lowercase-hex-encoded key leaked: {scrubbed!r}"
+        assert "***REDACTED***" in scrubbed
+
     @respx.mock
     async def test_flat_error_string_envelope(self, client):
         respx.get(f"{BASE_URL}/test").mock(

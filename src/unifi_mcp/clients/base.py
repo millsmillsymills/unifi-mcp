@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import urllib.parse
 from abc import ABC, abstractmethod
 from typing import Any
@@ -253,16 +254,21 @@ class BaseUniFiClient(ABC):
         ``secret in text`` match misses it. UniFi OS keys are opaque tokens that
         can contain ``+``, ``/``, and ``=``, so the standard ``quote`` /
         ``quote_plus`` forms are the realistic reflection encodings to cover.
-        The forms diverge at the first encoded character, so none is a substring
-        of another and replacement order is irrelevant; returned sorted purely
-        for deterministic output. See #303.
+        Percent-encoding hex is case-insensitive (RFC 3986 §6.2.2.1) and a proxy
+        may emit lowercase (``%2b``) where stdlib emits uppercase (``%2B``), so
+        the lowercase-hex variant of each encoded form is included too. Real keys
+        rarely contain ``+``/``/``/``=``, so for the common alphanumeric key every
+        form collapses to the literal. The forms differ in their raw-vs-encoded
+        bytes, so none is a substring of another and replacement order is
+        irrelevant; returned sorted purely for deterministic output. See #303.
         """
-        forms = {
-            secret,
+        encoded = {
             urllib.parse.quote(secret),
             urllib.parse.quote(secret, safe=""),
             urllib.parse.quote_plus(secret),
         }
+        lowercased = {re.sub(r"%[0-9A-F]{2}", lambda m: m.group().lower(), form) for form in encoded}
+        forms = {secret, *encoded, *lowercased}
         return sorted(forms)
 
     def _scrub_secret(self, text: str) -> str:
