@@ -28,6 +28,7 @@ import http.server
 import json
 import ssl
 import threading
+from contextlib import contextmanager
 from ipaddress import IPv4Address
 from typing import TYPE_CHECKING, Any
 
@@ -124,6 +125,104 @@ def _generate_ca_and_server_cert(
     return ca_pem, server_cert_pem, server_key_pem
 
 
+def _generate_three_tier_chain(server_ip: str) -> tuple[bytes, bytes, bytes, bytes]:
+    """Generate a root CA -> intermediate CA -> leaf chain bound to ``server_ip``.
+
+    Returns ``(root_pem, intermediate_pem, leaf_cert_pem, leaf_key_pem)``.
+
+    Mirrors a publicly-rooted deployment (Let's Encrypt, a corporate CA): the
+    trust anchor is the *root* only, and a client must build the chain from the
+    *intermediate* the server presents alongside the leaf.
+    ``_generate_ca_and_server_cert`` above signs the leaf directly with the
+    trust anchor — a two-tier chain that never exercises intermediate-chain
+    building, which is the §3c gap that "only manifests against a
+    publicly-rooted cert".
+    """
+    now = datetime.datetime.now(datetime.UTC)
+
+    def _new_key() -> rsa.RSAPrivateKey:
+        return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    def _ca_key_usage() -> x509.KeyUsage:
+        return x509.KeyUsage(
+            digital_signature=False,
+            content_commitment=False,
+            key_encipherment=False,
+            data_encipherment=False,
+            key_agreement=False,
+            key_cert_sign=True,
+            crl_sign=True,
+            encipher_only=False,
+            decipher_only=False,
+        )
+
+    root_key = _new_key()
+    root_subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "unifi-mcp-test-root-ca")])
+    root_ski = x509.SubjectKeyIdentifier.from_public_key(root_key.public_key())
+    root_cert = (
+        x509.CertificateBuilder()
+        .subject_name(root_subject)
+        .issuer_name(root_subject)
+        .public_key(root_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=1))
+        .not_valid_after(now + datetime.timedelta(hours=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .add_extension(_ca_key_usage(), critical=True)
+        .add_extension(root_ski, critical=False)
+        .sign(root_key, hashes.SHA256())
+    )
+
+    int_key = _new_key()
+    int_subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "unifi-mcp-test-intermediate-ca")])
+    int_ski = x509.SubjectKeyIdentifier.from_public_key(int_key.public_key())
+    int_cert = (
+        x509.CertificateBuilder()
+        .subject_name(int_subject)
+        .issuer_name(root_subject)
+        .public_key(int_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=1))
+        .not_valid_after(now + datetime.timedelta(hours=1))
+        # path_length=0: this intermediate may sign leaves but no further CAs.
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .add_extension(_ca_key_usage(), critical=True)
+        .add_extension(int_ski, critical=False)
+        .add_extension(x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(root_ski), critical=False)
+        .sign(root_key, hashes.SHA256())
+    )
+
+    leaf_key = _new_key()
+    leaf_subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, server_ip)])
+    leaf_cert = (
+        x509.CertificateBuilder()
+        .subject_name(leaf_subject)
+        .issuer_name(int_subject)
+        .public_key(leaf_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=1))
+        .not_valid_after(now + datetime.timedelta(hours=1))
+        .add_extension(x509.SubjectAlternativeName([x509.IPAddress(IPv4Address(server_ip))]), critical=False)
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(leaf_key.public_key()), critical=False)
+        .add_extension(x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(int_ski), critical=False)
+        .sign(int_key, hashes.SHA256())
+    )
+
+    enc = serialization.Encoding.PEM
+    leaf_key_pem = leaf_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    return (
+        root_cert.public_bytes(enc),
+        int_cert.public_bytes(enc),
+        leaf_cert.public_bytes(enc),
+        leaf_key_pem,
+    )
+
+
 class _CannedJSONHandler(http.server.BaseHTTPRequestHandler):
     """Returns a canned UniFi-shaped JSON body for any GET; suppresses logs."""
 
@@ -171,6 +270,27 @@ class _LocalHTTPSServer:
         self._server.shutdown()
         self._server.server_close()
         self._thread.join(timeout=5)
+
+
+@contextmanager
+def _running_https_server(cert_pem: bytes, key_pem: bytes, tmp_path: Path, *, name: str) -> Iterator[_LocalHTTPSServer]:
+    """Start a local HTTPS server presenting ``cert_pem`` and tear it down on exit.
+
+    ``cert_pem`` is whatever the server should send during the handshake — a
+    bare leaf, or a leaf concatenated with its issuing intermediate (standard
+    chain order, leaf first). ``name`` disambiguates the on-disk PEM filenames
+    so a single test can stand up more than one server without clobbering.
+    """
+    cert_path = tmp_path / f"{name}-cert.pem"
+    key_path = tmp_path / f"{name}-key.pem"
+    cert_path.write_bytes(cert_pem)
+    key_path.write_bytes(key_pem)
+    server = _LocalHTTPSServer(cert_path=cert_path, key_path=key_path)
+    server.start()
+    try:
+        yield server
+    finally:
+        server.stop()
 
 
 @pytest.fixture
@@ -292,6 +412,77 @@ class TestVerifySslFalse:
             assert result == _CANNED_BODY
         finally:
             await client.close()
+
+
+class TestVerifySslIntermediateChain:
+    """``verify_ssl=<root-only bundle>`` must validate a full root->intermediate->leaf chain.
+
+    Controllers fronted by a real PKI (Let's Encrypt, a corporate CA) present a
+    leaf signed by an *intermediate*, and the trust anchor shipped to the client
+    is the *root* only — the client builds the chain from the intermediate the
+    server presents. ``TestVerifySslTrue`` signs the leaf directly with the
+    trust anchor (a two-tier chain), so a regression in intermediate-chain
+    building — the kind §3c of #97 flags as "only manifests against a
+    publicly-rooted cert" — would slip through it.
+
+    Two tests pin the three-tier path: the positive case proves chain building
+    works against a root-only bundle, and the negative case (server omits the
+    intermediate) proves the positive one genuinely required the intermediate
+    rather than passing via some lenient fallback.
+    """
+
+    async def test_full_chain_validates_against_root_only_bundle(self, tmp_path: Path) -> None:
+        root_pem, intermediate_pem, leaf_pem, leaf_key_pem = _generate_three_tier_chain("127.0.0.1")
+        root_path = tmp_path / "root.pem"
+        root_path.write_bytes(root_pem)
+
+        # The server presents leaf + intermediate (chain order, leaf first); the
+        # client trusts only the root. A working chain builder bridges the gap.
+        server_chain_pem = leaf_pem + intermediate_pem
+        with _running_https_server(server_chain_pem, leaf_key_pem, tmp_path, name="full-chain") as server:
+            verify_arg: Any = str(root_path)
+            client = _ConcreteClient(
+                base_url=server.base_url,
+                api_key="test-key",
+                verify_ssl=verify_arg,
+                timeout=5,
+                max_retries=1,
+            )
+            try:
+                result = await client.get("any-path")
+                assert result == _CANNED_BODY
+            finally:
+                await client.close()
+
+    async def test_missing_intermediate_breaks_chain(self, tmp_path: Path) -> None:
+        root_pem, _intermediate_pem, leaf_pem, leaf_key_pem = _generate_three_tier_chain("127.0.0.1")
+        root_path = tmp_path / "root.pem"
+        root_path.write_bytes(root_pem)
+
+        # Server presents the leaf ONLY — no intermediate. Trusting just the
+        # root, the client cannot bridge leaf -> root, so verification must
+        # fail. This control proves the positive test above exercised real
+        # intermediate-chain building, not a lenient fallback that would also
+        # accept an incomplete chain.
+        with _running_https_server(leaf_pem, leaf_key_pem, tmp_path, name="leaf-only") as server:
+            verify_arg: Any = str(root_path)
+            client = _ConcreteClient(
+                base_url=server.base_url,
+                api_key="test-key",
+                verify_ssl=verify_arg,
+                timeout=5,
+                max_retries=1,
+            )
+            try:
+                with pytest.raises(UniFiConnectionError) as exc_info:
+                    await client.get("any-path")
+                inner = exc_info.value.__cause__
+                assert inner is not None, "expected wrapped httpx exception in __cause__"
+                assert _exception_chain_mentions_tls(inner), (
+                    f"expected TLS chain-build failure in exception chain; got {inner!r}"
+                )
+            finally:
+                await client.close()
 
 
 def _exception_chain_mentions_tls(exc: BaseException) -> bool:
