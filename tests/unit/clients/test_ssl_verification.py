@@ -59,6 +59,61 @@ class _ConcreteClient(BaseUniFiClient):
         return True
 
 
+def _new_key() -> rsa.RSAPrivateKey:
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+def _ca_key_usage() -> x509.KeyUsage:
+    return x509.KeyUsage(
+        digital_signature=False,
+        content_commitment=False,
+        key_encipherment=False,
+        data_encipherment=False,
+        key_agreement=False,
+        key_cert_sign=True,
+        crl_sign=True,
+        encipher_only=False,
+        decipher_only=False,
+    )
+
+
+def _build_ca_cert(
+    *,
+    subject: x509.Name,
+    issuer: x509.Name,
+    public_key: rsa.RSAPublicKey,
+    signing_key: rsa.RSAPrivateKey,
+    now: datetime.datetime,
+    path_length: int | None,
+    authority_ski: x509.SubjectKeyIdentifier | None = None,
+) -> x509.Certificate:
+    """Build a CA certificate (``ca=True``) shared by the self-signed and cross-signed cases.
+
+    Self-signed roots pass ``issuer == subject``, ``signing_key`` matching
+    ``public_key``, and no ``authority_ski``. A cross-signed intermediate passes
+    its parent's name as ``issuer``, the parent's key as ``signing_key``, and the
+    parent's SKI as ``authority_ski`` so an Authority Key Identifier is emitted.
+    """
+    builder = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(public_key)
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=1))
+        .not_valid_after(now + datetime.timedelta(hours=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=path_length), critical=True)
+        .add_extension(_ca_key_usage(), critical=True)
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(public_key), critical=False)
+    )
+    if authority_ski is not None:
+        builder = builder.add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(authority_ski),
+            critical=False,
+        )
+    return builder.sign(signing_key, hashes.SHA256())
+
+
 def _generate_ca_and_server_cert(
     server_ip: str,
 ) -> tuple[bytes, bytes, bytes]:
@@ -68,38 +123,20 @@ def _generate_ca_and_server_cert(
     to disk and passed to ``ssl.SSLContext.load_cert_chain`` / httpx's
     ``verify=<path>`` parameter.
     """
-    ca_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    ca_key = _new_key()
     ca_subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "unifi-mcp-test-ca")])
     now = datetime.datetime.now(datetime.UTC)
     ca_ski = x509.SubjectKeyIdentifier.from_public_key(ca_key.public_key())
-    ca_cert = (
-        x509.CertificateBuilder()
-        .subject_name(ca_subject)
-        .issuer_name(ca_subject)
-        .public_key(ca_key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - datetime.timedelta(minutes=1))
-        .not_valid_after(now + datetime.timedelta(hours=1))
-        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
-        .add_extension(
-            x509.KeyUsage(
-                digital_signature=False,
-                content_commitment=False,
-                key_encipherment=False,
-                data_encipherment=False,
-                key_agreement=False,
-                key_cert_sign=True,
-                crl_sign=True,
-                encipher_only=False,
-                decipher_only=False,
-            ),
-            critical=True,
-        )
-        .add_extension(ca_ski, critical=False)
-        .sign(ca_key, hashes.SHA256())
+    ca_cert = _build_ca_cert(
+        subject=ca_subject,
+        issuer=ca_subject,
+        public_key=ca_key.public_key(),
+        signing_key=ca_key,
+        now=now,
+        path_length=None,
     )
 
-    server_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    server_key = _new_key()
     server_subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, server_ip)])
     server_cert = (
         x509.CertificateBuilder()
@@ -140,56 +177,30 @@ def _generate_three_tier_chain(server_ip: str) -> tuple[bytes, bytes, bytes, byt
     """
     now = datetime.datetime.now(datetime.UTC)
 
-    def _new_key() -> rsa.RSAPrivateKey:
-        return rsa.generate_private_key(public_exponent=65537, key_size=2048)
-
-    def _ca_key_usage() -> x509.KeyUsage:
-        return x509.KeyUsage(
-            digital_signature=False,
-            content_commitment=False,
-            key_encipherment=False,
-            data_encipherment=False,
-            key_agreement=False,
-            key_cert_sign=True,
-            crl_sign=True,
-            encipher_only=False,
-            decipher_only=False,
-        )
-
     root_key = _new_key()
     root_subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "unifi-mcp-test-root-ca")])
     root_ski = x509.SubjectKeyIdentifier.from_public_key(root_key.public_key())
-    root_cert = (
-        x509.CertificateBuilder()
-        .subject_name(root_subject)
-        .issuer_name(root_subject)
-        .public_key(root_key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - datetime.timedelta(minutes=1))
-        .not_valid_after(now + datetime.timedelta(hours=1))
-        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
-        .add_extension(_ca_key_usage(), critical=True)
-        .add_extension(root_ski, critical=False)
-        .sign(root_key, hashes.SHA256())
+    root_cert = _build_ca_cert(
+        subject=root_subject,
+        issuer=root_subject,
+        public_key=root_key.public_key(),
+        signing_key=root_key,
+        now=now,
+        path_length=None,
     )
 
     int_key = _new_key()
     int_subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "unifi-mcp-test-intermediate-ca")])
     int_ski = x509.SubjectKeyIdentifier.from_public_key(int_key.public_key())
-    int_cert = (
-        x509.CertificateBuilder()
-        .subject_name(int_subject)
-        .issuer_name(root_subject)
-        .public_key(int_key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - datetime.timedelta(minutes=1))
-        .not_valid_after(now + datetime.timedelta(hours=1))
+    int_cert = _build_ca_cert(
+        subject=int_subject,
+        issuer=root_subject,
+        public_key=int_key.public_key(),
+        signing_key=root_key,
+        now=now,
         # path_length=0: this intermediate may sign leaves but no further CAs.
-        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
-        .add_extension(_ca_key_usage(), critical=True)
-        .add_extension(int_ski, critical=False)
-        .add_extension(x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(root_ski), critical=False)
-        .sign(root_key, hashes.SHA256())
+        path_length=0,
+        authority_ski=root_ski,
     )
 
     leaf_key = _new_key()
