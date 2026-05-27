@@ -18,6 +18,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from unifi_mcp._redaction import REDACTED
 from unifi_mcp._redaction import redact_secrets as _redact_sensitive
 from unifi_mcp.clients._pinning import CertPinningTransport
 from unifi_mcp.errors import (
@@ -230,12 +231,26 @@ class BaseUniFiClient(ABC):
             return "(empty body)"
         return "<unparseable body, see DEBUG log>"
 
+    def _scrub_secret(self, text: str) -> str:
+        """Mask the configured API key's value anywhere it appears in ``text``.
+
+        ``_redact_sensitive`` masks sensitive *keys* in a parsed body, but a
+        controller can reflect the key *value* into a free-text field it echoes
+        back (e.g. ``meta.msg``) or an HTML error page. This value-level scrub
+        is the final backstop so the secret can never reach a surfaced error
+        message regardless of where the upstream puts it. See §4 of #97.
+        """
+        secret = self._client.headers.get("X-API-Key")
+        if secret and secret in text:
+            return text.replace(secret, REDACTED)
+        return text
+
     def _raise_for_status(self, response: httpx.Response) -> None:
         """Map HTTP status codes to typed exceptions."""
         if response.is_success:
             return
         status = response.status_code
-        body = self._extract_error_body(response)
+        body = self._scrub_secret(self._extract_error_body(response))
         if status == 400:
             raise UniFiBadRequestError(f"HTTP {status}: {body}", status_code=status)
         if status in (401, 403):
@@ -353,7 +368,7 @@ class BaseUniFiClient(ABC):
         """
         content_type = response.headers.get("content-type", "").lower()
         if content_type.startswith("text/html"):
-            body = response.text[:200]
+            body = self._scrub_secret(response.text[:200])
             raise UniFiAuthError(
                 f"Controller returned HTML instead of JSON on HTTP {response.status_code} — "
                 f"likely an auth/path mismatch (hit the UniFi OS portal). Check host, "
@@ -363,7 +378,7 @@ class BaseUniFiClient(ABC):
         try:
             return response.json()
         except ValueError as exc:
-            body = response.text[:200]
+            body = self._scrub_secret(response.text[:200])
             raise UniFiError(
                 f"Invalid JSON in response (HTTP {response.status_code}): {body}",
                 status_code=None,

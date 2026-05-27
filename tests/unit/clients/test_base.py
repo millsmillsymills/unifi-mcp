@@ -186,6 +186,48 @@ class TestErrorBodyExtraction:
         assert '"error":' not in str(exc_info.value)
 
     @respx.mock
+    async def test_reflected_api_key_value_scrubbed_from_message(self, client):
+        """A controller that echoes the API key *value* inside a surfaced
+        message field must not leak it. Key-*name* redaction (#148) can't catch
+        a value reflected into free text, so the configured secret is
+        value-scrubbed before the error string is built. Closes the
+        value-reflection vector flagged in §4 of #97.
+        """
+        respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(
+                401,
+                json={"meta": {"rc": "error", "msg": "invalid api key test-api-key for site default"}},
+            )
+        )
+        with pytest.raises(UniFiAuthError) as exc_info:
+            await client.get("test")
+        msg = str(exc_info.value)
+        assert "test-api-key" not in msg, f"API key leaked into error message: {msg!r}"
+        # The rest of the message still surfaces (with the key masked) so the
+        # operator keeps an actionable hint instead of an opaque blank.
+        assert "***REDACTED***" in msg
+
+    @respx.mock
+    async def test_reflected_api_key_value_scrubbed_from_html_body(self, client):
+        """The HTML-portal branch in ``_parse_json`` surfaces ``response.text[:200]``
+        verbatim. It fires only on a 2xx that returns the UniFi OS portal (a
+        non-2xx is intercepted by ``_raise_for_status`` first), so a key
+        reflected in that HTML must be scrubbed on the success-but-HTML path too.
+        """
+        respx.get(f"{BASE_URL}/test").mock(
+            return_value=httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text="<html><body>denied for key test-api-key</body></html>",
+            )
+        )
+        with pytest.raises(UniFiAuthError) as exc_info:
+            await client.get("test")
+        msg = str(exc_info.value)
+        assert "test-api-key" not in msg, f"API key leaked into HTML-body error message: {msg!r}"
+        assert "***REDACTED***" in msg
+
+    @respx.mock
     async def test_flat_error_string_envelope(self, client):
         respx.get(f"{BASE_URL}/test").mock(
             return_value=httpx.Response(404, json={"error": "device not found"}),
