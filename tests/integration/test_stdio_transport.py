@@ -605,7 +605,12 @@ class _RendezvousNetworkHandler(http.server.BaseHTTPRequestHandler):
         body_obj: Any = _CANNED_BODY
         if "health" in self.path:
             with server.arrival_lock:
-                marker = f"req-{server.marker_seq}"
+                # Zero-pad to a fixed width so no marker is a substring of
+                # another (``req-1`` ⊂ ``req-10``). The substring-based bijection
+                # check below would silently miscount otherwise once
+                # ``_CONCURRENCY`` reaches double digits. Three digits cover the
+                # pool's 100 max_connections cap.
+                marker = f"req-{server.marker_seq:03d}"
                 server.marker_seq += 1
                 server.issued_markers.append(marker)
                 server.arrivals += 1
