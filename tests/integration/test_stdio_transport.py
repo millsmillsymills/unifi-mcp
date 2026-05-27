@@ -6,7 +6,7 @@ framing, line buffering, and process boundary that real MCP clients use. This
 module spawns the installed ``unifi-mcp`` console script as a real subprocess
 and drives it through the MCP **stdio** transport, covering §4 of #97.
 
-Four layers of coverage live here:
+Five layers of coverage live here:
 
 * ``test_stdio_handshake_no_apis_configured`` exercises the bare transport
   contract — handshake, ``serverInfo``, empty ``tools/list``, clean shutdown —
@@ -31,6 +31,12 @@ Four layers of coverage live here:
   simultaneously instead of serialising, and equal payloads prove no cross-talk
   between in-flight calls. This is the "concurrent tool calls — no stress test"
   slice of §4 in #97.
+* ``TestStdioToolListStability`` takes three ``tools/list`` snapshots on one
+  session — back to back, then once more after a tool call — and asserts the
+  served tool set is byte-for-byte identical each time. A tool appearing,
+  vanishing, reordering, or changing schema mid-session would break clients
+  that cache the list after ``initialize``. This is the "tool set stable across
+  a session" slice of §4 in #97.
 
 The subprocess is launched in a temp ``cwd`` so pydantic-settings doesn't pick
 up the repo's ``.env`` and silently re-enable APIs (which would then fail
@@ -747,3 +753,81 @@ class TestStdioConcurrentToolCalls:
                 )
 
             assert not client.is_connected(), "client still connected after context exit"
+
+
+# ── tools/list stability across a session ───────────────────────────────────
+
+# Invoked between ``tools/list`` snapshots so the stability assertion spans real
+# session activity, not just idle back-to-back listing. Read tool, registers in
+# readonly mode.
+_PROBE_TOOL = "unifi_network_get_health"
+
+
+def _tool_fingerprint(tools: list[Any]) -> dict[str, str]:
+    """Map each tool name to a canonical description + input-schema fingerprint.
+
+    Comparing fingerprints rather than bare names means a silent description or
+    schema change between snapshots fails the stability check too, not just a
+    tool appearing or vanishing. ``sort_keys`` makes the schema serialisation
+    order-independent so equal schemas always compare equal.
+    """
+    return {
+        tool.name: json.dumps(
+            {"description": tool.description, "inputSchema": tool.inputSchema},
+            sort_keys=True,
+        )
+        for tool in tools
+    }
+
+
+class TestStdioToolListStability:
+    """Repeated ``tools/list`` on one session must return an identical tool set.
+
+    §4 of #97 flags that nothing pins the tool set as stable across a session.
+    A real MCP client caches the list after ``initialize`` and only refreshes on
+    a ``notifications/tools/list_changed``; a set that silently drifts between
+    listings would desync those clients. This drives three snapshots over the
+    real stdio boundary — two back to back and one after a tool call — and
+    asserts all three are byte-for-byte identical.
+    """
+
+    async def test_tool_set_stable_across_session(
+        self,
+        network_mock_server: _NetworkMockHTTPSServer,
+    ) -> None:
+        """Three ``tools/list`` snapshots on one session must be identical, even
+        with a tool call between the second and third."""
+        command = shutil.which("unifi-mcp")
+        if command is None:
+            pytest.skip("unifi-mcp console script not on PATH; run `uv sync` first")
+
+        with tempfile.TemporaryDirectory(prefix="unifi-mcp-stdio-toollist-") as cwd:
+            transport = StdioTransport(
+                command=command,
+                args=[],
+                env=_mode_flip_env(mode="readonly", network_port=network_mock_server.port),
+                cwd=cwd,
+            )
+            async with Client(transport) as client:
+                assert client.is_connected(), "client failed to connect over stdio"
+
+                first = _tool_fingerprint(await client.list_tools())
+                # A non-empty tool set is what makes "stable" a real assertion;
+                # an empty set would pass vacuously. This also catches a broken
+                # mock backend or env wiring rather than silently testing nothing.
+                assert _PROBE_TOOL in first, (
+                    f"{_PROBE_TOOL!r} did not register; mock backend or env wiring is broken — "
+                    f"got tools: {sorted(first)!r}"
+                )
+
+                second = _tool_fingerprint(await client.list_tools())
+
+                # Exercise the session, then snapshot again: a tool call must not
+                # perturb the advertised tool set.
+                await client.call_tool(_PROBE_TOOL, {})
+                third = _tool_fingerprint(await client.list_tools())
+
+            assert first == second, "tool set changed between back-to-back tools/list calls over stdio"
+            assert first == third, "tool set changed after a tool call within the same session"
+
+        assert not client.is_connected(), "client still connected after context exit"
