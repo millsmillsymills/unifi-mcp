@@ -166,8 +166,7 @@ class BaseUniFiClient(ABC):
             return None
         return max(seconds, 0)
 
-    @staticmethod
-    def _extract_error_body(response: httpx.Response) -> str:
+    def _extract_error_body(self, response: httpx.Response) -> str:
         """Return a short, actionable error description from a response body.
 
         UniFi APIs wrap error details in structured JSON; extracting the
@@ -181,7 +180,9 @@ class BaseUniFiClient(ABC):
         Sensitive keys (passphrases, secrets, tokens) are masked at this
         boundary so downstream WARN logs and ``ToolError`` strings never
         carry reflected credentials (#148). When ``UNIFI_LOG_RAW_BODIES`` is
-        unset (default), the DEBUG body log also receives the redacted form;
+        unset (default), the DEBUG body log receives the key-name-redacted
+        form with the configured API-key value additionally scrubbed, so a
+        value reflected into a free-text field never lands in the log either;
         operators that need the untouched body for diagnosis must opt in.
         """
         raw_log_enabled = _log_raw_bodies_enabled()
@@ -195,7 +196,11 @@ class BaseUniFiClient(ABC):
             if raw_log_enabled:
                 logger.debug("Error response body (HTTP %d): %s", response.status_code, response.text)
             else:
-                logger.debug("Error response body (HTTP %d, redacted): %s", response.status_code, safe_payload)
+                logger.debug(
+                    "Error response body (HTTP %d, redacted): %s",
+                    response.status_code,
+                    self._scrub_secret(str(safe_payload)),
+                )
             if isinstance(safe_payload, dict):
                 meta = safe_payload.get("meta") if isinstance(safe_payload.get("meta"), dict) else None
                 err = safe_payload.get("error")
